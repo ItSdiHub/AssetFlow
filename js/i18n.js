@@ -977,6 +977,9 @@ const I18N = {
     dashWarrantyNoAlerts: "لا توجد أصول تنتهي فترة ضمانها خلال الـ 30 يوماً القادمة",
     dashWarrantyNoAlertsDesc: "كافة الأصول والمعدات الخاضعة للضمان تتمتع بتغطية سارية ومستقرة",
     viewFullWarrantyReport: "عرض تقرير الضمان الشامل",
+    quickFilter: "تصفية سريعة",
+    quickFilter30d: "تصفية سريعة (30 يوماً)",
+    filterByThisCategory: "تصفية الأصول حسب هذه الفئة",
 
     // Color Themes & Appearance
     themeSettingsTitle: "تخصيص ألوان ومظهر النظام",
@@ -2115,6 +2118,9 @@ const I18N = {
     dashWarrantyNoAlerts: "No assets with warranty expiring within the next 30 days",
     dashWarrantyNoAlertsDesc: "All warrantied assets and equipment currently have active, valid coverage",
     viewFullWarrantyReport: "View Full Warranty Report",
+    quickFilter: "Quick Filter",
+    quickFilter30d: "Quick Filter (30 Days)",
+    filterByThisCategory: "Filter assets by this category",
 
     // Color Themes & Appearance
     themeSettingsTitle: "Customize Theme & Colors",

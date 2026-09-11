@@ -11,6 +11,7 @@ class AssetInventoryManager {
     this.currentFilterLoc = "";
     this.currentFilterEmp = "";
     this.currentFilterBrand = "";
+    this.currentFilterWarranty = "";
     this.currentSearchText = "";
     this.activeDetailTab = "general";
     this.currentDetailAssetId = null;
@@ -80,6 +81,8 @@ class AssetInventoryManager {
       if (this.currentFilterEmp && item.currentEmployeeId !== this.currentFilterEmp) return false;
       // Brand filter
       if (this.currentFilterBrand && (!item.brand || !item.brand.toLowerCase().includes(this.currentFilterBrand.toLowerCase()))) return false;
+      // Warranty filter
+      if (this.currentFilterWarranty && !this.matchesWarrantyFilter(item, this.currentFilterWarranty)) return false;
 
       // Text search
       if (this.currentSearchText) {
@@ -244,15 +247,48 @@ class AssetInventoryManager {
     }
   }
 
+  matchesWarrantyFilter(asset, filterVal) {
+    if (!filterVal) return true;
+    const st = (asset.status || "").trim();
+    if (st === "Disposed" || st === "Retired") return false;
+    if (!asset.warrantyExpiry) return false;
+
+    const parts = String(asset.warrantyExpiry).split("-");
+    if (parts.length !== 3) return false;
+    const expDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    if (isNaN(expDate.getTime())) return false;
+    expDate.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (filterVal === "expiring_30d") {
+      return diffDays >= 0 && diffDays <= 30;
+    }
+    if (filterVal === "expiring_7d") {
+      return diffDays >= 0 && diffDays <= 7;
+    }
+    if (filterVal === "expired") {
+      return diffDays < 0;
+    }
+    if (filterVal === "valid") {
+      return diffDays > 30;
+    }
+    return true;
+  }
+
   // Filter Handler
   handleFilterChange() {
-    this.currentSearchText = document.getElementById("assetSearchInput").value.trim();
-    this.currentFilterType = document.getElementById("assetFilterType").value;
-    this.currentFilterStatus = document.getElementById("assetFilterStatus").value;
-    this.currentFilterDept = document.getElementById("assetFilterDept").value;
-    this.currentFilterLoc = document.getElementById("assetFilterLoc").value;
-    this.currentFilterEmp = document.getElementById("assetFilterEmp").value;
-    this.currentFilterBrand = document.getElementById("assetFilterBrand").value.trim();
+    this.currentSearchText = document.getElementById("assetSearchInput") ? document.getElementById("assetSearchInput").value.trim() : "";
+    this.currentFilterType = document.getElementById("assetFilterType") ? document.getElementById("assetFilterType").value : "";
+    this.currentFilterStatus = document.getElementById("assetFilterStatus") ? document.getElementById("assetFilterStatus").value : "";
+    this.currentFilterDept = document.getElementById("assetFilterDept") ? document.getElementById("assetFilterDept").value : "";
+    this.currentFilterLoc = document.getElementById("assetFilterLoc") ? document.getElementById("assetFilterLoc").value : "";
+    this.currentFilterEmp = document.getElementById("assetFilterEmp") ? document.getElementById("assetFilterEmp").value : "";
+    this.currentFilterBrand = document.getElementById("assetFilterBrand") ? document.getElementById("assetFilterBrand").value.trim() : "";
+    const warrantySel = document.getElementById("assetFilterWarranty");
+    this.currentFilterWarranty = warrantySel ? warrantySel.value : (this.currentFilterWarranty || "");
     this.render();
   }
 
@@ -264,6 +300,7 @@ class AssetInventoryManager {
     const empSel = document.getElementById("assetFilterEmp");
     const typeSel = document.getElementById("assetFilterType");
     const statusSel = document.getElementById("assetFilterStatus");
+    const warrantySel = document.getElementById("assetFilterWarranty");
 
     if (searchInp) searchInp.value = "";
     if (brandInp) brandInp.value = "";
@@ -272,10 +309,21 @@ class AssetInventoryManager {
     if (empSel) empSel.value = "";
     if (typeSel) typeSel.value = "";
     if (statusSel) statusSel.value = "";
+    if (warrantySel) warrantySel.value = "";
+    this.currentFilterWarranty = "";
   }
 
   resetFilters() {
     this.resetFilterInputs();
+    this.handleFilterChange();
+  }
+
+  filterByWarrantyAndSwitch(warrantyCategory = "expiring_30d") {
+    this.resetFilterInputs();
+    const warrantySel = document.getElementById("assetFilterWarranty");
+    if (warrantySel) warrantySel.value = warrantyCategory || "";
+    this.currentFilterWarranty = warrantyCategory || "";
+    App.switchTab("assets");
     this.handleFilterChange();
   }
 

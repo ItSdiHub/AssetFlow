@@ -378,6 +378,9 @@
                 <p class="text-xs text-muted mb-0" data-i18n="dashWarrantyAlertSubtitle" style="margin-top: 2px;">متابعة استباقية للأجهزة والأصول التي تقترب كفالتها وضمانها المصنعي من الانتهاء لاتخاذ الإجراءات اللازمة</p>
               </div>
               <div class="d-flex items-center gap-2">
+                <button type="button" class="btn btn-xs btn-outline-warning" id="btnQuickFilterWarranty" onclick="AssetManager.filterByWarrantyAndSwitch('expiring_30d')">
+                  <i class="fas fa-filter"></i> <span data-i18n="quickFilter30d">تصفية سريعة (30 يوماً)</span>
+                </button>
                 <button type="button" class="btn btn-xs btn-secondary" id="btnOpenWarrantyReport" onclick="App.openWarrantyReport()">
                   <i class="fas fa-file-alt"></i> <span data-i18n="viewFullWarrantyReport">عرض تقرير الضمان الشامل</span>
                 </button>
@@ -390,27 +393,47 @@
             <!-- Warranty KPI Metrics Row -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 14px;">
               <!-- Expiring Soon in <= 30 Days (Primary Alert Focus) -->
-              <div class="p-3 border rounded text-center" id="dashWarrantyBox30d" style="background: var(--surface-color); border-color: rgba(245, 158, 11, 0.4) !important; cursor: pointer;" onclick="App.openWarrantyReport()">
+              <div class="p-3 border rounded text-center" id="dashWarrantyBox30d" style="background: var(--surface-color); border-color: rgba(245, 158, 11, 0.4) !important; cursor: pointer;" onclick="AssetManager.filterByWarrantyAndSwitch('expiring_30d')">
                 <div class="text-xs text-muted mb-1" data-i18n="dashWarrantyCount30d">ينتهي خلال 30 يوماً</div>
                 <div class="font-bold text-warning" style="font-size: 24px; line-height: 1.2;" id="dashWarrantyCount30d">0</div>
+                <div class="mt-2">
+                  <span class="badge badge-warning" style="font-size: 11px; cursor: pointer;">
+                    <i class="fas fa-filter"></i> <span data-i18n="quickFilter">تصفية سريعة</span>
+                  </span>
+                </div>
               </div>
 
               <!-- Critical Expiring in <= 7 Days -->
-              <div class="p-3 border rounded text-center" id="dashWarrantyBox7d" style="background: var(--surface-color); border-color: rgba(239, 68, 68, 0.35) !important; cursor: pointer;" onclick="App.openWarrantyReport()">
+              <div class="p-3 border rounded text-center" id="dashWarrantyBox7d" style="background: var(--surface-color); border-color: rgba(239, 68, 68, 0.35) !important; cursor: pointer;" onclick="AssetManager.filterByWarrantyAndSwitch('expiring_7d')">
                 <div class="text-xs text-muted mb-1" data-i18n="dashWarrantyCount7d">حرج (خلال 7 أيام)</div>
                 <div class="font-bold text-danger" style="font-size: 24px; line-height: 1.2;" id="dashWarrantyCount7d">0</div>
+                <div class="mt-2">
+                  <span class="badge badge-danger" style="font-size: 11px; cursor: pointer;">
+                    <i class="fas fa-filter"></i> <span data-i18n="quickFilter">تصفية سريعة</span>
+                  </span>
+                </div>
               </div>
 
               <!-- Already Expired -->
-              <div class="p-3 border rounded text-center" id="dashWarrantyBoxExpired" style="background: var(--surface-color); cursor: pointer;" onclick="App.openWarrantyReport()">
+              <div class="p-3 border rounded text-center" id="dashWarrantyBoxExpired" style="background: var(--surface-color); cursor: pointer;" onclick="AssetManager.filterByWarrantyAndSwitch('expired')">
                 <div class="text-xs text-muted mb-1" data-i18n="dashWarrantyCountExpired">منتهي الضمان</div>
                 <div class="font-bold" style="font-size: 24px; line-height: 1.2; color: var(--text-secondary);" id="dashWarrantyCountExpired">0</div>
+                <div class="mt-2">
+                  <span class="badge badge-secondary" style="font-size: 11px; cursor: pointer;">
+                    <i class="fas fa-filter"></i> <span data-i18n="quickFilter">تصفية سريعة</span>
+                  </span>
+                </div>
               </div>
 
               <!-- Active Valid Warranty -->
-              <div class="p-3 border rounded text-center" id="dashWarrantyBoxValid" style="background: var(--surface-color); cursor: pointer;" onclick="App.openWarrantyReport()">
+              <div class="p-3 border rounded text-center" id="dashWarrantyBoxValid" style="background: var(--surface-color); cursor: pointer;" onclick="AssetManager.filterByWarrantyAndSwitch('valid')">
                 <div class="text-xs text-muted mb-1" data-i18n="warrantyValid">ساري الضمان</div>
                 <div class="font-bold text-success" style="font-size: 24px; line-height: 1.2;" id="dashWarrantyCountValid">0</div>
+                <div class="mt-2">
+                  <span class="badge badge-success" style="font-size: 11px; cursor: pointer;">
+                    <i class="fas fa-filter"></i> <span data-i18n="quickFilter">تصفية سريعة</span>
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -596,6 +619,17 @@
                   placeholder="الشركة (Brand)..." data-i18n-placeholder="filterBrandPlaceholder"
                   oninput="AssetManager.handleFilterChange()"
                 >
+              </div>
+
+              <div class="filter-group">
+                <label data-i18n="warrantyStatus">حالة الضمان:</label>
+                <select id="assetFilterWarranty" class="filter-input" style="width: 328.656px;" onchange="AssetManager.handleFilterChange()">
+                  <option value="" data-i18n="filterWarrantyAll">جميع حالات الضمان</option>
+                  <option value="expiring_30d" data-i18n="filterWarrantySoon30">ينتهي خلال 30 يوماً</option>
+                  <option value="expiring_7d" data-i18n="dashWarrantyCount7d">حرج (خلال 7 أيام)</option>
+                  <option value="expired" data-i18n="filterWarrantyExpired">ضمان منتهي</option>
+                  <option value="valid" data-i18n="filterWarrantyValid">ضمان سارٍ</option>
+                </select>
               </div>
 
               <div class="filter-group" style="justify-content: flex-end;">

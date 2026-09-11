@@ -88,6 +88,7 @@ const allTargets = [
   "AssetManager.deleteAttachment",
   "AssetManager.downloadAssetQr",
   "AssetManager.filterAndSwitch",
+  "AssetManager.filterByWarrantyAndSwitch",
   "AssetManager.filterByDeptAndSwitch",
   "AssetManager.filterByEmpAndSwitch",
   "AssetManager.filterByLocAndSwitch",

@@ -4,7 +4,7 @@
  * Direct Maintenance Bridging, and Employee Device Handover Acknowledgement.
  */
 
-class HelpdeskController {
+class HelpdeskManager {
   constructor() {
     this.filterStatus = "";
     this.filterSearch = "";
@@ -1024,6 +1024,7 @@ class HelpdeskController {
 }
 
 // Global Singleton
-const Helpdesk = new HelpdeskController();
+const HelpdeskController = new HelpdeskManager();
+const Helpdesk = HelpdeskController;
 window.Helpdesk = Helpdesk;
-window.HelpdeskController = Helpdesk;
+window.HelpdeskController = HelpdeskController;
