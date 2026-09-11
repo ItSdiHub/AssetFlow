@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS public.departments (
     name_ar TEXT NOT NULL,
     name_en TEXT,
     manager_name TEXT,
+    location_id TEXT,
+    branch_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.locations (
     name_en TEXT,
     type TEXT,
     parent_id TEXT,
+    department_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -28,13 +31,16 @@ CREATE TABLE IF NOT EXISTS public.locations (
 CREATE TABLE IF NOT EXISTS public.employees (
     id TEXT PRIMARY KEY,
     employee_id TEXT,
+    employee_number TEXT,
     name_ar TEXT NOT NULL,
     name_en TEXT,
     email TEXT,
     phone TEXT,
     job_title TEXT,
     department_id TEXT,
+    office_id TEXT,
     status TEXT DEFAULT 'Active',
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -45,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.asset_types (
     name_ar TEXT NOT NULL,
     name_en TEXT,
     has_tech_specs BOOLEAN DEFAULT FALSE,
-    status TEXT DEFAULT 'Active',
+    active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -68,6 +74,15 @@ CREATE TABLE IF NOT EXISTS public.assets (
     purchase_cost NUMERIC DEFAULT 0,
     notes TEXT,
     specs JSONB DEFAULT '{}'::jsonb,
+    supplier TEXT,
+    installation_date TEXT,
+    installed_by TEXT,
+    project_id TEXT,
+    office TEXT,
+    branch_id TEXT,
+    condition TEXT,
+    handover_status TEXT,
+    assignment_date TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -130,6 +145,18 @@ CREATE TABLE IF NOT EXISTS public.warehouse_issues (
     installed_date TEXT,
     installed_location_id TEXT,
     installed_user_id TEXT,
+    installed_branch_id TEXT,
+    installed_department_id TEXT,
+    installed_office TEXT,
+    receiving_employee TEXT,
+    end_user_id TEXT,
+    installation_status TEXT,
+    installation_notes TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    delivery_date TEXT,
+    site_name TEXT,
+    administration TEXT,
+    office_name TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -217,8 +244,7 @@ CREATE TABLE IF NOT EXISTS public.licenses (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Application users are provisioned by an administrator; no default accounts
--- are inserted by the application.
+-- 15. Application Users Table
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
@@ -233,34 +259,44 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Fields used by the warehouse handoff and installation workflow.
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS supplier TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS installation_date TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS installed_by TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS project_id TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS office TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS branch_id TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS condition TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS handover_status TEXT;
-ALTER TABLE public.assets ADD COLUMN IF NOT EXISTS assignment_date TEXT;
+-- ========================================================================
+-- MIGRATION: Hierarchical integrity additions: offices & mandatory department<->location relationship
+-- ========================================================================
 
-ALTER TABLE public.departments ADD COLUMN IF NOT EXISTS location_id TEXT;
-ALTER TABLE public.departments ADD COLUMN IF NOT EXISTS branch_id TEXT;
+-- Step 1: Ensure at least one location 'loc-main' exists to satisfy default backfill (create it if missing)
+INSERT INTO public.locations (id, code, name_ar, name_en, type, parent_id, created_at)
+SELECT 'loc-main','HQ','المكتب الرئيسي - افتراضي','Main Office - Default','site', NULL, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM public.locations WHERE id = 'loc-main');
 
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS installed_branch_id TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS installed_department_id TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS installed_office TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS receiving_employee TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS end_user_id TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS installation_status TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS installation_notes TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS delivery_date TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS site_name TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS administration TEXT;
-ALTER TABLE public.warehouse_issues ADD COLUMN IF NOT EXISTS office_name TEXT;
+-- Step 2: Backfill departments.location_id for existing rows to a default 'loc-main' if missing
+UPDATE public.departments SET location_id = 'loc-main' WHERE location_id IS NULL;
 
--- A physical asset can have only one active warehouse handoff at a time.
+-- Step 3: Make department.location_id mandatory (non-nullable)
+ALTER TABLE public.departments ALTER COLUMN location_id SET NOT NULL;
+
+-- Step 4: Create indexes for the new columns
+CREATE INDEX IF NOT EXISTS departments_location_idx ON public.departments (location_id);
+CREATE INDEX IF NOT EXISTS employees_office_idx ON public.employees (office_id);
+CREATE INDEX IF NOT EXISTS locations_department_idx ON public.locations (department_id);
+CREATE INDEX IF NOT EXISTS employees_employee_number_idx ON public.employees (employee_number);
+
+-- Step 5: Add foreign key constraint from departments.location_id -> locations.id
+ALTER TABLE public.departments
+    ADD CONSTRAINT IF NOT EXISTS departments_location_fk FOREIGN KEY (location_id)
+    REFERENCES public.locations(id) ON DELETE RESTRICT;
+
+-- Step 6: Add foreign key from employees.office_id -> locations.id (office locations)
+ALTER TABLE public.employees
+    ADD CONSTRAINT IF NOT EXISTS employees_office_fk FOREIGN KEY (office_id)
+    REFERENCES public.locations(id) ON DELETE SET NULL;
+
+-- Note: We avoid adding a strict FK from locations.department_id -> departments.id to prevent circular dependency
+-- Instead locations.department_id is used to tag office locations with their owning department (enforced at app level)
+
+-- ========================================================================
+-- Unique Constraints for Data Integrity
+-- ========================================================================
+
 CREATE UNIQUE INDEX IF NOT EXISTS assets_asset_id_unique
 ON public.assets (asset_id);
 
@@ -287,45 +323,6 @@ ON public.licenses (license_no);
 CREATE UNIQUE INDEX IF NOT EXISTS warehouse_issues_one_open_asset_idx
 ON public.warehouse_issues (asset_id)
 WHERE status IN ('Issued', 'In Transit', 'Awaiting Installation');
-
--- ========================================================================
--- Hierarchical integrity additions: offices & mandatory department<->location relationship
--- ========================================================================
-
--- Add department linkage on locations (so an office location can reference its parent department)
-ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS department_id TEXT;
-
--- Add office reference on employees (employee must belong to an office location)
-ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS office_id TEXT;
-
--- Backfill departments.location_id for existing rows to a default 'loc-main' if missing
-UPDATE public.departments SET location_id = 'loc-main' WHERE location_id IS NULL;
-
--- Ensure at least one location 'loc-main' exists to satisfy default backfill (create it if missing)
-INSERT INTO public.locations (id, code, name_ar, name_en, type, parent_id, created_at)
-SELECT 'loc-main','HQ','المكتب الرئيسي - افتراضي','Main Office - Default','site', NULL, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM public.locations WHERE id = 'loc-main');
-
--- Make department.location_id mandatory (non-nullable)
-ALTER TABLE public.departments ALTER COLUMN location_id SET NOT NULL;
-
--- Create indexes for the new columns
-CREATE INDEX IF NOT EXISTS departments_location_idx ON public.departments (location_id);
-CREATE INDEX IF NOT EXISTS employees_office_idx ON public.employees (office_id);
-CREATE INDEX IF NOT EXISTS locations_department_idx ON public.locations (department_id);
-
--- Add foreign key constraint from departments.location_id -> locations.id
-ALTER TABLE public.departments
-    ADD CONSTRAINT IF NOT EXISTS departments_location_fk FOREIGN KEY (location_id)
-    REFERENCES public.locations(id) ON DELETE RESTRICT;
-
--- Add foreign key from employees.office_id -> locations.id (office locations)
-ALTER TABLE public.employees
-    ADD CONSTRAINT IF NOT EXISTS employees_office_fk FOREIGN KEY (office_id)
-    REFERENCES public.locations(id) ON DELETE SET NULL;
-
--- Note: We avoid adding a strict FK from locations.department_id -> departments.id to prevent circular dependency
--- Instead locations.department_id is used to tag office locations with their owning department (enforced at app level)
 
 -- ========================================================================
 -- Enable Row Level Security (RLS) & Allow Anonymous Read/Write with anon key
