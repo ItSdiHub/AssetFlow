@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-let PORT = parseInt(process.env.PORT, 10) || 3000;
-const MAX_PORT_ATTEMPTS = 10;
+const PORT = 3000;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -74,13 +73,8 @@ function createServerInstance(port) {
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.warn(`[Warning] Port ${port} is currently in use. Retrying on port ${port + 1}...`);
-      if (port - PORT < MAX_PORT_ATTEMPTS) {
-        createServerInstance(port + 1);
-      } else {
-        console.error(`[Error] Could not find an open port between ${PORT} and ${port}.`);
-        process.exit(1);
-      }
+      console.error(`[Error] Port ${port} is already in use.`);
+      process.exit(1);
     } else {
       console.error('[Error] Server error:', err);
     }

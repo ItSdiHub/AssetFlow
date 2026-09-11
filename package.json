@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "build": "node -c server.js js/*.js",
+    "lint": "node -c server.js js/*.js",
     "test": "node test_e2e_simulation.js"
   },
   "keywords": [

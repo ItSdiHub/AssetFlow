@@ -131,6 +131,10 @@ const I18N = {
     saveDraftSuccess: "تم حفظ مسودة التركيب بنجاح",
     selectOffice: "اختر المكتب (من قاعدة البيانات)",
     searchOffice: "ابحث في المكاتب...",
+    officeLocation: "مكتب التابعية (الموقع)",
+    officeHint: "يتم تحديد قائمة المكاتب بناءً على القسم المختار. اختر الموقع/المكتب التابع لهذا الموظف.",
+    selectLocation: "اختر موقع رئيسي",
+    locationHint: "يتم ربط القسم بالموقع الرئيسي له (الفرع أو المكتب الرئيسي). هذا الحقل إلزامي.",
     // New delivery destination fields
     siteName: "اسم الموقع",
     administration: "الإدارة",
@@ -1234,6 +1238,10 @@ const I18N = {
     saveDraftSuccess: "Installation draft saved successfully",
     selectOffice: "Select Office (from database)",
     searchOffice: "Search offices...",
+    officeLocation: "Assigned Office (Location)",
+    officeHint: "Office list is filtered based on the selected department. Choose the office for this employee.",
+    selectLocation: "Select Main Location",
+    locationHint: "Links the department to its primary location (branch or headquarters). This field is required.",
     // New delivery destination fields
     siteName: "Site Name",
     administration: "Administration",

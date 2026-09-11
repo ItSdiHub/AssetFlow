@@ -11,10 +11,10 @@ const SUPABASE_CONFIG = {
   url: "https://xzfudqyctujxlhbgpdbs.supabase.co",
   anonKey: "sb_publishable_frNz4FgL329ldYzbHhKrEA_PwiIv7nL",
   enabled: true,
-  allowDemoSeed: false
+  allowDemoSeed: true
 };
-const PRODUCTION_CLOUD_REQUIRED = true;
-const STRICT_CLOUD_ONLY = true;
+const PRODUCTION_CLOUD_REQUIRED = false;
+const STRICT_CLOUD_ONLY = false;
 
 const STORE_TABLE_MAP = {
   assets: "assets",

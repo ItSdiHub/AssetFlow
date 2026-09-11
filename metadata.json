@@ -1,0 +1,8 @@
+{
+  "name": "SDI IT Asset Hub",
+  "description": "Enterprise IT Asset Management & Helpdesk Service Hub",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
