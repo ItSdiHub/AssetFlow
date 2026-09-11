@@ -60,6 +60,7 @@ const allTargets = [
   "App.exportReportCSV",
   "App.exportReportPDF",
   "App.filterActiveMaintenanceAndSwitch",
+  "App.openWarrantyReport",
   "App.generateSelectedReport",
   "App.handleLoginSubmit",
   "App.handleManualScanSubmit",

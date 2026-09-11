@@ -968,6 +968,16 @@ const I18N = {
     projectInProgressNote: "قيد المتابعة والتنفيذ",
     projectDueAlertText: "تاريخ الانتهاء المخطط:",
 
+    // Dashboard Warranty Expiry Alerts (تنبيهات انتهاء فترات الضمان)
+    dashWarrantyAlertTitle: "تنبيهات انتهاء فترات الضمان (خلال الـ 30 يوماً القادمة)",
+    dashWarrantyAlertSubtitle: "متابعة استباقية للأجهزة والأصول التي تقترب كفالتها وضمانها المصنعي من الانتهاء لاتخاذ الإجراءات اللازمة",
+    dashWarrantyCount30d: "ينتهي خلال 30 يوماً",
+    dashWarrantyCount7d: "حرج (خلال 7 أيام)",
+    dashWarrantyCountExpired: "منتهي الضمان",
+    dashWarrantyNoAlerts: "لا توجد أصول تنتهي فترة ضمانها خلال الـ 30 يوماً القادمة",
+    dashWarrantyNoAlertsDesc: "كافة الأصول والمعدات الخاضعة للضمان تتمتع بتغطية سارية ومستقرة",
+    viewFullWarrantyReport: "عرض تقرير الضمان الشامل",
+
     // Color Themes & Appearance
     themeSettingsTitle: "تخصيص ألوان ومظهر النظام",
     themeDisplayMode: "وضع العرض",
@@ -2095,6 +2105,16 @@ const I18N = {
     projectOverdueAlert: "Warning: Overdue past planned completion date",
     projectInProgressNote: "Under active execution",
     projectDueAlertText: "Planned End Date:",
+
+    // Dashboard Warranty Expiry Alerts
+    dashWarrantyAlertTitle: "Warranty Expiration Alerts (Within Next 30 Days)",
+    dashWarrantyAlertSubtitle: "Proactive tracking of IT assets nearing the end of their manufacturer warranty for timely renewals",
+    dashWarrantyCount30d: "Expiring in 30 Days",
+    dashWarrantyCount7d: "Critical (≤ 7 Days)",
+    dashWarrantyCountExpired: "Expired Warranty",
+    dashWarrantyNoAlerts: "No assets with warranty expiring within the next 30 days",
+    dashWarrantyNoAlertsDesc: "All warrantied assets and equipment currently have active, valid coverage",
+    viewFullWarrantyReport: "View Full Warranty Report",
 
     // Color Themes & Appearance
     themeSettingsTitle: "Customize Theme & Colors",

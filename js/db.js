@@ -2061,7 +2061,7 @@ class DBEngine {
           serial: "FG904412B",
           status: "Assigned",
           purchaseDate: "2023-08-12",
-          warrantyExpiry: "2026-08-12",
+          warrantyExpiry: "2026-10-05",
           purchaseCost: 9800,
           supplier: "ScreenCheck Middle East",
           departmentId: "dept-cs",
@@ -2083,7 +2083,7 @@ class DBEngine {
           serial: "HK88921004",
           status: "Assigned",
           purchaseDate: "2023-09-01",
-          warrantyExpiry: "2026-09-01",
+          warrantyExpiry: "2026-09-28",
           purchaseCost: 1850,
           supplier: "Al Falak Security",
           departmentId: "dept-admin",
@@ -2317,6 +2317,14 @@ class DBEngine {
         if (!a.barcodeValue && a.assetId) {
           const numPart = a.assetId.replace("AST-", "").padStart(9, "0");
           a.barcodeValue = "629" + numPart;
+          modified = true;
+        }
+        if (a.id === "ast-000005" && a.warrantyExpiry === "2026-09-01") {
+          a.warrantyExpiry = "2026-09-28";
+          modified = true;
+        }
+        if (a.id === "ast-000004" && a.warrantyExpiry === "2026-08-12") {
+          a.warrantyExpiry = "2026-10-05";
           modified = true;
         }
         if (modified) {

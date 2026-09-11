@@ -610,6 +610,155 @@ class Application {
       }
     }
 
+    // =========================================================================
+    // WARRANTY EXPIRATION ALERTS (Within Next 30 Days)
+    // =========================================================================
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+
+    const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+    const deptMap = Object.fromEntries(departments.map(d => [d.id, lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)]));
+    const locMap = Object.fromEntries(locations.map(l => [l.id, lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
+    const typeMap = Object.fromEntries(assetTypes.map(t => [t.id, lang === "ar" ? t.nameAr : (t.nameEn || t.nameAr)]));
+
+    const expiringSoonAssets = [];
+    let countWarrantyExpiring30d = 0;
+    let countWarrantyExpiring7d = 0;
+    let countWarrantyExpired = 0;
+    let countWarrantyValid = 0;
+
+    assets.forEach(a => {
+      if (!a.warrantyExpiry) return;
+      const st = (a.status || "").trim();
+      if (st === "Disposed" || st === "Retired") return;
+
+      const parts = String(a.warrantyExpiry).split("-");
+      if (parts.length !== 3) return;
+      const expDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      if (isNaN(expDate.getTime())) return;
+      expDate.setHours(0, 0, 0, 0);
+
+      const diffTime = expDate.getTime() - todayDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        countWarrantyExpired++;
+      } else if (diffDays <= 30) {
+        countWarrantyExpiring30d++;
+        if (diffDays <= 7) {
+          countWarrantyExpiring7d++;
+        }
+        expiringSoonAssets.push({
+          asset: a,
+          diffDays,
+          isCritical: diffDays <= 7,
+          isToday: diffDays === 0
+        });
+      } else {
+        countWarrantyValid++;
+      }
+    });
+
+    // Update Warranty Counters
+    setElem("dashWarrantyCount30d", countWarrantyExpiring30d);
+    setElem("dashWarrantyCount7d", countWarrantyExpiring7d);
+    setElem("dashWarrantyCountExpired", countWarrantyExpired);
+    setElem("dashWarrantyCountValid", countWarrantyValid);
+
+    const warrantyBadge = document.getElementById("dashWarrantyAlertCountBadge");
+    if (warrantyBadge) {
+      warrantyBadge.textContent = countWarrantyExpiring30d;
+      warrantyBadge.className = countWarrantyExpiring7d > 0
+        ? "badge badge-danger font-bold"
+        : (countWarrantyExpiring30d > 0 ? "badge badge-warning font-bold" : "badge badge-secondary");
+    }
+
+    const warrantyAlertsBox = document.getElementById("dashWarrantyAlertsContainer");
+    if (warrantyAlertsBox) {
+      if (expiringSoonAssets.length === 0) {
+        warrantyAlertsBox.innerHTML = `
+          <div class="text-xs text-muted p-3 text-center rounded border" style="background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.2);">
+            <i class="fas fa-check-circle text-success me-1" style="font-size: 15px;"></i>
+            <span class="font-bold text-success" data-i18n="dashWarrantyNoAlerts">${I18N[lang].dashWarrantyNoAlerts}</span>
+            <span class="text-muted ms-1" data-i18n="dashWarrantyNoAlertsDesc">(${I18N[lang].dashWarrantyNoAlertsDesc})</span>
+          </div>
+        `;
+      } else {
+        // Sort: closest expiration date first
+        expiringSoonAssets.sort((a, b) => a.diffDays - b.diffDays);
+
+        let wHtml = "";
+        expiringSoonAssets.forEach(item => {
+          const a = item.asset;
+          const diffDays = item.diffDays;
+          const isCritical = item.isCritical;
+          const isToday = item.isToday;
+
+          let badgeText = "";
+          if (isToday) {
+            badgeText = lang === "ar" ? "ينتهي اليوم!" : "Expires Today!";
+          } else if (diffDays === 1) {
+            badgeText = lang === "ar" ? "متبقي يوم واحد" : "1 day left";
+          } else if (diffDays === 2) {
+            badgeText = lang === "ar" ? "متبقي يومان" : "2 days left";
+          } else if (diffDays >= 3 && diffDays <= 10) {
+            badgeText = lang === "ar" ? `متبقي ${diffDays} أيام` : `${diffDays} days left`;
+          } else {
+            badgeText = lang === "ar" ? `متبقي ${diffDays} يوم` : `${diffDays} days left`;
+          }
+          if (isCritical && !isToday) {
+            badgeText += lang === "ar" ? " (حرج)" : " (Critical)";
+          }
+
+          const badgeClass = isCritical ? "badge-danger" : "badge-warning";
+          const borderStyle = isCritical
+            ? "background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.35);"
+            : "background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.35);";
+
+          const typeName = typeMap[a.assetTypeId] || "";
+          const deptName = deptMap[a.departmentId] || "";
+          const locName = locMap[a.locationId] || "";
+          const empName = empMap[a.currentEmployeeId] || "";
+
+          wHtml += `
+            <div class="d-flex justify-between items-center p-3 rounded border" style="${borderStyle} flex-wrap: wrap; gap: 12px; transition: all 0.2s ease;">
+              <div class="d-flex items-center gap-3" style="flex: 1; min-width: 260px;">
+                <div style="width: 40px; height: 40px; border-radius: 8px; background: ${isCritical ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                  <i class="fas ${isCritical ? 'fa-exclamation-triangle text-danger' : 'fa-hourglass-half text-warning'}" style="font-size: 18px;"></i>
+                </div>
+                <div>
+                  <div class="d-flex items-center gap-2 flex-wrap">
+                    <strong class="text-sm font-bold" style="cursor: pointer; color: var(--text-primary);" onclick="AssetManager.openDetailsModal('${a.id}')" title="${lang === 'ar' ? 'عرض تفاصيل الأصل' : 'View asset details'}">${a.assetId}</strong>
+                    <span class="text-xs text-muted">&bull;</span>
+                    <span class="text-xs font-bold">${a.brand || ""} ${a.model || ""}</span>
+                    ${typeName ? `<span class="badge badge-secondary text-xs">${typeName}</span>` : ""}
+                    <span class="badge ${badgeClass} text-xs font-bold"><i class="fas ${isCritical ? 'fa-fire' : 'fa-clock'}"></i> ${badgeText}</span>
+                  </div>
+                  <div class="text-xs text-muted d-flex items-center gap-3 flex-wrap mt-1">
+                    <span><i class="far fa-calendar-alt text-warning"></i> <strong>${lang === 'ar' ? 'تاريخ الانتهاء:' : 'Expiry Date:'}</strong> ${a.warrantyExpiry}</span>
+                    ${a.serial ? `<span><i class="fas fa-barcode"></i> S/N: <code>${a.serial}</code></span>` : ""}
+                    ${locName ? `<span><i class="fas fa-map-marker-alt"></i> ${locName}</span>` : ""}
+                    ${deptName ? `<span><i class="fas fa-building"></i> ${deptName}</span>` : ""}
+                    ${empName ? `<span><i class="fas fa-user"></i> ${empName}</span>` : ""}
+                    ${a.supplier ? `<span><i class="fas fa-truck"></i> ${a.supplier}</span>` : ""}
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex items-center gap-2" style="flex-shrink: 0;">
+                <button type="button" class="btn btn-primary btn-xs" onclick="AssetManager.openDetailsModal('${a.id}')" title="${lang === 'ar' ? 'عرض تفاصيل الأصل' : 'View asset details'}">
+                  <i class="fas fa-eye"></i> <span>${lang === 'ar' ? 'التفاصيل' : 'Details'}</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="AssetManager.openActivityTimeline('${a.id}')" title="${lang === 'ar' ? 'سجل الأنشطة والعمليات' : 'Activity timeline'}">
+                  <i class="fas fa-stream"></i> <span>${lang === 'ar' ? 'السجل الزمني' : 'Timeline'}</span>
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        warrantyAlertsBox.innerHTML = wHtml;
+      }
+    }
+
     // Set Operational Status Indicators
     setElem("dashCountTotal", countTotal);
     setElem("dashCountAssigned", countAssigned);
@@ -719,6 +868,16 @@ class Application {
     if (window.MaintManager) {
       MaintManager.render();
     }
+  }
+
+  openWarrantyReport() {
+    this.switchTab('reports');
+    const select = document.getElementById('reportSelect');
+    if (select) {
+      select.value = 'warranty';
+      this.handleReportTypeChange();
+    }
+    this.generateSelectedReport();
   }
 
   // =========================================================================
