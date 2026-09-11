@@ -1,29 +1,35 @@
-<!-- EMPLOYEE FORM WITH OFFICE FIELD -->
-<!-- This snippet replaces the employee modal form section around line 3447 -->
+<!-- FILE: index.html - EMPLOYEE MODAL UPDATE
+     Location in file: After line 3454 (after formEmpDept select closing tag)
+     This adds the NEW office field to the Employee Add/Edit Form -->
 
-<!-- Add this NEW field after Department field (formEmpDept) -->
+<!-- INSERT THIS AFTER THE DEPARTMENT (formEmpDept) FIELD -->
+
 <div class="form-group">
-  <label><span data-i18n="location">مكتب التابعية (الموقع)</span>*</label>
-  <select id="formEmpOffice" class="form-control" required onchange="EmployeeManager.onOfficeChange()">
-    <option value="">اختر مكتب...</option>
+  <label><span data-i18n="officeLocation">مكتب التابعية (الموقع)</span></label>
+  <select id="formEmpOffice" class="form-control" onchange="UserManager.onEmployeeOfficeChange()">
+    <option value="">-- <span data-i18n="selectOffice">اختر مكتب (اختياري)</span> --</option>
     <!-- Populated via JS - filters by department -->
   </select>
   <small class="text-muted" style="display: block; margin-top: 4px;">
-    <i class="fas fa-info-circle"></i> <span data-i18n="officeHint">يتم تحديد قائمة المكاتب بناءً على القسم المختار</span>
+    <i class="fas fa-info-circle"></i> <span data-i18n="officeHint">يتم تحديد قائمة المكاتب بناءً على القسم المختار. اختر الموقع/المكتب التابع لهذا الموظف.</span>
   </small>
 </div>
 
-<!-- DEPARTMENT FORM WITH LOCATION FIELD -->
-<!-- This snippet replaces the department modal form section around line 3515 -->
+<!-- ================================================================
+     DEPARTMENT MODAL UPDATE
+     Location in file: After line 3527 (after formDeptNameEn field)
+     This adds the NEW location field to the Department Add/Edit Form
+     ================================================================ -->
 
-<!-- Add this NEW field after manager name or before save button -->
+<!-- INSERT THIS AFTER THE DEPARTMENT NAME (formDeptNameEn) FIELD -->
+
 <div class="form-group">
-  <label><span data-i18n="location">الموقع الرئيسي (الفرع)</span>*</label>
+  <label><span data-i18n="location">الموقع الرئيسي (الفرع)</span><span style="color: red;">*</span></label>
   <select id="formDeptLocation" class="form-control" required>
-    <option value="">اختر موقع...</option>
+    <option value="">-- <span data-i18n="selectLocation">اختر موقع رئيسي</span> --</option>
     <!-- Populated via JS -->
   </select>
   <small class="text-muted" style="display: block; margin-top: 4px;">
-    <i class="fas fa-info-circle"></i> <span data-i18n="locationHint">يتم ربط القسم بالموقع الرئيسي له (الفرع أو المكتب الرئيسي)</span>
+    <i class="fas fa-info-circle"></i> <span data-i18n="locationHint">يتم ربط القسم بالموقع الرئيسي له (الفرع أو المكتب الرئيسي). هذا الحقل إلزامي.</span>
   </small>
 </div>
