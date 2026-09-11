@@ -2111,6 +2111,82 @@
     </div>
   </div>
 
+  <!-- MODAL: Asset Activity Chronological Timeline & Audit Trail (Side-Panel / Modal View) -->
+  <div class="modal-container" id="assetTimelineModal">
+    <div class="modal-backdrop" onclick="App.closeModal('assetTimelineModal')"></div>
+    <div class="modal-content timeline-modal-dialog" style="max-width: 900px; width: 95vw; max-height: 94vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+      <!-- Header -->
+      <div class="modal-header d-flex justify-between items-center" style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);">
+        <div class="d-flex items-center gap-3">
+          <div class="timeline-header-icon" style="width: 36px; height: 36px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan);">
+            <i class="fas fa-stream fa-lg"></i>
+          </div>
+          <div>
+            <div class="d-flex items-center gap-2">
+              <h3 id="timelineModalAssetId" class="font-bold text-primary" style="margin: 0;">AST-000001</h3>
+              <span id="timelineModalStatusBadge" class="badge">Available</span>
+            </div>
+            <div class="text-xs text-muted" id="timelineModalAssetSubtitle" style="margin-top: 2px;">
+              <span data-i18n="activityTimeline">سجل الأنشطة والعمليات الزمني</span> &bull; <span id="timelineAssetSpecsSummary">-</span>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnPrintTimelineReport" onclick="AssetManager.printAssetTimeline()" title="Print Timeline">
+            <i class="fas fa-print"></i> <span data-i18n="printTimeline">طباعة السجل</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnBackToAssetDetails" onclick="AssetManager.returnToDetailsModal()" title="Back to Details">
+            <i class="fas fa-arrow-left"></i> <span data-i18n="backToDetails">العودة لتفاصيل الأصل</span>
+          </button>
+          <button type="button" class="modal-close-btn" onclick="App.closeModal('assetTimelineModal')">&times;</button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Summary Bar -->
+      <div class="timeline-summary-bar p-3 border-b" style="background: rgba(255, 255, 255, 0.02); display: flex; gap: 10px; flex-wrap: wrap; align-items: center;" id="timelineSummaryBar">
+        <!-- Injected via JS (Total, Status changes, Movements, Updates, Maintenance) -->
+      </div>
+
+      <!-- Filters & Controls Bar -->
+      <div class="timeline-controls-bar p-3 border-b d-flex justify-between items-center gap-2 flex-wrap" style="background: var(--bg-surface);">
+        <div class="d-flex items-center gap-2 flex-wrap" id="timelineTypeFilterGroup">
+          <button type="button" class="btn btn-xs btn-primary timeline-filter-btn active" data-filter="all" onclick="AssetManager.filterTimelineByType('all')">
+            <span data-i18n="filterAllActivities">كافة الأنشطة</span> (<span id="timelineCountAll">0</span>)
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary timeline-filter-btn" data-filter="status" onclick="AssetManager.filterTimelineByType('status')">
+            <i class="fas fa-tag text-warning"></i> <span data-i18n="filterStatusChanges">تغييرات الحالة</span> (<span id="timelineCountStatus">0</span>)
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary timeline-filter-btn" data-filter="movement" onclick="AssetManager.filterTimelineByType('movement')">
+            <i class="fas fa-truck text-purple"></i> <span data-i18n="filterMovements">النقل وتغيير الموقع</span> (<span id="timelineCountMove">0</span>)
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary timeline-filter-btn" data-filter="custody" onclick="AssetManager.filterTimelineByType('custody')">
+            <i class="fas fa-user-check text-success"></i> <span data-i18n="filterCustody">العهدة والتسليم</span> (<span id="timelineCountCustody">0</span>)
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary timeline-filter-btn" data-filter="update" onclick="AssetManager.filterTimelineByType('update')">
+            <i class="fas fa-edit text-info"></i> <span data-i18n="filterDetailsUpdates">تحديث البيانات والمواصفات</span> (<span id="timelineCountUpdate">0</span>)
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary timeline-filter-btn" data-filter="maint" onclick="AssetManager.filterTimelineByType('maint')">
+            <i class="fas fa-tools text-danger"></i> <span data-i18n="filterMaintenance">الصيانة والإصلاح</span> (<span id="timelineCountMaint">0</span>)
+          </button>
+        </div>
+
+        <div class="d-flex items-center gap-2">
+          <div style="position: relative; min-width: 200px;">
+            <input type="text" id="timelineSearchInput" class="form-control form-control-sm" placeholder="Search..." oninput="AssetManager.handleTimelineSearch(this.value)">
+          </div>
+          <button type="button" class="btn btn-xs btn-secondary" id="btnToggleTimelineSort" onclick="AssetManager.toggleTimelineSortOrder()" title="Toggle chronological order">
+            <i class="fas fa-sort-amount-down" id="timelineSortIcon"></i> <span id="timelineSortLabel" data-i18n="newestFirst">الأحدث أولاً</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Timeline Body -->
+      <div class="modal-body p-4" id="assetTimelineBody" style="overflow-y: auto; flex: 1; min-height: 380px;">
+        <!-- Timeline items injected via JS -->
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Assign Asset to Employee -->
   <div class="modal-container" id="assignModal">
     <div class="modal-backdrop"></div>

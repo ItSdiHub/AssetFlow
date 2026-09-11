@@ -1379,6 +1379,8 @@ class DBEngine {
     toDepartmentId = null,
     fromLocationId = null,
     toLocationId = null,
+    fromStatus = null,
+    toStatus = null,
     transactionDate = null,
     performedBy = "System",
     notes = ""
@@ -1394,6 +1396,8 @@ class DBEngine {
       toDepartmentId,
       fromLocationId,
       toLocationId,
+      fromStatus,
+      toStatus,
       transactionDate: transactionDate || new Date().toISOString().replace("T", " ").substring(0, 19),
       performedBy,
       notes: notes || ""

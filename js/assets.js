@@ -161,6 +161,9 @@ class AssetInventoryManager {
               <button class="btn btn-xs btn-secondary" onclick="AssetManager.openDetailsModal('${asset.id}')" title="${I18N[lang].viewDetails || 'عرض التفاصيل'}">
                 <i class="fas fa-eye"></i>
               </button>
+              <button class="btn btn-xs btn-secondary" onclick="AssetManager.openActivityTimeline('${asset.id}')" title="${I18N[lang].activityTimeline || 'سجل الأنشطة والعمليات'}">
+                <i class="fas fa-stream text-primary"></i>
+              </button>
               ${!isViewer ? `
                 <button class="btn btn-xs btn-secondary" onclick="AssetManager.openEditModal('${asset.id}')" title="${I18N[lang].btnEdit || 'تعديل'}">
                   <i class="fas fa-edit"></i>
@@ -798,6 +801,97 @@ class AssetInventoryManager {
       };
 
       await db.put("assets", updatedAsset);
+
+      // Log transactions for changes (Audit Trail & Activity Timeline)
+      try {
+        const currentUserName = AppState.currentUser ? (typeof getUserDisplayName === "function" ? getUserDisplayName(AppState.currentUser, AppState.lang) : (AppState.currentUser.fullName || AppState.currentUser.username)) : "Admin";
+        const isAr = AppState.lang === "ar";
+
+        // 1. Status Changed
+        if (existing.status !== status) {
+          await db.logTransaction({
+            assetId: internalId,
+            transactionType: "Status Changed",
+            fromStatus: existing.status,
+            toStatus: status,
+            transactionDate: now,
+            performedBy: currentUserName,
+            notes: isAr 
+              ? `تغيير حالة الأصل من [${existing.status}] إلى [${status}] عبر تعديل البيانات`
+              : `Status changed from [${existing.status}] to [${status}] via edit form`
+          });
+        }
+
+        // 2. Location or Department Moved
+        if (existing.locationId !== locationId || existing.departmentId !== departmentId) {
+          await db.logTransaction({
+            assetId: internalId,
+            transactionType: "Moved",
+            fromLocationId: existing.locationId || null,
+            toLocationId: locationId || null,
+            fromDepartmentId: existing.departmentId || null,
+            toDepartmentId: departmentId || null,
+            transactionDate: now,
+            performedBy: currentUserName,
+            notes: isAr 
+              ? `نقل الأصل وتعديل موقعه أو قسمه عبر تعديل البيانات`
+              : `Asset location or department updated via edit form`
+          });
+        }
+
+        // 3. Custody Assignment Change
+        if (existing.currentEmployeeId !== currentEmployeeId) {
+          await db.logTransaction({
+            assetId: internalId,
+            transactionType: currentEmployeeId ? "Assigned" : "Returned",
+            fromEmployeeId: existing.currentEmployeeId || null,
+            toEmployeeId: currentEmployeeId || null,
+            transactionDate: now,
+            performedBy: currentUserName,
+            notes: isAr 
+              ? (currentEmployeeId ? `إسناد العهدة لموظف جديد عبر تعديل البيانات` : `إلغاء تخصيص العهدة عبر تعديل البيانات`)
+              : (currentEmployeeId ? `Custody assigned to employee via edit form` : `Custody cleared via edit form`)
+          });
+        }
+
+        // 4. Details & Technical Specs Updated
+        const fieldsToCheck = [
+          { key: "brand", label: isAr ? "الماركة" : "Brand" },
+          { key: "model", label: isAr ? "الموديل" : "Model" },
+          { key: "serial", label: isAr ? "الرقم التسلسلي" : "Serial" },
+          { key: "purchaseCost", label: isAr ? "سعر الشراء" : "Cost" },
+          { key: "supplier", label: isAr ? "المورد" : "Supplier" },
+          { key: "computerName", label: isAr ? "اسم الجهاز" : "Hostname" },
+          { key: "os", label: isAr ? "نظام التشغيل" : "OS" },
+          { key: "cpu", label: isAr ? "المعالج" : "CPU" },
+          { key: "ram", label: isAr ? "الذاكرة" : "RAM" },
+          { key: "storage", label: isAr ? "التخزين" : "Storage" },
+          { key: "ip", label: isAr ? "عنوان IP" : "IP" },
+          { key: "mac", label: isAr ? "عنوان MAC" : "MAC" }
+        ];
+
+        const fieldDiffs = [];
+        fieldsToCheck.forEach(f => {
+          const oldVal = (existing[f.key] || "").toString().trim();
+          const newVal = (updatedAsset[f.key] || "").toString().trim();
+          if (oldVal !== newVal) {
+            fieldDiffs.push(`${f.label}: "${oldVal || '-'}" → "${newVal || '-'}"`);
+          }
+        });
+
+        if (fieldDiffs.length > 0) {
+          await db.logTransaction({
+            assetId: internalId,
+            transactionType: "Details Updated",
+            transactionDate: now,
+            performedBy: currentUserName,
+            notes: (isAr ? "تحديث بيانات ومواصفات الأصل: " : "Updated asset specifications: ") + fieldDiffs.join(" | ")
+          });
+        }
+      } catch (logErr) {
+        console.warn("[handleSaveAsset] Failed to log audit transaction:", logErr);
+      }
+
       App.showToast(I18N[AppState.lang].saveSuccess, "success");
     }
 
@@ -884,7 +978,12 @@ class AssetInventoryManager {
     const lang = AppState.lang;
     const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
     if (isViewer) {
-      container.innerHTML = `<span class="text-muted text-xs"><i class="fas fa-eye"></i> ${lang === "ar" ? "وضع الاستعراض والقراءة فقط" : "View-only Mode"}</span>`;
+      container.innerHTML = `
+        <span class="text-muted text-xs mr-2"><i class="fas fa-eye"></i> ${lang === "ar" ? "وضع الاستعراض والقراءة فقط" : "View-only Mode"}</span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="AssetManager.openActivityTimeline('${asset.id}')">
+          <i class="fas fa-stream text-primary"></i> <span>${lang === "ar" ? "سجل الأنشطة والعمليات" : "Activity Timeline"}</span>
+        </button>
+      `;
       return;
     }
 
@@ -894,6 +993,9 @@ class AssetInventoryManager {
     actionsHtml += `
       <button class="btn btn-secondary btn-sm" onclick="AssetManager.openEditModal('${asset.id}')">
         <i class="fas fa-edit"></i> ${I18N[lang].btnEdit || "تعديل البيانات"}
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="AssetManager.openActivityTimeline('${asset.id}')">
+        <i class="fas fa-stream text-primary"></i> <span>${lang === "ar" ? "سجل الأنشطة والعمليات" : "Activity Timeline"}</span>
       </button>
     `;
 
@@ -1010,6 +1112,20 @@ class AssetInventoryManager {
           <div class="spec-box"><label>${I18N[lang].createdDate}</label><div>${asset.createdDate || "-"}</div></div>
           <div class="spec-box"><label>${I18N[lang].updatedDate}</label><div>${asset.updatedDate || "-"}</div></div>
         </div>
+        <div class="mt-3 p-3 rounded d-flex justify-between items-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25);">
+          <div class="d-flex items-center gap-3">
+            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan);">
+              <i class="fas fa-stream fa-lg"></i>
+            </div>
+            <div>
+              <div class="font-bold text-sm">${lang === 'ar' ? 'سجل الأنشطة والعمليات الزمني' : 'Activity Timeline & History'}</div>
+              <div class="text-xs text-muted">${lang === 'ar' ? 'استعراض زمني لكافة الحركات وتغييرات الحالة والعهدة وتحديثات المواصفات ومن قام بها' : 'Audit trail of status changes, movements, assignments, and specifications updates'}</div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="AssetManager.openActivityTimeline('${asset.id}')">
+            <i class="fas fa-history"></i> ${lang === 'ar' ? 'عرض السجل الزمني' : 'View Timeline'}
+          </button>
+        </div>
       `;
     } else if (tabName === "tech") {
       html = `
@@ -1103,16 +1219,39 @@ class AssetInventoryManager {
     } else if (tabName === "history") {
       // FULL AUDIT LOG TIMELINE
       const history = await db.getAssetHistory(asset.id);
+      
+      const timelineBanner = `
+        <div class="mb-3 p-3 rounded d-flex justify-between items-center" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25);">
+          <div class="d-flex items-center gap-3">
+            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan);">
+              <i class="fas fa-stream fa-lg"></i>
+            </div>
+            <div>
+              <div class="font-bold text-sm">${lang === 'ar' ? 'سجل الأنشطة والعمليات الزمني الشامل' : 'Chronological Activity Timeline'}</div>
+              <div class="text-xs text-muted">${lang === 'ar' ? 'عرض تسلسلي تفاعلي مع فلاتر تغيير الحالة والنقل وتحديث البيانات وخيارات الطباعة' : 'Interactive timeline view with filters for status changes, movements, updates, and export'}</div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="AssetManager.openActivityTimeline('${asset.id}')">
+            <i class="fas fa-external-link-alt"></i> ${lang === 'ar' ? 'فتح الجدول الزمني الكامل' : 'Open Full Timeline'}
+          </button>
+        </div>
+      `;
+
       if (history.length === 0) {
-        html = `<div class="text-center py-4 text-muted"><i class="fas fa-history fa-2x mb-2"></i><div>${lang === 'ar' ? 'لا توجد حركات مسجلة' : 'No transaction history recorded'}</div></div>`;
+        html = `
+          ${timelineBanner}
+          <div class="text-center py-4 text-muted"><i class="fas fa-history fa-2x mb-2"></i><div>${lang === 'ar' ? 'لا توجد حركات مسجلة' : 'No transaction history recorded'}</div></div>
+        `;
       } else {
-        html = `<div class="history-timeline">`;
+        html = `${timelineBanner}<div class="history-timeline">`;
         history.forEach(tx => {
           let typeClass = "tx-blue";
           let icon = "fa-plus-circle";
-          if (tx.transactionType === "Assigned") { typeClass = "tx-green"; icon = "fa-user-check"; }
+          if (tx.transactionType === "Assigned" || tx.transactionType === "Handover Confirmed") { typeClass = "tx-green"; icon = "fa-user-check"; }
           else if (tx.transactionType === "Returned") { typeClass = "tx-amber"; icon = "fa-undo"; }
-          else if (tx.transactionType === "Transferred") { typeClass = "tx-purple"; icon = "fa-exchange-alt"; }
+          else if (tx.transactionType === "Transferred" || tx.transactionType === "Moved") { typeClass = "tx-purple"; icon = "fa-exchange-alt"; }
+          else if (tx.transactionType === "Status Changed") { typeClass = "tx-amber"; icon = "fa-tag"; }
+          else if (tx.transactionType === "Details Updated") { typeClass = "tx-cyan"; icon = "fa-edit"; }
           else if (tx.transactionType === "Sent to Maintenance") { typeClass = "tx-red"; icon = "fa-tools"; }
           else if (tx.transactionType === "Returned from Maintenance") { typeClass = "tx-green"; icon = "fa-check"; }
           else if (tx.transactionType === "Retired" || tx.transactionType === "Disposed") { typeClass = "tx-gray"; icon = "fa-archive"; }
@@ -1254,11 +1393,17 @@ class AssetInventoryManager {
 
   formatTxType(type) {
     const lang = AppState.lang;
+    if (typeof window.formatTxType === "function") {
+      return window.formatTxType(type, lang);
+    }
     switch (type) {
       case "Added": return lang === "ar" ? "إضافة أصل جديد" : "Added";
       case "Assigned": return lang === "ar" ? "تسليم عهدة لموظف" : "Assigned";
       case "Returned": return lang === "ar" ? "إرجاع عهدة" : "Returned";
       case "Transferred": return lang === "ar" ? "نقل عهدة وموقع" : "Transferred";
+      case "Moved": return lang === "ar" ? "نقل موقع" : "Moved";
+      case "Status Changed": return lang === "ar" ? "تغيير الحالة" : "Status Changed";
+      case "Details Updated": return lang === "ar" ? "تحديث البيانات والمواصفات" : "Details Updated";
       case "Sent to Maintenance": return lang === "ar" ? "إرسال للصيانة" : "Sent to Maintenance";
       case "Returned from Maintenance": return lang === "ar" ? "استلام من الصيانة" : "Returned from Maintenance";
       case "Retired": return lang === "ar" ? "تكهين الأصل" : "Retired";
@@ -2046,12 +2191,627 @@ class AssetInventoryManager {
     `);
     printWin.document.close();
   }
+
+  // =========================================================================
+  // 8. ASSET ACTIVITY CHRONOLOGICAL TIMELINE & AUDIT TRAIL
+  // =========================================================================
+  async openActivityTimeline(assetId) {
+    if (!assetId) return;
+
+    this.timelineAssetId = assetId;
+    this.timelineFilterType = "all";
+    this.timelineSearchQuery = "";
+    this.timelineSortOrder = "desc";
+
+    const data = await this.fetchAssetTimelineData(assetId);
+    if (!data || !data.asset) {
+      App.showToast(AppState.lang === "ar" ? "تعذر تحميل بيانات الأصل" : "Could not load asset data", "error");
+      return;
+    }
+
+    this.currentTimelineData = data;
+    this.allTimelineActivities = data.activities;
+
+    // 1. Update Header Information
+    const asset = data.asset;
+    const lang = AppState.lang;
+    const isAr = lang === "ar";
+
+    const titleEl = document.getElementById("timelineModalAssetId");
+    if (titleEl) {
+      titleEl.textContent = `${asset.assetId} - ${asset.brand || ""} ${asset.model || ""}`;
+    }
+
+    const badgeEl = document.getElementById("timelineModalStatusBadge");
+    if (badgeEl) {
+      badgeEl.className = `badge ${this.getStatusBadgeClass(asset.status)}`;
+      badgeEl.textContent = this.formatStatus(asset.status);
+    }
+
+    const specsEl = document.getElementById("timelineAssetSpecsSummary");
+    if (specsEl) {
+      const typeName = data.typeObj ? (isAr ? data.typeObj.nameAr : (data.typeObj.nameEn || data.typeObj.nameAr)) : "";
+      const locName = data.locMap[asset.locationId] ? (isAr ? data.locMap[asset.locationId].nameAr : (data.locMap[asset.locationId].nameEn || data.locMap[asset.locationId].nameAr)) : "-";
+      specsEl.textContent = `${typeName ? typeName + " • " : ""}${isAr ? "الموقع:" : "Location:"} ${locName} • S/N: ${asset.serial || "-"}`;
+    }
+
+    // 2. Reset Filter buttons & Search Input
+    const filterButtons = document.querySelectorAll("#timelineTypeFilterGroup .timeline-filter-btn");
+    filterButtons.forEach(btn => {
+      const isAll = btn.getAttribute("data-filter") === "all";
+      btn.classList.toggle("active", isAll);
+      btn.classList.toggle("btn-primary", isAll);
+      btn.classList.toggle("btn-secondary", !isAll);
+    });
+
+    const searchInput = document.getElementById("timelineSearchInput");
+    if (searchInput) {
+      searchInput.value = "";
+      searchInput.placeholder = (I18N[lang] && I18N[lang].searchTimelinePlaceholder) || (isAr ? "بحث في الملاحظات أو المنفذ أو التغييرات..." : "Search notes, performed by, changes...");
+    }
+
+    const sortLabel = document.getElementById("timelineSortLabel");
+    const sortIcon = document.getElementById("timelineSortIcon");
+    if (sortLabel) sortLabel.textContent = (I18N[lang] && I18N[lang].newestFirst) || (isAr ? "الأحدث أولاً" : "Newest First");
+    if (sortIcon) sortIcon.className = "fas fa-sort-amount-down";
+
+    // 3. Render Summary Bar & Counts
+    this.renderTimelineSummaryBar();
+
+    // 4. Render Timeline entries list
+    this.renderTimelineList();
+
+    // 5. Seamless Transition: Close details modal if open and open timeline modal
+    App.closeModal("assetDetailsModal");
+    App.openModal("assetTimelineModal");
+  }
+
+  async fetchAssetTimelineData(assetId) {
+    const asset = await db.getById("assets", assetId);
+    if (!asset) return null;
+
+    const [transactions, transfers, maintenance, supportRequests, employees, departments, locations, assetTypes] = await Promise.all([
+      db.getAssetHistory(asset.id),
+      db.getAll("assetTransfers"),
+      db.getAll("maintenance"),
+      db.getAll("supportRequests"),
+      db.getAll("employees"),
+      db.getAll("departments"),
+      db.getAll("locations"),
+      db.getAll("assetTypes")
+    ]);
+
+    const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+    const deptMap = Object.fromEntries(departments.map(d => [d.id, d]));
+    const locMap = Object.fromEntries(locations.map(l => [l.id, l]));
+    const typeObj = assetTypes.find(t => t.id === asset.assetTypeId);
+
+    const activities = [];
+
+    // 1. Audit Transactions
+    transactions.forEach(tx => {
+      let category = "other";
+      if (tx.transactionType === "Status Changed") category = "status";
+      else if (tx.transactionType === "Moved" || tx.transactionType === "Transferred") category = "movement";
+      else if (["Assigned", "Received", "Returned", "Handover Confirmed", "Handover Rejected"].includes(tx.transactionType)) category = "custody";
+      else if (["Sent to Maintenance", "Returned from Maintenance", "Maintenance Ticket"].includes(tx.transactionType)) category = "maint";
+      else if (tx.transactionType === "Details Updated") category = "update";
+      else if (tx.transactionType === "Added") category = "creation";
+
+      activities.push({
+        id: `tx-${tx.id}`,
+        date: tx.transactionDate || asset.createdDate || "",
+        type: tx.transactionType,
+        category,
+        performedBy: tx.performedBy || "System",
+        notes: tx.notes || "",
+        fromEmployee: empMap[tx.fromEmployeeId],
+        toEmployee: empMap[tx.toEmployeeId],
+        fromDepartment: deptMap[tx.fromDepartmentId],
+        toDepartment: deptMap[tx.toDepartmentId],
+        fromLocation: locMap[tx.fromLocationId],
+        toLocation: locMap[tx.toLocationId],
+        fromStatus: tx.fromStatus,
+        toStatus: tx.toStatus,
+        raw: tx
+      });
+    });
+
+    // 2. Location Transfers (Reconcile any transfer not explicitly in transactions)
+    const assetTransfers = transfers.filter(t => t.assetId === asset.id);
+    assetTransfers.forEach(tr => {
+      const alreadyLogged = activities.some(a => a.date && tr.transferDate && a.date.startsWith(tr.transferDate) && a.category === "movement");
+      if (!alreadyLogged) {
+        const respEmp = empMap[tr.responsibleEmployeeId];
+        activities.push({
+          id: `trf-${tr.id}`,
+          date: tr.transferDate ? `${tr.transferDate} 10:00:00` : (tr.createdAt || asset.createdDate || ""),
+          type: "Transferred",
+          category: "movement",
+          performedBy: respEmp ? (AppState.lang === "ar" ? (respEmp.nameAr || respEmp.name) : (respEmp.nameEn || respEmp.nameAr || respEmp.name)) : "System",
+          notes: (AppState.lang === "ar" ? `تحويل موقع برقم [${tr.transferNo || tr.id}]` : `Location Transfer [${tr.transferNo || tr.id}]`) + (tr.notes ? ` - ${tr.notes}` : ""),
+          fromLocation: locMap[tr.fromLocationId],
+          toLocation: locMap[tr.toLocationId],
+          raw: tr
+        });
+      }
+    });
+
+    // 3. Maintenance Records (Reconcile tickets)
+    const assetMaint = maintenance.filter(m => m.assetId === asset.id);
+    assetMaint.forEach(m => {
+      const alreadyLogged = activities.some(a => a.raw && (a.raw.maintenanceId === m.id || (a.notes && a.notes.includes(m.id))));
+      if (!alreadyLogged) {
+        activities.push({
+          id: `maint-${m.id}`,
+          date: m.maintenanceDate ? `${m.maintenanceDate} 09:00:00` : (m.createdAt || asset.createdDate || ""),
+          type: m.status === "Completed" ? "Returned from Maintenance" : "Sent to Maintenance",
+          category: "maint",
+          performedBy: m.technician || "Maintenance Team",
+          notes: (AppState.lang === "ar" ? `تذكرة صيانة [${m.id}]: ${m.problem || '-'}` : `Maintenance Ticket [${m.id}]: ${m.problem || '-'}`) + (m.actionTaken ? ` | ${m.actionTaken}` : ""),
+          cost: m.cost,
+          raw: m
+        });
+      }
+    });
+
+    // 4. Initial Creation Fallback
+    const hasCreation = activities.some(a => a.type === "Added" || a.category === "creation");
+    if (!hasCreation && asset.createdDate) {
+      activities.push({
+        id: `init-${asset.id}`,
+        date: asset.createdDate,
+        type: "Added",
+        category: "creation",
+        performedBy: asset.createdBy || "System",
+        notes: AppState.lang === "ar" 
+          ? `تسجيل وإدخال الأصل بالنظام لأول مرة برقم [${asset.assetId}]`
+          : `Initial asset registration in system as [${asset.assetId}]`,
+        toLocation: locMap[asset.locationId],
+        toDepartment: deptMap[asset.departmentId],
+        toEmployee: empMap[asset.currentEmployeeId],
+        raw: null
+      });
+    }
+
+    return {
+      asset,
+      activities,
+      empMap,
+      deptMap,
+      locMap,
+      typeObj
+    };
+  }
+
+  renderTimelineSummaryBar() {
+    const data = this.currentTimelineData;
+    if (!data) return;
+
+    const activities = this.allTimelineActivities;
+    const counts = {
+      all: activities.length,
+      status: activities.filter(a => a.category === "status").length,
+      movement: activities.filter(a => a.category === "movement").length,
+      custody: activities.filter(a => a.category === "custody").length,
+      update: activities.filter(a => a.category === "update").length,
+      maint: activities.filter(a => a.category === "maint").length
+    };
+
+    // Update buttons count badges
+    const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setTxt("timelineCountAll", counts.all);
+    setTxt("timelineCountStatus", counts.status);
+    setTxt("timelineCountMove", counts.movement);
+    setTxt("timelineCountCustody", counts.custody);
+    setTxt("timelineCountUpdate", counts.update);
+    setTxt("timelineCountMaint", counts.maint);
+
+    // Summary Bar Metrics
+    const bar = document.getElementById("timelineSummaryBar");
+    if (!bar) return;
+
+    const lang = AppState.lang;
+    const isAr = lang === "ar";
+    const asset = data.asset;
+    const currentCust = data.empMap[asset.currentEmployeeId];
+    const currentLoc = data.locMap[asset.locationId];
+
+    bar.innerHTML = `
+      <div class="timeline-stat-chip">
+        <i class="fas fa-list-ol text-primary"></i>
+        <span>${(I18N[lang] && I18N[lang].totalActivities) || (isAr ? "إجمالي الأنشطة:" : "Total Activities:")}</span>
+        <span class="stat-value text-primary">${counts.all}</span>
+      </div>
+      <div class="timeline-stat-chip">
+        <i class="fas fa-tag text-warning"></i>
+        <span>${(I18N[lang] && I18N[lang].statusChangesCount) || (isAr ? "تغييرات الحالة:" : "Status Changes:")}</span>
+        <span class="stat-value text-warning">${counts.status}</span>
+      </div>
+      <div class="timeline-stat-chip">
+        <i class="fas fa-truck text-purple"></i>
+        <span>${(I18N[lang] && I18N[lang].movesCount) || (isAr ? "عمليات النقل:" : "Movements:")}</span>
+        <span class="stat-value text-purple">${counts.movement}</span>
+      </div>
+      <div class="timeline-stat-chip">
+        <i class="fas fa-edit text-info"></i>
+        <span>${(I18N[lang] && I18N[lang].updatesCount) || (isAr ? "تحديثات البيانات:" : "Details Updates:")}</span>
+        <span class="stat-value text-info">${counts.update}</span>
+      </div>
+      <div class="timeline-stat-chip" style="margin-right: auto; margin-left: 0;">
+        <i class="fas fa-map-marker-alt text-danger"></i>
+        <span>${isAr ? "الموقع الحالي:" : "Current Location:"}</span>
+        <strong>${currentLoc ? (isAr ? currentLoc.nameAr : (currentLoc.nameEn || currentLoc.nameAr)) : "-"}</strong>
+      </div>
+      <div class="timeline-stat-chip">
+        <i class="fas fa-user-check text-success"></i>
+        <span>${isAr ? "العهدة الحالية:" : "Current Custodian:"}</span>
+        <strong>${currentCust ? (isAr ? (currentCust.nameAr || currentCust.name) : (currentCust.nameEn || currentCust.nameAr || currentCust.name)) : (isAr ? "غير مسند" : "Unassigned")}</strong>
+      </div>
+    `;
+  }
+
+  renderTimelineList() {
+    const body = document.getElementById("assetTimelineBody");
+    if (!body) return;
+
+    const lang = AppState.lang;
+    const isAr = lang === "ar";
+    let list = [...this.allTimelineActivities];
+
+    // Filter by Category
+    if (this.timelineFilterType && this.timelineFilterType !== "all") {
+      list = list.filter(a => a.category === this.timelineFilterType);
+    }
+
+    // Filter by Search Query
+    if (this.timelineSearchQuery) {
+      const q = this.timelineSearchQuery;
+      list = list.filter(a => {
+        const text = [
+          a.type,
+          a.notes,
+          a.performedBy,
+          a.date,
+          a.fromStatus,
+          a.toStatus,
+          a.fromLocation ? (isAr ? a.fromLocation.nameAr : a.fromLocation.nameEn) : "",
+          a.toLocation ? (isAr ? a.toLocation.nameAr : a.toLocation.nameEn) : "",
+          a.fromEmployee ? (isAr ? a.fromEmployee.nameAr : a.fromEmployee.nameEn) : "",
+          a.toEmployee ? (isAr ? a.toEmployee.nameAr : a.toEmployee.nameEn) : ""
+        ].join(" ").toLowerCase();
+        return text.includes(q);
+      });
+    }
+
+    // Sort Order
+    list.sort((a, b) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return this.timelineSortOrder === "asc" ? dateA - dateB : dateB - dateA;
+    });
+
+    if (list.length === 0) {
+      body.innerHTML = `
+        <div class="text-center py-5 text-muted">
+          <i class="fas fa-stream fa-3x mb-3 text-muted" style="opacity: 0.4;"></i>
+          <h4 class="font-bold mb-1">${(I18N[lang] && I18N[lang].noActivitiesFound) || (isAr ? "لا توجد أنشطة مسجلة" : "No activities found")}</h4>
+          <p class="text-xs text-muted">${isAr ? "لم يتم العثور على أي أحداث تطابق الفلتر أو كلمة البحث المحددة" : "No activity events match your current filter or search criteria"}</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Group activities by date (YYYY-MM-DD)
+    const groups = {};
+    list.forEach(item => {
+      const dateKey = (item.date || "Unknown").substring(0, 10);
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(item);
+    });
+
+    let html = "";
+    Object.keys(groups).forEach(dateKey => {
+      let displayDate = dateKey;
+      try {
+        const d = new Date(dateKey);
+        if (!isNaN(d.getTime())) {
+          displayDate = d.toLocaleDateString(isAr ? "ar-EG" : "en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          });
+        }
+      } catch (e) {}
+
+      html += `
+        <div class="activity-date-group">
+          <span class="activity-date-badge">
+            <i class="far fa-calendar-alt text-primary"></i> ${displayDate}
+          </span>
+        </div>
+        <div class="activity-timeline-rail">
+      `;
+
+      groups[dateKey].forEach(act => {
+        let icon = "fa-circle";
+        let nodeColor = "var(--accent-cyan)";
+        let borderColor = "rgba(59, 130, 246, 0.4)";
+
+        if (act.category === "status") {
+          icon = "fa-tag";
+          nodeColor = "var(--accent-amber)";
+          borderColor = "rgba(245, 158, 11, 0.4)";
+        } else if (act.category === "movement") {
+          icon = "fa-truck";
+          nodeColor = "var(--accent-indigo)";
+          borderColor = "rgba(99, 102, 241, 0.4)";
+        } else if (act.category === "custody") {
+          icon = act.type === "Returned" ? "fa-undo" : "fa-user-check";
+          nodeColor = act.type === "Returned" ? "var(--accent-amber)" : "var(--accent-emerald)";
+          borderColor = act.type === "Returned" ? "rgba(245, 158, 11, 0.4)" : "rgba(16, 185, 129, 0.4)";
+        } else if (act.category === "update") {
+          icon = "fa-edit";
+          nodeColor = "var(--accent-cyan)";
+          borderColor = "rgba(6, 182, 212, 0.4)";
+        } else if (act.category === "maint") {
+          icon = "fa-tools";
+          nodeColor = "var(--accent-rose)";
+          borderColor = "rgba(239, 68, 68, 0.4)";
+        } else if (act.category === "creation") {
+          icon = "fa-plus-circle";
+          nodeColor = "var(--accent-cyan)";
+          borderColor = "rgba(59, 130, 246, 0.4)";
+        }
+
+        const formattedTitle = this.formatTxType(act.type);
+
+        // Build Diff / Changes Grid if present
+        let diffItemsHtml = "";
+
+        if (act.fromStatus || act.toStatus) {
+          diffItemsHtml += `
+            <div class="diff-item">
+              <div class="diff-label">${isAr ? "الحالة" : "Status"}</div>
+              <div class="diff-values">
+                ${act.fromStatus ? `<span class="diff-val-prev">${this.formatStatus(act.fromStatus)}</span> <span class="diff-val-arrow">➔</span>` : ""}
+                <span class="diff-val-next">${this.formatStatus(act.toStatus || act.fromStatus)}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (act.fromLocation || act.toLocation) {
+          const fromLocTxt = act.fromLocation ? (isAr ? act.fromLocation.nameAr : (act.fromLocation.nameEn || act.fromLocation.nameAr)) : (isAr ? "غير محدد" : "Unspecified");
+          const toLocTxt = act.toLocation ? (isAr ? act.toLocation.nameAr : (act.toLocation.nameEn || act.toLocation.nameAr)) : "-";
+          diffItemsHtml += `
+            <div class="diff-item">
+              <div class="diff-label">${isAr ? "الموقع" : "Location"}</div>
+              <div class="diff-values">
+                <span class="diff-val-prev">${fromLocTxt}</span>
+                <span class="diff-val-arrow">➔</span>
+                <span class="diff-val-next">${toLocTxt}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (act.fromEmployee || act.toEmployee) {
+          const fromEmpTxt = act.fromEmployee ? (isAr ? (act.fromEmployee.nameAr || act.fromEmployee.name) : (act.fromEmployee.nameEn || act.fromEmployee.nameAr || act.fromEmployee.name)) : (isAr ? "لا يوجد موظف سابق" : "None");
+          const toEmpTxt = act.toEmployee ? (isAr ? (act.toEmployee.nameAr || act.toEmployee.name) : (act.toEmployee.nameEn || act.toEmployee.nameAr || act.toEmployee.name)) : (isAr ? "تم إرجاع العهدة للمستودع" : "Returned to Store");
+          diffItemsHtml += `
+            <div class="diff-item">
+              <div class="diff-label">${isAr ? "العهدة والموظف" : "Custodian"}</div>
+              <div class="diff-values">
+                <span class="diff-val-prev">${fromEmpTxt}</span>
+                <span class="diff-val-arrow">➔</span>
+                <span class="diff-val-next">${toEmpTxt}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (act.fromDepartment || act.toDepartment) {
+          const fromDeptTxt = act.fromDepartment ? (isAr ? act.fromDepartment.nameAr : (act.fromDepartment.nameEn || act.fromDepartment.nameAr)) : "-";
+          const toDeptTxt = act.toDepartment ? (isAr ? act.toDepartment.nameAr : (act.toDepartment.nameEn || act.toDepartment.nameAr)) : "-";
+          diffItemsHtml += `
+            <div class="diff-item">
+              <div class="diff-label">${isAr ? "القسم" : "Department"}</div>
+              <div class="diff-values">
+                <span class="diff-val-prev">${fromDeptTxt}</span>
+                <span class="diff-val-arrow">➔</span>
+                <span class="diff-val-next">${toDeptTxt}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        html += `
+          <div class="activity-entry">
+            <div class="activity-node-icon" style="color: ${nodeColor}; border-color: ${borderColor};">
+              <i class="fas ${icon}"></i>
+            </div>
+            <div class="activity-card" style="border-left: 3px solid ${nodeColor};">
+              <div class="activity-card-header">
+                <div class="activity-title">
+                  <span>${formattedTitle}</span>
+                </div>
+                <div class="activity-meta">
+                  <span class="activity-actor-badge">
+                    <i class="fas fa-user-shield text-primary"></i> ${act.performedBy || "System"}
+                  </span>
+                  <span>
+                    <i class="far fa-clock"></i> ${act.date || ""}
+                  </span>
+                </div>
+              </div>
+
+              ${diffItemsHtml ? `<div class="activity-diff-grid">${diffItemsHtml}</div>` : ""}
+
+              ${act.notes ? `
+                <div class="activity-notes-box">
+                  <i class="fas fa-quote-left text-muted mr-1"></i> ${act.notes}
+                </div>
+              ` : ""}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `</div>`; // end rail
+    });
+
+    body.innerHTML = html;
+  }
+
+  filterTimelineByType(type) {
+    this.timelineFilterType = type;
+    const buttons = document.querySelectorAll("#timelineTypeFilterGroup .timeline-filter-btn");
+    buttons.forEach(btn => {
+      const match = btn.getAttribute("data-filter") === type;
+      btn.classList.toggle("active", match);
+      btn.classList.toggle("btn-primary", match);
+      btn.classList.toggle("btn-secondary", !match);
+    });
+    this.renderTimelineList();
+  }
+
+  handleTimelineSearch(query) {
+    this.timelineSearchQuery = (query || "").trim().toLowerCase();
+    this.renderTimelineList();
+  }
+
+  toggleTimelineSortOrder() {
+    this.timelineSortOrder = this.timelineSortOrder === "desc" ? "asc" : "desc";
+    const lang = AppState.lang;
+    const isAr = lang === "ar";
+    const label = document.getElementById("timelineSortLabel");
+    const icon = document.getElementById("timelineSortIcon");
+
+    if (this.timelineSortOrder === "desc") {
+      if (label) label.textContent = (I18N[lang] && I18N[lang].newestFirst) || (isAr ? "الأحدث أولاً" : "Newest First");
+      if (icon) icon.className = "fas fa-sort-amount-down";
+    } else {
+      if (label) label.textContent = (I18N[lang] && I18N[lang].oldestFirst) || (isAr ? "الأقدم أولاً" : "Oldest First");
+      if (icon) icon.className = "fas fa-sort-amount-up";
+    }
+    this.renderTimelineList();
+  }
+
+  returnToDetailsModal() {
+    App.closeModal("assetTimelineModal");
+    if (this.timelineAssetId) {
+      this.openDetailsModal(this.timelineAssetId);
+    }
+  }
+
+  printAssetTimeline() {
+    const data = this.currentTimelineData;
+    if (!data || !data.asset) return;
+
+    const asset = data.asset;
+    const lang = AppState.lang;
+    const isAr = lang === "ar";
+    const activities = [...this.allTimelineActivities].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      App.showToast(isAr ? "يرجى السماح بالنوافذ المنبثقة للطباعة" : "Please allow popups to print report", "warning");
+      return;
+    }
+
+    const typeName = data.typeObj ? (isAr ? data.typeObj.nameAr : (data.typeObj.nameEn || data.typeObj.nameAr)) : "-";
+    const locName = data.locMap[asset.locationId] ? (isAr ? data.locMap[asset.locationId].nameAr : (data.locMap[asset.locationId].nameEn || data.locMap[asset.locationId].nameAr)) : "-";
+    const empName = data.empMap[asset.currentEmployeeId] ? (isAr ? (data.empMap[asset.currentEmployeeId].nameAr || data.empMap[asset.currentEmployeeId].name) : (data.empMap[asset.currentEmployeeId].nameEn || data.empMap[asset.currentEmployeeId].nameAr || data.empMap[asset.currentEmployeeId].name)) : "-";
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html dir="${isAr ? 'rtl' : 'ltr'}" lang="${lang}">
+      <head>
+        <meta charset="utf-8">
+        <title>${isAr ? 'تقرير سجل الأنشطة الزمني' : 'Asset Activity Timeline'} - ${asset.assetId}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; padding: 25px; color: #1e293b; line-height: 1.5; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0284c7; padding-bottom: 15px; margin-bottom: 20px; }
+          .title { font-size: 20px; font-weight: bold; color: #0284c7; }
+          .asset-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 20px; font-size: 13px; }
+          .timeline-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+          .timeline-table th, .timeline-table td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: ${isAr ? 'right' : 'left'}; }
+          .timeline-table th { background: #f1f5f9; font-weight: bold; }
+          .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+          .tag-status { background: #fef3c7; color: #92400e; }
+          .tag-movement { background: #e0e7ff; color: #3730a3; }
+          .tag-custody { background: #d1fae5; color: #065f46; }
+          .tag-update { background: #e0f2fe; color: #0369a1; }
+          .tag-maint { background: #fee2e2; color: #991b1b; }
+          .tag-creation { background: #e0f2fe; color: #0369a1; }
+          .tag-other { background: #f1f5f9; color: #475569; }
+          @media print { button { display: none; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="title">${isAr ? 'سجل الأنشطة والعمليات الزمني للأصل' : 'Asset Chronological Activity Audit Trail'}</div>
+            <div style="font-size: 13px; color: #64748b; margin-top: 4px;">${asset.assetId} - ${asset.brand || ''} ${asset.model || ''}</div>
+          </div>
+          <div style="text-align: ${isAr ? 'left' : 'right'}; font-size: 12px; color: #64748b;">
+            <div>${isAr ? 'تاريخ الطباعة:' : 'Printed on:'} ${new Date().toLocaleString(isAr ? 'ar-EG' : 'en-US')}</div>
+            <div>${isAr ? 'الحالة الحالية:' : 'Current Status:'} <strong>${this.formatStatus(asset.status)}</strong></div>
+          </div>
+        </div>
+
+        <div class="asset-info">
+          <div><strong>${isAr ? 'الماركة والموديل:' : 'Brand & Model:'}</strong> ${asset.brand || '-'} ${asset.model || '-'}</div>
+          <div><strong>${isAr ? 'الرقم التسلسلي:' : 'Serial Number:'}</strong> ${asset.serial || '-'}</div>
+          <div><strong>${isAr ? 'نوع الأصل:' : 'Asset Type:'}</strong> ${typeName}</div>
+          <div><strong>${isAr ? 'الموقع الحالي:' : 'Current Location:'}</strong> ${locName}</div>
+          <div><strong>${isAr ? 'العهدة الحالية:' : 'Current Custodian:'}</strong> ${empName}</div>
+          <div><strong>${isAr ? 'إجمالي الأنشطة:' : 'Total Activities:'}</strong> ${activities.length}</div>
+        </div>
+
+        <table class="timeline-table">
+          <thead>
+            <tr>
+              <th style="width: 130px;">${isAr ? 'التاريخ والوقت' : 'Date & Time'}</th>
+              <th style="width: 140px;">${isAr ? 'نوع النشاط' : 'Activity'}</th>
+              <th style="width: 120px;">${isAr ? 'المنفذ' : 'Performed By'}</th>
+              <th>${isAr ? 'تفاصيل العملية والتغييرات والملاحظات' : 'Details, Changes & Notes'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activities.map(a => `
+              <tr>
+                <td>${a.date || '-'}</td>
+                <td><span class="tag tag-${a.category}">${this.formatTxType(a.type)}</span></td>
+                <td><strong>${a.performedBy || 'System'}</strong></td>
+                <td>
+                  ${a.fromStatus || a.toStatus ? `<div><strong>${isAr ? 'الحالة:' : 'Status:'}</strong> ${a.fromStatus ? this.formatStatus(a.fromStatus) + ' ➔ ' : ''}${this.formatStatus(a.toStatus || a.fromStatus)}</div>` : ''}
+                  ${a.fromLocation || a.toLocation ? `<div><strong>${isAr ? 'الموقع:' : 'Location:'}</strong> ${(a.fromLocation ? (isAr ? a.fromLocation.nameAr : a.fromLocation.nameEn) : '-') + ' ➔ ' + (a.toLocation ? (isAr ? a.toLocation.nameAr : a.toLocation.nameEn) : '-')}</div>` : ''}
+                  ${a.fromEmployee || a.toEmployee ? `<div><strong>${isAr ? 'العهدة:' : 'Custodian:'}</strong> ${(a.fromEmployee ? (isAr ? a.fromEmployee.nameAr : a.fromEmployee.nameEn) : '-') + ' ➔ ' + (a.toEmployee ? (isAr ? a.toEmployee.nameAr : a.toEmployee.nameEn) : '-')}</div>` : ''}
+                  ${a.notes ? `<div style="color: #475569; margin-top: 2px;">${a.notes}</div>` : ''}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <script>
+          window.onload = () => { window.print(); };
+        </script>
+      </body>
+      </html>
+    `);
+    printWin.document.close();
+  }
 }
 
 // Global Singleton
 const AssetManager = new AssetInventoryManager();
 AssetManager.renderAssetList = function() { return this.render(); };
 AssetManager.applyFilters = function() { return this.handleFilterChange(); };
+AssetManager.openTimelineModal = function(assetId) { return this.openActivityTimeline(assetId); };
 AssetManager.openInstallationModal = function(assetId) {
   if (window.OpsManager && typeof window.OpsManager.openInstallationModal === "function") {
     return window.OpsManager.openInstallationModal(assetId);

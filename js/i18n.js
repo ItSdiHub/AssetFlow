@@ -259,6 +259,30 @@ const I18N = {
     assignmentInfo: "العهدة والموقع",
     maintenanceInfo: "سجل الصيانة",
     assetHistory: "سجل الحركات (History)",
+    activityTimeline: "سجل الأنشطة والعمليات الزمني",
+    timelineDesc: "تتبع زمني لكافة الحركات وتغييرات الحالة والنقل والمواصفات",
+    filterAllActivities: "كافة الأنشطة",
+    filterStatusChanges: "تغييرات الحالة",
+    filterMovements: "النقل وتغيير الموقع",
+    filterCustody: "العهدة والتسليم",
+    filterMaintenance: "الصيانة والإصلاح",
+    filterDetailsUpdates: "تحديث البيانات والمواصفات",
+    filterCreation: "الإدخال الأولي",
+    searchTimelinePlaceholder: "بحث في الملاحظات، اسم المستخدم، أو التغييرات...",
+    chronologicalOrder: "الترتيب",
+    newestFirst: "الأحدث أولاً",
+    oldestFirst: "الأقدم أولاً",
+    totalActivities: "إجمالي الأنشطة",
+    statusChangesCount: "تغييرات الحالة",
+    movesCount: "عمليات النقل",
+    updatesCount: "تحديثات البيانات",
+    maintenanceCount: "عمليات الصيانة",
+    performedByLabel: "بواسطة:",
+    noActivitiesFound: "لا توجد أنشطة مسجلة تطابق معايير الفلترة الحالية",
+    printTimeline: "طباعة السجل",
+    closeTimeline: "إغلاق",
+    backToDetails: "العودة لتفاصيل الأصل",
+    viewActivityTimeline: "عرض سجل الأنشطة الزمني",
     attachments: "المرفقات",
     computerName: "اسم الحاسوب (Computer Name)",
     operatingSystem: "نظام التشغيل (OS)",
@@ -1363,6 +1387,30 @@ const I18N = {
     assignmentInfo: "Custody & Assignment",
     maintenanceInfo: "Maintenance Records",
     assetHistory: "Asset History & Audit Log",
+    activityTimeline: "Chronological Activity Timeline",
+    timelineDesc: "Chronological audit trail of all activities, status changes, transfers, and details updates",
+    filterAllActivities: "All Activities",
+    filterStatusChanges: "Status Changes",
+    filterMovements: "Transfers & Moves",
+    filterCustody: "Custody & Handover",
+    filterMaintenance: "Maintenance & Repairs",
+    filterDetailsUpdates: "Details Updates",
+    filterCreation: "Initial Setup",
+    searchTimelinePlaceholder: "Search notes, performed by, changes...",
+    chronologicalOrder: "Order",
+    newestFirst: "Newest First",
+    oldestFirst: "Oldest First",
+    totalActivities: "Total Activities",
+    statusChangesCount: "Status Changes",
+    movesCount: "Movements",
+    updatesCount: "Details Updates",
+    maintenanceCount: "Maintenance",
+    performedByLabel: "Performed by:",
+    noActivitiesFound: "No recorded activities match the current filter criteria",
+    printTimeline: "Print Timeline",
+    closeTimeline: "Close",
+    backToDetails: "Back to Asset Details",
+    viewActivityTimeline: "View Activity Timeline",
     attachments: "Attachments",
     computerName: "Computer Name (Hostname)",
     operatingSystem: "Operating System (OS)",
@@ -2192,6 +2240,13 @@ _root.formatTxType = function(txType, lang = "ar") {
     case "Returned from Maintenance": return l === "ar" ? "استلام من الصيانة" : "Returned from Maintenance";
     case "Retired": return l === "ar" ? "تكهين الأصل" : "Retired";
     case "Disposed": return l === "ar" ? "إتلاف واستبعاد" : "Disposed";
+    case "Status Changed": return l === "ar" ? "تغيير حالة الأصل" : "Status Changed";
+    case "Moved": return l === "ar" ? "نقل وتغيير الموقع" : "Location Moved";
+    case "Details Updated": return l === "ar" ? "تحديث المواصفات والبيانات" : "Details Updated";
+    case "Handover Confirmed": return l === "ar" ? "تأكيد استلام العهدة" : "Handover Confirmed";
+    case "Handover Rejected": return l === "ar" ? "رفض استلام العهدة" : "Handover Rejected";
+    case "Maintenance Ticket": return l === "ar" ? "تذكرة صيانة" : "Maintenance Ticket";
+    case "Support Request": return l === "ar" ? "طلب دعم فني" : "Support Request";
     default: return txType || "-";
   }
 };
