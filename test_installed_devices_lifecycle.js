@@ -87,7 +87,7 @@ async function runTests() {
   const mainWarehouseLoc = { id: "loc-wh", code: "WH-MAIN", nameAr: "المستودع الرئيسي", nameEn: "Main Warehouse", isWarehouse: true };
   const khorfakkanLoc = { id: "loc-khor", code: "LOC-KHOR", nameAr: "خورفكان", nameEn: "Khorfakkan" };
   const sharjahLoc = { id: "loc-shj", code: "LOC-SHJ", nameAr: "الشارقة", nameEn: "Sharjah" };
-  const itDept = { id: "dept-it", code: "DEP-IT", nameAr: "قسم تقنية المعلومات", nameEn: "IT Department", locationId: "loc-shj" };
+  const itDept = { id: "dept-it", code: "DEP-IT", nameAr: "قسم تقنية المعلومات", nameEn: "IT Department", locationId: null };
   const netType = { id: "typ-net", code: "NET", nameAr: "مفتاح شبكة (Switch)", nameEn: "Network Switch" };
   const laptopType = { id: "typ-lap", code: "LAP", nameAr: "حاسب محمول", nameEn: "Laptop" };
   const techEmp = { id: "emp-tech1", employeeNumber: "1025", nameAr: "أحمد الفني", nameEn: "Ahmed Tech", currentEmployeeId: "emp-tech1" };
