@@ -289,6 +289,45 @@ ON public.warehouse_issues (asset_id)
 WHERE status IN ('Issued', 'In Transit', 'Awaiting Installation');
 
 -- ========================================================================
+-- Hierarchical integrity additions: offices & mandatory department<->location relationship
+-- ========================================================================
+
+-- Add department linkage on locations (so an office location can reference its parent department)
+ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS department_id TEXT;
+
+-- Add office reference on employees (employee must belong to an office location)
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS office_id TEXT;
+
+-- Backfill departments.location_id for existing rows to a default 'loc-main' if missing
+UPDATE public.departments SET location_id = 'loc-main' WHERE location_id IS NULL;
+
+-- Ensure at least one location 'loc-main' exists to satisfy default backfill (create it if missing)
+INSERT INTO public.locations (id, code, name_ar, name_en, type, parent_id, created_at)
+SELECT 'loc-main','HQ','المكتب الرئيسي - افتراضي','Main Office - Default','site', NULL, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM public.locations WHERE id = 'loc-main');
+
+-- Make department.location_id mandatory (non-nullable)
+ALTER TABLE public.departments ALTER COLUMN location_id SET NOT NULL;
+
+-- Create indexes for the new columns
+CREATE INDEX IF NOT EXISTS departments_location_idx ON public.departments (location_id);
+CREATE INDEX IF NOT EXISTS employees_office_idx ON public.employees (office_id);
+CREATE INDEX IF NOT EXISTS locations_department_idx ON public.locations (department_id);
+
+-- Add foreign key constraint from departments.location_id -> locations.id
+ALTER TABLE public.departments
+    ADD CONSTRAINT IF NOT EXISTS departments_location_fk FOREIGN KEY (location_id)
+    REFERENCES public.locations(id) ON DELETE RESTRICT;
+
+-- Add foreign key from employees.office_id -> locations.id (office locations)
+ALTER TABLE public.employees
+    ADD CONSTRAINT IF NOT EXISTS employees_office_fk FOREIGN KEY (office_id)
+    REFERENCES public.locations(id) ON DELETE SET NULL;
+
+-- Note: We avoid adding a strict FK from locations.department_id -> departments.id to prevent circular dependency
+-- Instead locations.department_id is used to tag office locations with their owning department (enforced at app level)
+
+-- ========================================================================
 -- Enable Row Level Security (RLS) & Allow Anonymous Read/Write with anon key
 -- ========================================================================
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
