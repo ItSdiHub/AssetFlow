@@ -3618,30 +3618,30 @@
               <label><span data-i18n="location">الموقع</span>*</label>
               <div style="display: flex; gap: 8px;">
                 <select id="formEmpLoc" class="form-control" required onchange="UserManager.onEmployeeLocationChange()" style="flex: 1;">
-                  <option value="">-- اختر الموقع --</option>
+                  <option value="" data-i18n="selectLocation">-- اختر الموقع --</option>
                 </select>
-                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddLocation()" title="إضافة موقع جديد"><i class="fas fa-plus"></i></button>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddLocation()" title="إضافة موقع جديد" data-i18n-title="btnAddLocationTitle"><i class="fas fa-plus"></i></button>
               </div>
             </div>
             <div class="form-group">
               <label><span data-i18n="department">القسم</span>*</label>
               <div style="display: flex; gap: 8px;">
                 <select id="formEmpDept" class="form-control" required onchange="UserManager.onEmployeeDeptChange()" style="flex: 1;" disabled>
-                  <option value="">-- اختر القسم --</option>
+                  <option value="" data-i18n="selectDepartment">-- اختر القسم --</option>
                 </select>
-                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddDepartment()" title="إضافة قسم جديد"><i class="fas fa-plus"></i></button>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddDepartment()" title="إضافة قسم جديد" data-i18n-title="btnAddDepartmentTitle"><i class="fas fa-plus"></i></button>
               </div>
             </div>
             <div class="form-group">
               <label><span data-i18n="officeLocation">المكتب</span></label>
               <div style="display: flex; gap: 8px;">
                 <select id="formEmpOffice" class="form-control" style="flex: 1;" disabled>
-                  <option value="">-- اختر مكتب (اختياري) --</option>
+                  <option value="" data-i18n="selectOfficeOptional">-- اختر مكتب (اختياري) --</option>
                 </select>
-                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddOffice()" title="إضافة مكتب جديد"><i class="fas fa-plus"></i></button>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddOffice()" title="إضافة مكتب جديد" data-i18n-title="btnAddOfficeTitle"><i class="fas fa-plus"></i></button>
               </div>
               <small class="text-muted" style="display: block; margin-top: 4px;">
-                <i class="fas fa-info-circle"></i> يتم تحديد الأقسام بناءً على الموقع، والمكاتب بناءً على القسم.
+                <i class="fas fa-info-circle"></i> <span data-i18n="locationCascadeHint">يتم تحديد الأقسام بناءً على الموقع، والمكاتب بناءً على القسم.</span>
               </small>
             </div>
 
@@ -3692,20 +3692,20 @@
     <div class="modal-backdrop"></div>
     <div class="modal-content" style="max-width: 400px;">
       <div class="modal-header">
-        <h3 id="quickAddModalTitle">إضافة سريعة</h3>
+        <h3 id="quickAddModalTitle" data-i18n="quickAddTitle">إضافة سريعة</h3>
         <button type="button" class="modal-close-btn" onclick="App.closeModal('quickAddModal')">&times;</button>
       </div>
       <form id="quickAddForm" onsubmit="UserManager.handleQuickAddSubmit(event)">
         <div class="modal-body">
           <input type="hidden" id="quickAddType">
           <div class="form-group full-width">
-            <label id="quickAddLabel">الاسم</label>
+            <label id="quickAddLabel" data-i18n="name">الاسم</label>
             <input type="text" id="quickAddInput" class="form-control" required>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="App.closeModal('quickAddModal')">إلغاء</button>
-          <button type="submit" class="btn btn-primary">حفظ وإضافة</button>
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal('quickAddModal')" data-i18n="btnCancel">إلغاء</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btnSaveAndAdd">حفظ وإضافة</button>
         </div>
       </form>
     </div>
@@ -4636,7 +4636,7 @@
 
           <div class="form-group mb-3">
             <label class="form-label required" data-i18n="removalReason">سبب الإزالة والملاحظات</label>
-            <textarea id="formRemovalReason" class="form-control" rows="3" required placeholder="سبب فك الجهاز أو إعادة الهيكلة..."></textarea>
+            <textarea id="formRemovalReason" class="form-control" rows="3" required placeholder="سبب فك الجهاز أو إعادة الهيكلة..." data-i18n-placeholder="removalReasonPlaceholder"></textarea>
           </div>
         </div>
         <div class="modal-footer">

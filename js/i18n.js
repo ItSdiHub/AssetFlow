@@ -134,6 +134,16 @@ const I18N = {
     officeLocation: "مكتب التابعية (الموقع)",
     officeHint: "يتم تحديد قائمة المكاتب بناءً على القسم المختار. اختر الموقع/المكتب التابع لهذا الموظف.",
     selectLocation: "اختر موقع رئيسي",
+    selectDepartment: "-- اختر القسم --",
+    selectOfficeOptional: "-- اختر مكتب (اختياري) --",
+    btnAddLocationTitle: "إضافة موقع جديد",
+    btnAddDepartmentTitle: "إضافة قسم جديد",
+    btnAddOfficeTitle: "إضافة مكتب جديد",
+    locationCascadeHint: "يتم تحديد الأقسام بناءً على الموقع، والمكاتب بناءً على القسم.",
+    quickAddTitle: "إضافة سريعة",
+    name: "الاسم",
+    btnSaveAndAdd: "حفظ وإضافة",
+    removalReasonPlaceholder: "سبب فك الجهاز أو إعادة الهيكلة...",
     locationHint: "يتم ربط القسم بالموقع الرئيسي له (الفرع أو المكتب الرئيسي). هذا الحقل إلزامي.",
     // New delivery destination fields
     siteName: "اسم الموقع",
@@ -1120,6 +1130,16 @@ const I18N = {
   },
 
   en: {
+    selectDepartment: "-- Select Department --",
+    selectOfficeOptional: "-- Select Office (Optional) --",
+    btnAddLocationTitle: "Add New Location",
+    btnAddDepartmentTitle: "Add New Department",
+    btnAddOfficeTitle: "Add New Office",
+    locationCascadeHint: "Departments are filtered by location, and offices by department.",
+    quickAddTitle: "Quick Add",
+    name: "Name",
+    btnSaveAndAdd: "Save & Add",
+    removalReasonPlaceholder: "Reason for removal or restructuring...",
     // Subtabs and Installed Devices Lifecycle
     tabWarehouseIssues: "Warehouse Issues",
     tabAwaitingInstall: "Awaiting Installation",

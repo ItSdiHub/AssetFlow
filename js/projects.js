@@ -1926,6 +1926,8 @@ class AssetOperationsController {
     // Devices installed on-site are marked "Installed" (or "Under Maintenance" if defective)
     if (condition === "Not Working") {
       asset.status = "Under Maintenance";
+    } else if (instUserId) {
+      asset.status = "Assigned";
     } else {
       asset.status = "Installed";
     }
