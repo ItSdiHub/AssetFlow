@@ -92,6 +92,44 @@ class Application {
     try { await this.generateSelectedReport(); } catch (e) { console.warn("generateSelectedReport warning:", e); }
     try { await this.updateNotificationBadge(); } catch (e) { console.warn("updateNotificationBadge warning:", e); }
 
+        // Real Supabase Auth validation
+    if (db.supabase) {
+        try {
+            const { data: { session } } = await db.supabase.auth.getSession();
+            if (!session) {
+                if (typeof db !== "undefined" && db.clear) {
+                    const sensitiveStores = ["assets", "employees", "maintenance", "assetTransactions", "warehouseIssues", "assetTransfers", "helpdeskRequests", "notifications", "users"];
+                    for (const store of sensitiveStores) { try { await db.clear(store); } catch(err) {} }
+                }
+                AppState.currentUser = null;
+                localStorage.removeItem("sdi_user");
+                sessionStorage.removeItem("sdi_user");
+                this.applyUserRolePermissions();
+            }
+            
+            // Listen to auth state changes
+            db.supabase.auth.onAuthStateChange(async (event, currentSession) => {
+                if (event === 'SIGNED_OUT' || !currentSession) {
+                    if (typeof db !== "undefined" && db.clear) {
+                        const sensitiveStores = ["assets", "employees", "maintenance", "assetTransactions", "warehouseIssues", "assetTransfers", "helpdeskRequests", "notifications", "users"];
+                        for (const store of sensitiveStores) { try { await db.clear(store); } catch(err) {} }
+                    }
+                    AppState.currentUser = null;
+                    localStorage.removeItem("sdi_user");
+                    sessionStorage.removeItem("sdi_user");
+                    this.applyUserRolePermissions();
+                    
+                    const loginModal = document.getElementById("loginModal");
+                    if (loginModal && loginModal.style.display !== "flex") {
+                        this.openLoginModal();
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn("Auth initialization error:", e);
+        }
+    }
+
     // Require an explicitly provisioned account in production.
     if (!AppState.currentUser) {
       await this.openLoginModal();
@@ -3265,82 +3303,124 @@ class Application {
   // 6. LOGIN, LOGOUT & ROLE MANAGEMENT (REQ-25, 27, 28, 29, 30, 31, 32)
   // =========================================================================
   async openLoginModal() {
-    const users = await db.getAll("users");
-    const lang = AppState.lang;
-    const select = document.getElementById("loginUserSelect");
-    if (select) {
-      select.innerHTML = users.filter(u => u.active !== false).map(u => 
-        `<option value="${u.username}">${getUserDisplayName(u, lang)} (${u.role})</option>`
-      ).join("");
+    if (document.getElementById("loginEmail")) {
+        document.getElementById("loginEmail").value = "";
     }
-    document.getElementById("loginPassword").value = "";
+    if (document.getElementById("loginPassword")) {
+        document.getElementById("loginPassword").value = "";
+    }
     this.openModal("loginModal");
-  }
-
-  handleLoginUserSelect(username) {
-    document.getElementById("loginPassword").value = "123";
   }
 
   async handleLoginSubmit(event) {
     event.preventDefault();
-    const username = document.getElementById("loginUserSelect").value;
+    const email = document.getElementById("loginEmail").value.trim();
     const pass = document.getElementById("loginPassword").value;
     const lang = AppState.lang;
 
-    const users = await db.getAll("users");
-    const matched = users.find(u => u.username === username);
-
-    if (!matched) {
-      this.showToast(lang === "ar" ? "المستخدم غير موجود" : "User not found", "error");
-      return;
+    if (!db.supabase) {
+        this.showToast(lang === "ar" ? "قاعدة البيانات السحابية غير متصلة" : "Cloud database not connected", "error");
+        return;
     }
 
-    // REQ-29: Disabled User Guard
-    if (matched.active === false) {
-      this.showToast(lang === "ar" ? "الحساب معطل. يرجى مراجعة إدارة النظام." : "Account is disabled. Please contact the administrator.", "error");
-      return;
-    }
+    try {
+        const { data: authData, error: authError } = await db.supabase.auth.signInWithPassword({
+            email: email,
+            password: pass
+        });
 
-    if (matched.password && matched.password === pass) {
-      AppState.currentUser = {
-        id: matched.id,
-        username: matched.username,
-        fullName: matched.fullName || matched.username,
-        fullNameAr: matched.fullNameAr || matched.fullName || matched.username,
-        fullNameEn: matched.fullNameEn || matched.username,
-        role: matched.role || "IT User",
-        employeeId: matched.employeeId || null
-      };
+        if (authError || !authData.user) {
+            this.showToast(lang === "ar" ? "البريد الإلكتروني أو كلمة المرور غير صحيحة" : "Invalid email or password", "error");
+            return;
+        }
 
-      // REQ-31: Session & Storage
-      localStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
-      sessionStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
+        // Fetch corresponding profile from users table using the Supabase auth user ID
+        const { data: profile, error: profileError } = await db.supabase
+            .from('users')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle();
 
-      this.applyUserRolePermissions();
-      this.closeModal("loginModal");
-      const welcomeName = getUserDisplayName(AppState.currentUser, lang);
-      this.showToast(`${lang === "ar" ? "مرحباً بك:" : "Welcome:"} ${welcomeName} (${AppState.currentUser.role})`, "success");
+        if (profileError || !profile) {
+            this.showToast(lang === "ar" ? "تم الدخول ولكن لم يتم العثور على ملف المستخدم" : "Logged in but profile not found", "error");
+            // If we don't have a profile, we should probably sign out again
+            await db.supabase.auth.signOut();
+            return;
+        }
 
-      // Auto route based on role (REQ-55)
-      if (AppState.currentUser.role === "Employee") {
-        await this.switchTab("employeePortal", true);
-      } else {
-        await this.switchTab("dashboard", true);
-      }
+        if (profile.active === false) {
+            this.showToast(lang === "ar" ? "الحساب معطل. يرجى مراجعة إدارة النظام." : "Account is disabled. Please contact the administrator.", "error");
+            await db.supabase.auth.signOut();
+            return;
+        }
 
-      await AssetManager.render();
-      await UserManager.renderEmployees();
-      await UserManager.renderDepartments();
-      await UserManager.renderLocations();
-      await MaintManager.render();
-      await this.updateNotificationBadge();
-    } else {
-      this.showToast(lang === "ar" ? "كلمة المرور غير صحيحة" : "Incorrect password", "error");
+        // Clear sensitive cache to ensure clean state for the new user, preventing cross-user data leakage offline
+        if (typeof db !== "undefined" && db.clear) {
+            const sensitiveStores = ["assets", "employees", "maintenance", "assetTransactions", "warehouseIssues", "assetTransfers", "helpdeskRequests", "notifications", "users"];
+            for (const store of sensitiveStores) {
+                try { await db.clear(store); } catch(err) {}
+            }
+        }
+
+        AppState.currentUser = {
+            id: profile.id,
+            username: profile.username || authData.user.email,
+            email: authData.user.email,
+            fullName: profile.fullName || profile.username || authData.user.email,
+            fullNameAr: profile.fullNameAr || profile.fullName || profile.username,
+            fullNameEn: profile.fullNameEn || profile.username,
+            role: profile.role || "IT User",
+            employeeId: profile.employeeId || null
+        };
+
+        // REQ-31: Session & Storage - used for UI state only, not auth boundary
+        localStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
+        sessionStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
+
+        this.applyUserRolePermissions();
+        this.closeModal("loginModal");
+
+        const welcomeName = getUserDisplayName(AppState.currentUser, lang);
+        this.showToast(`${lang === "ar" ? "مرحباً بك:" : "Welcome:"} ${welcomeName} (${AppState.currentUser.role})`, "success");
+
+        // Auto route based on role (REQ-55)
+        if (AppState.currentUser.role === "Employee") {
+            await this.switchTab("employeePortal", true);
+        } else {
+            await this.switchTab("dashboard", true);
+        }
+
+        await AssetManager.render();
+        await UserManager.renderEmployees();
+        await UserManager.renderDepartments();
+        await UserManager.renderLocations();
+        await MaintManager.render();
+        await this.updateNotificationBadge();
+
+    } catch (e) {
+        console.warn("Login error:", e);
+        this.showToast(lang === "ar" ? "حدث خطأ أثناء تسجيل الدخول" : "An error occurred during login", "error");
     }
   }
 
   // REQ-30 & REQ-31: Logout & Session Cleanup
-  logout() {
+  async logout() {
+    if (db.supabase) {
+        try {
+            await db.supabase.auth.signOut();
+        } catch (e) {
+            console.warn("Supabase signout warning:", e);
+        }
+    }
+    
+    // Clear sensitive user-specific cache to prevent offline exposure to next user
+    if (typeof db !== "undefined" && db.clear) {
+        const sensitiveStores = ["assets", "employees", "maintenance", "assetTransactions", "warehouseIssues", "assetTransfers", "helpdeskRequests", "notifications", "users"];
+        for (const store of sensitiveStores) {
+            try { await db.clear(store); } catch(err) {}
+        }
+    }
+
     AppState.currentUser = null;
     localStorage.removeItem("sdi_user");
     sessionStorage.removeItem("sdi_user");

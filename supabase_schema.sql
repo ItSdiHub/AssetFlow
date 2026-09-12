@@ -343,36 +343,209 @@ ALTER TABLE public.project_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.licenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.departments;
-CREATE POLICY "Allow all operations for anon" ON public.departments FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.locations;
-CREATE POLICY "Allow all operations for anon" ON public.locations FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.employees;
-CREATE POLICY "Allow all operations for anon" ON public.employees FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.asset_types;
-CREATE POLICY "Allow all operations for anon" ON public.asset_types FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.assets;
-CREATE POLICY "Allow all operations for anon" ON public.assets FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.maintenance;
-CREATE POLICY "Allow all operations for anon" ON public.maintenance FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.asset_transactions;
-CREATE POLICY "Allow all operations for anon" ON public.asset_transactions FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.system_settings;
-CREATE POLICY "Allow all operations for anon" ON public.system_settings FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.warehouse_issues;
-CREATE POLICY "Allow all operations for anon" ON public.warehouse_issues FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.asset_transfers;
-CREATE POLICY "Allow all operations for anon" ON public.asset_transfers FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.contractors;
-CREATE POLICY "Allow all operations for anon" ON public.contractors FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.projects;
-CREATE POLICY "Allow all operations for anon" ON public.projects FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.project_tasks;
-CREATE POLICY "Allow all operations for anon" ON public.project_tasks FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.licenses;
-CREATE POLICY "Allow all operations for anon" ON public.licenses FOR ALL USING (true) WITH CHECK (true);
-DROP POLICY IF EXISTS "Allow all operations for anon" ON public.users;
-CREATE POLICY "Allow all operations for anon" ON public.users FOR ALL USING (true) WITH CHECK (true);
+-- ========================================================================
+-- Enable Row Level Security (RLS) & Secure Role-Based Access Control (RBAC)
+-- ========================================================================
+
+-- 1. Helper Functions for RLS
+CREATE OR REPLACE FUNCTION public.get_auth_role()
+RETURNS text AS $
+  SELECT role FROM public.users WHERE id = auth.uid()::text LIMIT 1;
+$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.get_auth_employee_id()
+RETURNS text AS $
+  SELECT employee_id FROM public.users WHERE id = auth.uid()::text LIMIT 1;
+$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- Revoke anon access to enforce authentication
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+
+-- Grant authenticated access
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+
+-- Drop any previous permissive policies
+DO $ 
+DECLARE 
+    t text;
+BEGIN
+    FOR t IN 
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public' 
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "Allow all operations for anon" ON public.%I', t);
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+    END LOOP;
+END $$;
+
+-- ------------------------------------------------------------------------
+-- 1. public.users
+-- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Auth_Read_Users" ON public.users;
+CREATE POLICY "Auth_Read_Users" ON public.users FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Admin_Insert_Users" ON public.users;
+CREATE POLICY "Admin_Insert_Users" ON public.users FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() = 'Administrator');
+
+DROP POLICY IF EXISTS "Admin_Update_Users" ON public.users;
+CREATE POLICY "Admin_Update_Users" ON public.users FOR UPDATE TO authenticated 
+USING (public.get_auth_role() = 'Administrator')
+WITH CHECK (public.get_auth_role() = 'Administrator');
+
+DROP POLICY IF EXISTS "Admin_Delete_Users" ON public.users;
+CREATE POLICY "Admin_Delete_Users" ON public.users FOR DELETE TO authenticated 
+USING (public.get_auth_role() = 'Administrator');
+
+-- ------------------------------------------------------------------------
+-- 2. Master Data Tables (departments, locations, asset_types, system_settings, contractors, projects, project_tasks, licenses)
+-- ------------------------------------------------------------------------
+DO $ 
+DECLARE 
+    t text;
+BEGIN
+    FOR t IN 
+        SELECT unnest(ARRAY['departments', 'locations', 'asset_types', 'system_settings', 'contractors', 'projects', 'project_tasks', 'licenses']) 
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "Auth_Read_%I" ON public.%I', t, t);
+        EXECUTE format('CREATE POLICY "Auth_Read_%I" ON public.%I FOR SELECT TO authenticated USING (true)', t, t);
+
+        EXECUTE format('DROP POLICY IF EXISTS "Admin_IT_Insert_%I" ON public.%I', t, t);
+        EXECUTE format('CREATE POLICY "Admin_IT_Insert_%I" ON public.%I FOR INSERT TO authenticated WITH CHECK (public.get_auth_role() IN (''Administrator'', ''IT User''))', t, t);
+
+        EXECUTE format('DROP POLICY IF EXISTS "Admin_IT_Update_%I" ON public.%I', t, t);
+        EXECUTE format('CREATE POLICY "Admin_IT_Update_%I" ON public.%I FOR UPDATE TO authenticated USING (public.get_auth_role() IN (''Administrator'', ''IT User''))', t, t);
+
+        EXECUTE format('DROP POLICY IF EXISTS "Admin_IT_Delete_%I" ON public.%I', t, t);
+        EXECUTE format('CREATE POLICY "Admin_IT_Delete_%I" ON public.%I FOR DELETE TO authenticated USING (public.get_auth_role() IN (''Administrator'', ''IT User''))', t, t);
+    END LOOP;
+END $$;
+
+-- ------------------------------------------------------------------------
+-- 3. public.employees
+-- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Auth_Read_Employees" ON public.employees;
+CREATE POLICY "Auth_Read_Employees" ON public.employees FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_Employees" ON public.employees;
+CREATE POLICY "Admin_IT_Insert_Employees" ON public.employees FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_Employees" ON public.employees;
+CREATE POLICY "Admin_IT_Update_Employees" ON public.employees FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_Employees" ON public.employees;
+CREATE POLICY "Admin_IT_Delete_Employees" ON public.employees FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- ------------------------------------------------------------------------
+-- 4. public.assets
+-- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Auth_Read_Assets" ON public.assets;
+CREATE POLICY "Auth_Read_Assets" ON public.assets FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR current_employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_Assets" ON public.assets;
+CREATE POLICY "Admin_IT_Insert_Assets" ON public.assets FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Employee_Update_Assets" ON public.assets;
+CREATE POLICY "Admin_IT_Employee_Update_Assets" ON public.assets FOR UPDATE TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User') 
+  OR current_employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_Assets" ON public.assets;
+CREATE POLICY "Admin_IT_Delete_Assets" ON public.assets FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- ------------------------------------------------------------------------
+-- 5. public.asset_transactions
+-- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Auth_Read_AssetTransactions" ON public.asset_transactions;
+CREATE POLICY "Auth_Read_AssetTransactions" ON public.asset_transactions FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR to_employee_id = public.get_auth_employee_id()
+  OR from_employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Employee_Insert_AssetTransactions" ON public.asset_transactions;
+CREATE POLICY "Admin_IT_Employee_Insert_AssetTransactions" ON public.asset_transactions FOR INSERT TO authenticated 
+WITH CHECK (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+  OR to_employee_id = public.get_auth_employee_id()
+  OR from_employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Update_AssetTransactions" ON public.asset_transactions;
+CREATE POLICY "Admin_IT_Update_AssetTransactions" ON public.asset_transactions FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_AssetTransactions" ON public.asset_transactions;
+CREATE POLICY "Admin_IT_Delete_AssetTransactions" ON public.asset_transactions FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- ------------------------------------------------------------------------
+-- 6. Operational Tables (maintenance, warehouse_issues, asset_transfers)
+-- ------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Auth_Read_maintenance" ON public.maintenance;
+CREATE POLICY "Auth_Read_maintenance" ON public.maintenance FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR asset_id IN (SELECT id FROM public.assets WHERE current_employee_id = public.get_auth_employee_id())
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_maintenance" ON public.maintenance;
+CREATE POLICY "Admin_IT_Insert_maintenance" ON public.maintenance FOR INSERT TO authenticated WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_maintenance" ON public.maintenance;
+CREATE POLICY "Admin_IT_Update_maintenance" ON public.maintenance FOR UPDATE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_maintenance" ON public.maintenance;
+CREATE POLICY "Admin_IT_Delete_maintenance" ON public.maintenance FOR DELETE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Auth_Read_warehouse_issues" ON public.warehouse_issues;
+CREATE POLICY "Auth_Read_warehouse_issues" ON public.warehouse_issues FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR it_employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_warehouse_issues" ON public.warehouse_issues;
+CREATE POLICY "Admin_IT_Insert_warehouse_issues" ON public.warehouse_issues FOR INSERT TO authenticated WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_warehouse_issues" ON public.warehouse_issues;
+CREATE POLICY "Admin_IT_Update_warehouse_issues" ON public.warehouse_issues FOR UPDATE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_warehouse_issues" ON public.warehouse_issues;
+CREATE POLICY "Admin_IT_Delete_warehouse_issues" ON public.warehouse_issues FOR DELETE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Auth_Read_asset_transfers" ON public.asset_transfers;
+CREATE POLICY "Auth_Read_asset_transfers" ON public.asset_transfers FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR asset_id IN (SELECT id FROM public.assets WHERE current_employee_id = public.get_auth_employee_id())
+);
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_asset_transfers" ON public.asset_transfers;
+CREATE POLICY "Admin_IT_Insert_asset_transfers" ON public.asset_transfers FOR INSERT TO authenticated WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_asset_transfers" ON public.asset_transfers;
+CREATE POLICY "Admin_IT_Update_asset_transfers" ON public.asset_transfers FOR UPDATE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_asset_transfers" ON public.asset_transfers;
+CREATE POLICY "Admin_IT_Delete_asset_transfers" ON public.asset_transfers FOR DELETE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
 
 -- ========================================================================
 -- Enable Realtime for Live Instant Helpdesk & Ticket Updates

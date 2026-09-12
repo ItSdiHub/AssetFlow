@@ -3615,19 +3615,33 @@
             </div>
 
             <div class="form-group">
-              <label><span data-i18n="department">القسم</span>*</label>
-              <select id="formEmpDept" class="form-control" required onchange="UserManager.onEmployeeOfficeChange()">
-                <!-- Populated via JS -->
-              </select>
+              <label><span data-i18n="location">الموقع</span>*</label>
+              <div style="display: flex; gap: 8px;">
+                <select id="formEmpLoc" class="form-control" required onchange="UserManager.onEmployeeLocationChange()" style="flex: 1;">
+                  <option value="">-- اختر الموقع --</option>
+                </select>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddLocation()" title="إضافة موقع جديد"><i class="fas fa-plus"></i></button>
+              </div>
             </div>
             <div class="form-group">
-              <label><span data-i18n="officeLocation">مكتب التابعية (الموقع)</span></label>
-              <select id="formEmpOffice" class="form-control" onchange="UserManager.onEmployeeOfficeChange()">
-                <option value="">-- <span data-i18n="selectOffice">اختر مكتب (اختياري)</span> --</option>
-                <!-- Populated via JS - filters by department -->
-              </select>
+              <label><span data-i18n="department">القسم</span>*</label>
+              <div style="display: flex; gap: 8px;">
+                <select id="formEmpDept" class="form-control" required onchange="UserManager.onEmployeeDeptChange()" style="flex: 1;" disabled>
+                  <option value="">-- اختر القسم --</option>
+                </select>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddDepartment()" title="إضافة قسم جديد"><i class="fas fa-plus"></i></button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label><span data-i18n="officeLocation">المكتب</span></label>
+              <div style="display: flex; gap: 8px;">
+                <select id="formEmpOffice" class="form-control" style="flex: 1;" disabled>
+                  <option value="">-- اختر مكتب (اختياري) --</option>
+                </select>
+                <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddOffice()" title="إضافة مكتب جديد"><i class="fas fa-plus"></i></button>
+              </div>
               <small class="text-muted" style="display: block; margin-top: 4px;">
-                <i class="fas fa-info-circle"></i> <span data-i18n="officeHint">يتم تحديد قائمة المكاتب بناءً على القسم المختار. اختر الموقع/المكتب التابع لهذا الموظف.</span>
+                <i class="fas fa-info-circle"></i> يتم تحديد الأقسام بناءً على الموقع، والمكاتب بناءً على القسم.
               </small>
             </div>
 
@@ -3668,6 +3682,30 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="App.closeModal('employeeModal')" data-i18n="btnCancel">إلغاء</button>
           <button type="submit" class="btn btn-primary" data-i18n="btnSave">حفظ الموظف</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Quick Add -->
+  <div class="modal-container" id="quickAddModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 id="quickAddModalTitle">إضافة سريعة</h3>
+        <button type="button" class="modal-close-btn" onclick="App.closeModal('quickAddModal')">&times;</button>
+      </div>
+      <form id="quickAddForm" onsubmit="UserManager.handleQuickAddSubmit(event)">
+        <div class="modal-body">
+          <input type="hidden" id="quickAddType">
+          <div class="form-group full-width">
+            <label id="quickAddLabel">الاسم</label>
+            <input type="text" id="quickAddInput" class="form-control" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal('quickAddModal')">إلغاء</button>
+          <button type="submit" class="btn btn-primary">حفظ وإضافة</button>
         </div>
       </form>
     </div>
@@ -3992,8 +4030,8 @@
             </div>
 
             <div class="form-group">
-              <label><span data-i18n="password">كلمة المرور</span>*</label>
-              <input type="password" id="formUserPass" class="form-control" required placeholder="******">
+              <label style="display:none;"><span data-i18n="password">كلمة المرور</span>*</label>
+              <input type="password" id="formUserPass" class="form-control" placeholder="******" style="display:none;">
             </div>
 
             <div class="form-group">
@@ -4128,23 +4166,14 @@
       <form id="loginModalForm" onsubmit="App.handleLoginSubmit(event)">
         <div class="modal-body">
           <div class="form-group mb-3">
-            <label><span data-i18n="username">اسم المستخدم</span></label>
-            <select id="loginUserSelect" class="form-control" onchange="App.handleLoginUserSelect(this.value)">
-              <!-- Populated via JS with quick picker -->
-            </select>
+            <label><span data-i18n="email">البريد الإلكتروني</span></label>
+            <input type="email" id="loginEmail" class="form-control" placeholder="name@example.com" required style="text-align: left; direction: ltr;">
           </div>
-
           <div class="form-group mb-3">
             <label data-i18n="password">كلمة المرور</label>
-            <input type="password" id="loginPassword" class="form-control" placeholder="أدخل كلمة المرور (افتراضي: 123)" data-i18n-placeholder="loginPassPlaceholder">
+            <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
           </div>
 
-          <div class="card p-3" style="font-size: 12px; background: rgba(255,255,255,0.03);">
-            <div><strong data-i18n="defaultAccountsTitle">حسابات النظام الافتراضية:</strong></div>
-            <div data-i18n="defaultAdminDesc">• admin (كلمة المرور: 123) - مدير النظام</div>
-            <div data-i18n="defaultITDesc">• ituser (كلمة المرور: 123) - فني الدعم الفني</div>
-            <div data-i18n="defaultAhmedDesc">• ahmed (كلمة المرور: 123) - حساب موظف (أحمد الشامسي)</div>
-            <div data-i18n="defaultMaryamDesc">• maryam (كلمة المرور: 123) - حساب موظف (مريم الحمادي)</div>
           </div>
         </div>
         <div class="modal-footer">

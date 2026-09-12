@@ -267,7 +267,7 @@ function toCloudRecord(storeName, item) {
     return {
       id: row.id,
       username: row.username || "",
-      password: row.password || "",
+      password: "***",
       full_name: row.fullName || row.full_name || "",
       full_name_ar: row.fullNameAr || row.full_name_ar || null,
       full_name_en: row.fullNameEn || row.full_name_en || null,
@@ -408,6 +408,7 @@ function fromCloudRecord(storeName, row) {
     item.fullNameAr = row.full_name_ar || row.fullNameAr;
     item.fullNameEn = row.full_name_en || row.fullNameEn;
     item.employeeId = row.employee_id || row.employeeId;
+    delete item.password;
   } else if (storeName === "licenses") {
     item.licenseNo = row.license_no || row.licenseNo || row.id;
     item.name = row.software_name || row.softwareName || row.name;
@@ -1152,8 +1153,14 @@ class DBEngine {
       try {
         const table = STORE_TABLE_MAP[storeName];
         const cloudRecord = toCloudRecord(storeName, item);
-        const { error } = await this.supabase.from(table).upsert(cloudRecord);
-        if (error) throw error;
+        const { data: existing } = await this.supabase.from(table).select('id').eq('id', cloudRecord.id).maybeSingle();
+        if (existing) {
+          const { error } = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+          if (error) throw error;
+        } else {
+          const { error } = await this.supabase.from(table).insert(cloudRecord);
+          if (error) throw error;
+        }
       } catch (e) {
         console.warn(`Supabase sync error:`, e);
         throw e;
@@ -1906,17 +1913,10 @@ class DBEngine {
     }
 
     // 5. Users Store (Authentication)
+    
     const userCount = await this.count("users");
-    if (userCount === 0) {
-      const defaultUsers = [
-        { id: "usr-admin", username: "admin", password: "123", fullName: "مدير النظام", fullNameAr: "مدير النظام", fullNameEn: "System Administrator", role: "Administrator", active: true },
-        { id: "usr-tech", username: "ituser", password: "123", fullName: "فني الدعم الفني", fullNameAr: "فني الدعم الفني", fullNameEn: "IT Support Technician", role: "IT User", active: true },
-        { id: "usr-emp-101", username: "ahmed", password: "123", fullName: "م. أحمد الشامسي", fullNameAr: "م. أحمد الشامسي", fullNameEn: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true },
-        { id: "usr-emp-102", username: "maryam", password: "123", fullName: "مريم الحمادي", fullNameAr: "مريم الحمادي", fullNameEn: "Maryam Al Hammadi", role: "Employee", employeeId: "emp-102", active: true },
-        { id: "usr-view", username: "viewer", password: "123", fullName: "مستعرض التقارير", fullNameAr: "مستعرض التقارير", fullNameEn: "Reports Viewer", role: "Viewer", active: true }
-      ];
-      for (const u of defaultUsers) await this.put("users", u);
-    } else {
+    if (userCount > 0) {
+
       // Migrate existing users to ensure fullNameEn and fullNameAr exist
       const existingUsers = await this.getAll("users");
       for (const u of existingUsers) {
@@ -2406,35 +2406,6 @@ class DBEngine {
       }
     } catch (migErr) {
       console.warn("[ensureInitialSeedAndMigration] Installed assets migration warning:", migErr);
-    }
-
-    // 8. Ensure Sample Employee Accounts Exist
-    const allUsers = await this.getAll("users");
-    if (!allUsers.some(u => u.username === "ahmed")) {
-      await this.put("users", {
-        id: "usr-emp-101",
-        username: "ahmed",
-        password: "123",
-        fullName: "م. أحمد الشامسي",
-        fullNameAr: "م. أحمد الشامسي",
-        fullNameEn: "Eng. Ahmed Al Shamsi",
-        role: "Employee",
-        employeeId: "emp-101",
-        active: true
-      });
-    }
-    if (!allUsers.some(u => u.username === "maryam")) {
-      await this.put("users", {
-        id: "usr-emp-102",
-        username: "maryam",
-        password: "123",
-        fullName: "مريم الحمادي",
-        fullNameAr: "مريم الحمادي",
-        fullNameEn: "Maryam Al Hammadi",
-        role: "Employee",
-        employeeId: "emp-102",
-        active: true
-      });
     }
 
     // 9. Ensure Initial Helpdesk Requests & Notifications
