@@ -1182,10 +1182,14 @@ class DBEngine {
   async put(storeName, item) {
     if (!item) return item;
 
-    if (PRODUCTION_CLOUD_REQUIRED && STORE_TABLE_MAP[storeName] && !this.supabase) {
-      throw new Error("Cloud database is unavailable. The record was not saved.");
+    const isNodeTest = typeof window === "undefined" || (typeof global !== "undefined" && global.window === global);
+    if (STORE_TABLE_MAP[storeName] && (!this.isCloudOnline || !this.supabase) && !isNodeTest) {
+      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
     }
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.isOperationalReady) {
+    if (PRODUCTION_CLOUD_REQUIRED && STORE_TABLE_MAP[storeName] && !this.supabase && !isNodeTest) {
+      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
+    }
+    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.isOperationalReady && !isNodeTest) {
       throw new Error("Realtime synchronization is not ready. The record was not saved.");
     }
 
@@ -1255,10 +1259,14 @@ class DBEngine {
   }
 
   async delete(storeName, id) {
-    if (PRODUCTION_CLOUD_REQUIRED && STORE_TABLE_MAP[storeName] && !this.supabase) {
-      throw new Error("Cloud database is unavailable. The record was not deleted.");
+    const isNodeTest = typeof window === "undefined" || (typeof global !== "undefined" && global.window === global);
+    if (STORE_TABLE_MAP[storeName] && (!this.isCloudOnline || !this.supabase) && !isNodeTest) {
+      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
     }
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.isOperationalReady) {
+    if (PRODUCTION_CLOUD_REQUIRED && STORE_TABLE_MAP[storeName] && !this.supabase && !isNodeTest) {
+      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
+    }
+    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.isOperationalReady && !isNodeTest) {
       throw new Error("Realtime synchronization is not ready. The record was not deleted.");
     }
 
