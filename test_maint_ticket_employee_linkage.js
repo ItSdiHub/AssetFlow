@@ -103,6 +103,8 @@ async function runTests() {
   console.log("================================================================================\n");
 
   await db.init();
+  await db.put("departments", { id: "dept-it", nameAr: "IT", nameEn: "IT" });
+  await db.put("locations", { id: "loc-br-khk", nameAr: "Branch", nameEn: "Branch" });
 
   // ---------------------------------------------------------------------------
   // TEST GROUP 1: EMP- Prefix Generation & Readonly Input

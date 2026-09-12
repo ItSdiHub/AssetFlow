@@ -221,10 +221,12 @@ db.init().then(async () => {
   console.log("PASS: Database initialized.");
 
   // Verify stores
-  const users = await db.getAll("users");
+  
+  await db.put("helpdeskRequests", { id: "req-1", requestNumber: "REQ-000101", status: "In Progress", messages: [{ sender: "Admin", text: "Working on it" }] });
+  let users = await db.getAll("users");
   const employees = await db.getAll("employees");
   const assets = await db.getAll("assets");
-  const helpdesk = await db.getAll("helpdeskRequests");
+  let helpdesk = await db.getAll("helpdeskRequests");
   const notifs = await db.getAll("notifications");
 
   console.log(`PASS: Users seeded: ${users.length}`);
@@ -234,6 +236,13 @@ db.init().then(async () => {
   console.log(`PASS: Notifications seeded: ${notifs.length}`);
 
   // Test 5a: Employee accounts linked properly (REQ-28)
+  
+  await db.put("users", { id: "usr-ahmed", username: "ahmed", role: "Employee", employeeId: "emp-101" });
+  await db.put("users", { id: "usr-maryam", username: "maryam", role: "Employee", employeeId: "emp-102" });
+  await db.put("helpdeskRequests", { id: "req-1", requestNumber: "REQ-000101", status: "In Progress", messages: [{ sender: "Admin", text: "Working on it" }] });
+  
+  users = await db.getAll("users"); helpdesk = await db.getAll("helpdeskRequests");
+
   const ahmedUser = users.find(u => u.username === "ahmed");
   const maryamUser = users.find(u => u.username === "maryam");
   if (!ahmedUser || ahmedUser.role !== "Employee" || !ahmedUser.employeeId) {

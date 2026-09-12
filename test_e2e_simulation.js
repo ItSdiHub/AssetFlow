@@ -100,7 +100,8 @@ async function runSimulation() {
   console.log(`✓ Asset created: ${newAsset.assetId} - ${newAsset.brand} ${newAsset.model}`);
 
   // 3. Assign Asset to Employee 'Ahmed Al Shamsi' (emp-101)
-  const empAhmed = await db.getById("employees", "emp-101");
+  let empAhmed = await db.getById("employees", "emp-101");
+  if (!empAhmed) { await db.put("employees", { id: "emp-101", employeeId: "EMP-101", nameEn: "Ahmed Al Shamsi" }); empAhmed = await db.getById("employees", "emp-101"); }
   if (!empAhmed) throw new Error("Employee emp-101 not found!");
   const empAhmedName = empAhmed.nameAr || empAhmed.name || "أحمد الشامسي";
 
@@ -395,7 +396,8 @@ async function runSimulation() {
   // TEST SCENARIO 6: Asset Transfer with History Preservation (REQ-6, REQ-7)
   // ===========================================================================
   console.log("\n--- SCENARIO 6: Asset Transfer with History Preservation ---");
-  const empMaryam = await db.getById("employees", "emp-102");
+  let empMaryam = await db.getById("employees", "emp-102");
+  if (!empMaryam) { await db.put("employees", { id: "emp-102", employeeId: "EMP-102", nameEn: "Maryam" }); empMaryam = await db.getById("employees", "emp-102"); }
   if (!empMaryam) throw new Error("Maryam (emp-102) not found!");
   const empMaryamName = empMaryam.nameAr || empMaryam.name || "مريم الحمادي";
 

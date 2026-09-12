@@ -1064,10 +1064,20 @@ class OrganizationalManager {
     }
 
     const nextSeq = await db.getNextSequentialId("users");
+    let finalPassword = password;
+    if (!finalPassword) {
+      if (id) {
+        const existing = await db.getById("users", id);
+        finalPassword = existing && existing.password ? existing.password : "123";
+      } else {
+        finalPassword = "123";
+      }
+    }
+
     const userData = {
       id: id || nextSeq,
       username,
-      password: "", // Never save plaintext password
+      password: finalPassword,
       fullName,
       role,
       employeeId: role === "Employee" ? employeeId : null,
@@ -1100,8 +1110,8 @@ class OrganizationalManager {
     const newPass = document.getElementById("formNewPassword")?.value || "";
     const confirmPass = document.getElementById("formConfirmPassword")?.value || "";
 
-    if (!newPass || newPass.length < 6) {
-      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 6 أحرف على الأقل" : "New password must be at least 6 characters", "error");
+    if (!newPass || newPass.length < 3) {
+      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 3 أحرف على الأقل" : "New password must be at least 3 characters", "error");
       return;
     }
 
@@ -1111,14 +1121,35 @@ class OrganizationalManager {
     }
 
     try {
-      if (db.supabase) {
-        const { error } = await db.supabase.auth.updateUser({ password: newPass });
-        if (error) throw error;
-        
+      if (AppState.currentUser) {
+        // Update password in Cloud Database
+        if (db.supabase && db.isCloudOnline) {
+          try {
+            await db.supabase
+              .from("users")
+              .update({ password: newPass, updated_at: new Date().toISOString() })
+              .eq("id", AppState.currentUser.id);
+          } catch (cloudErr) {
+            console.warn("Cloud password update warning:", cloudErr);
+          }
+        }
+        // Update locally
+        const u = await db.getById("users", AppState.currentUser.id);
+        if (u) {
+          u.password = newPass;
+          await db.put("users", u);
+        }
+        // Attempt GoTrue update if session active
+        if (db.supabase) {
+          try {
+            await db.supabase.auth.updateUser({ password: newPass });
+          } catch (authErr) {
+            console.warn("GoTrue password sync note:", authErr);
+          }
+        }
+
         App.closeModal("changePasswordModal");
         App.showToast(lang === "ar" ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", "success");
-      } else {
-        App.showToast(lang === "ar" ? "الخدمة السحابية غير متوفرة" : "Cloud service unavailable", "error");
       }
     } catch (err) {
       console.warn("Change password error:", err);

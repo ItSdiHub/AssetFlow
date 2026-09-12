@@ -4157,7 +4157,7 @@
     <div class="modal-backdrop"></div>
     <div class="modal-content" style="max-width: 450px;">
       <div class="modal-header" style="flex-direction: column; align-items: center; text-align: center; position: relative;">
-        <button class="modal-close-btn" style="position: absolute; top: 12px; left: 12px;" onclick="App.closeModal('loginModal')">&times;</button>
+        <button class="modal-close-btn" style="position: absolute; top: 12px; left: 12px;" onclick="App.handleLoginModalClose()">&times;</button>
         <div id="loginLogoContainer" style="margin-bottom: 10px; display: flex; justify-content: center; height: 50px; align-items: center;">
           <img id="loginLogoImg" src="" alt="SDI Logo" style="display: none; max-height: 48px; max-width: 180px; object-fit: contain;">
           <i class="fas fa-car" id="loginLogoFallback" style="color: var(--sdi-blue); font-size: 36px;"></i>
@@ -4166,7 +4166,7 @@
         <p class="text-xs text-muted" id="loginSubTitle" style="margin-top: 4px;">SDI IT Asset Hub</p>
       </div>
       <form id="loginModalForm" onsubmit="App.handleLoginSubmit(event)">
-        <div class="modal-body">
+        <div class="modal-body" style="padding-top: 8px;">
           <div class="form-group mb-3">
             <label><span data-i18n="usernameOrEmail">اسم المستخدم أو البريد الإلكتروني</span></label>
             <input type="text" id="loginEmail" class="form-control" placeholder="email@domain.com" required style="text-align: left; direction: ltr;">
@@ -4175,12 +4175,12 @@
             <label data-i18n="password">كلمة المرور</label>
             <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
           </div>
-
+          <div class="form-group mt-3">
+            <button type="submit" class="btn btn-primary" id="btnLoginSubmit" style="width: 100%; padding: 10px 0; font-size: 15px; font-weight: 600;" data-i18n="btnLoginSubmit">تسجيل الدخول</button>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="App.closeModal('loginModal')" data-i18n="btnCancel">إلغاء</button>
-          <button type="submit" class="btn btn-primary" data-i18n="btnLogin">دخول</button>
+          <div style="text-align: center; margin-top: 14px;">
+            <button type="button" class="btn-link" id="btnForgotPassword" onclick="App.handleForgotPassword(event)" style="font-size: 13px; color: var(--sdi-blue, #0b3c68); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0;" data-i18n="forgotPassword">نسيت كلمة المرور؟</button>
+          </div>
         </div>
       </form>
     </div>

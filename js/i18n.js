@@ -13,13 +13,7 @@ window.AppState = window.AppState || {
   })(),
   currentTab: "dashboard",
   currentSettingsSubTab: "dbTest",
-  currentUser: (() => {
-    try {
-      const u = localStorage.getItem("sdi_user");
-      if (u) return JSON.parse(u);
-    } catch(e) {}
-    return { id: "usr-admin", username: "admin", fullName: "مدير النظام", role: "Administrator" };
-  })()
+  currentUser: null
 };
 var AppState = window.AppState;
 
@@ -558,7 +552,16 @@ const I18N = {
     defaultITRole: "ituser (كلمة المرور: 123) - فني الدعم الفني",
     defaultViewerRole: "viewer (كلمة المرور: 123) - مستعرض فقط",
     btnLogin: "دخول",
+    btnLoginSubmit: "تسجيل الدخول",
     btnLogout: "خروج",
+    forgotPassword: "نسيت كلمة المرور؟",
+    forgotPasswordSuccess: "إذا كان الحساب مسجلاً في النظام، فقد تم إرسال تعليمات استعادة كلمة المرور إلى بريدك الإلكتروني.",
+    loginRequiredMsg: "يجب تسجيل الدخول للوصول إلى النظام.",
+    errInvalidCredentials: "اسم المستخدم أو كلمة المرور غير صحيحة.",
+    errAccountDisabled: "الحساب معطل. يرجى مراجعة إدارة النظام.",
+    errNoMatchingAccount: "لا يوجد حساب متطابق في النظام.",
+    errOfflineLogin: "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة.",
+    errEnterCredentials: "يرجى إدخال اسم المستخدم/البريد الإلكتروني وكلمة المرور.",
 
     // Feedback & Toasts
     saveSuccess: "تم الحفظ بنجاح.",
@@ -1711,7 +1714,16 @@ const I18N = {
     defaultITRole: "ituser (Password: 123) - IT Support Technician",
     defaultViewerRole: "viewer (Password: 123) - Read-only Viewer",
     btnLogin: "Login",
+    btnLoginSubmit: "Sign In",
     btnLogout: "Logout",
+    forgotPassword: "Forgot Password?",
+    forgotPasswordSuccess: "If the account exists in the system, password reset instructions have been sent to your email.",
+    loginRequiredMsg: "Authentication is required to access the system.",
+    errInvalidCredentials: "Invalid username or password.",
+    errAccountDisabled: "Account is disabled. Please contact the administrator.",
+    errNoMatchingAccount: "No matching account found in system.",
+    errOfflineLogin: "Cannot login while cloud is offline.",
+    errEnterCredentials: "Please enter username/email and password.",
 
     // Feedback & Toasts
     saveSuccess: "Saved successfully.",
