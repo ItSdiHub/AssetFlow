@@ -773,12 +773,26 @@ class DBEngine {
   }
 
   async checkRequiredCloudTables() {
-    for (const table of REQUIRED_CLOUD_TABLES) {
+    const coreTables = ["assets", "employees", "departments", "locations", "asset_types", "maintenance"];
+    for (const table of coreTables) {
       try {
         const { error } = await this.supabase.from(table).select("id").limit(1);
         if (error) return { success: false, table, error };
       } catch (error) {
         return { success: false, table, error };
+      }
+    }
+    // Check secondary tables non-fatally (log warning if missing/404)
+    for (const table of REQUIRED_CLOUD_TABLES) {
+      if (!coreTables.includes(table)) {
+        try {
+          const { error } = await this.supabase.from(table).select("id").limit(1);
+          if (error) {
+            console.warn(`Optional cloud table '${table}' missing or not yet provisioned:`, error.message || error);
+          }
+        } catch (error) {
+          console.warn(`Optional cloud table '${table}' check error:`, error);
+        }
       }
     }
     return { success: true };

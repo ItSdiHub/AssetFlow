@@ -283,6 +283,23 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 16. Notifications Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT REFERENCES public.employees(id) ON DELETE CASCADE,
+    title_ar TEXT NOT NULL,
+    title_en TEXT,
+    message_ar TEXT NOT NULL,
+    message_en TEXT,
+    type TEXT DEFAULT 'general',
+    related_id TEXT,
+    read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS notifications_employee_idx ON public.notifications (employee_id);
+CREATE INDEX IF NOT EXISTS notifications_read_idx ON public.notifications (read);
+
 -- ========================================================================
 -- MIGRATION: Hierarchical integrity additions: offices & mandatory department<->location relationship
 -- ========================================================================
@@ -598,6 +615,36 @@ USING (
 
 DROP POLICY IF EXISTS "Auth_Delete_helpdesk_requests" ON public.helpdesk_requests;
 CREATE POLICY "Auth_Delete_helpdesk_requests" ON public.helpdesk_requests FOR DELETE TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+);
+
+
+-- ------------------------------------------------------------------------
+-- 8. public.notifications
+-- ------------------------------------------------------------------------
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Auth_Read_notifications" ON public.notifications;
+CREATE POLICY "Auth_Read_notifications" ON public.notifications FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+  OR employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
+CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Auth_Update_notifications" ON public.notifications;
+CREATE POLICY "Auth_Update_notifications" ON public.notifications FOR UPDATE TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+  OR employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Auth_Delete_notifications" ON public.notifications;
+CREATE POLICY "Auth_Delete_notifications" ON public.notifications FOR DELETE TO authenticated 
 USING (
   public.get_auth_role() IN ('Administrator', 'IT User')
 );
