@@ -31,7 +31,9 @@ const STORE_TABLE_MAP = {
   projects: "projects",
   projectTasks: "project_tasks",
   licenses: "licenses",
-  users: "users"
+  users: "users",
+  helpdeskRequests: "helpdesk_requests",
+  notifications: "notifications"
 };
 const REQUIRED_CLOUD_TABLES = [...new Set(Object.values(STORE_TABLE_MAP))];
 
