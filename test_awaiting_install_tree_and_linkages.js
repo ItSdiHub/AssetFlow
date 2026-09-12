@@ -118,6 +118,9 @@ async function runTests() {
   };
   await db.put("warehouseIssues", sampleIssue);
 
+  await db.put("locations", { id: "loc-br-nas", nameEn: "Nasseriya Branch", type: "branch", parentId: null });
+  await db.put("locations", { id: "loc-nas-ofc1", nameEn: "Nasseriya Office 1", type: "office", parentId: "loc-br-nas" });
+
   // --------------------------------------------------------------------------
   console.log("\n--- TEST 1: Table Rendering with Interactive Tree Row & Toggle Buttons ---");
   // --------------------------------------------------------------------------

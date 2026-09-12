@@ -129,14 +129,14 @@ node test_phase4.js
 
 ---
 
-## 👥 Default Accounts / الحسابات الافتراضية
+## 👥 Authentication & Security / المصادقة والأمان
 
-| الدور (Role) | اسم المستخدم (Username) | كلمة المرور (Password) | الصلاحية |
-|---|---|---|---|
-| **مدير النظام (Admin)** | `admin` | `admin123` | تحكم وإدارة كاملة بالنظام |
-| **فني دعم (Technician)** | `tech` | `tech123` | صيانة وتذاكر وعمليات الأصول |
-| **موظف (Employee)** | `emp101` | `emp123` | عهدتي، التذاكر، وتأكيد الاستلام |
-| **مشاهد (Viewer)** | `viewer` | `view123` | استعراض وقراءة فقط |
+The system uses Supabase Auth for secure authentication and RBAC enforced by RLS policies. No default plaintext production passwords exist.
+
+
+
+
+
 
 ---
 

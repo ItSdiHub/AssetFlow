@@ -11,7 +11,7 @@ const SUPABASE_CONFIG = {
   url: "https://xzfudqyctujxlhbgpdbs.supabase.co",
   anonKey: "sb_publishable_frNz4FgL329ldYzbHhKrEA_PwiIv7nL",
   enabled: true,
-  allowDemoSeed: true
+  allowDemoSeed: false
 };
 const PRODUCTION_CLOUD_REQUIRED = false;
 const STRICT_CLOUD_ONLY = false;

@@ -105,6 +105,30 @@ CREATE TABLE IF NOT EXISTS public.maintenance (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 6b. Helpdesk Requests Table
+CREATE TABLE IF NOT EXISTS public.helpdesk_requests (
+    id TEXT PRIMARY KEY,
+    request_number TEXT NOT NULL,
+    employee_id TEXT REFERENCES public.employees(id) ON DELETE RESTRICT,
+    asset_id TEXT REFERENCES public.assets(id) ON DELETE SET NULL,
+    category TEXT DEFAULT 'Hardware',
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'Medium',
+    status TEXT DEFAULT 'New',
+    technician_notes TEXT,
+    assigned_to TEXT,
+    messages JSONB DEFAULT '[]'::jsonb,
+    maintenance_id TEXT REFERENCES public.maintenance(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    closed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS helpdesk_requests_employee_idx ON public.helpdesk_requests (employee_id);
+CREATE INDEX IF NOT EXISTS helpdesk_requests_asset_idx ON public.helpdesk_requests (asset_id);
+CREATE INDEX IF NOT EXISTS helpdesk_requests_status_idx ON public.helpdesk_requests (status);
+
 -- 7. Asset Transactions / History Log
 CREATE TABLE IF NOT EXISTS public.asset_transactions (
     id TEXT PRIMARY KEY,
@@ -546,6 +570,38 @@ CREATE POLICY "Admin_IT_Update_asset_transfers" ON public.asset_transfers FOR UP
 DROP POLICY IF EXISTS "Admin_IT_Delete_asset_transfers" ON public.asset_transfers;
 CREATE POLICY "Admin_IT_Delete_asset_transfers" ON public.asset_transfers FOR DELETE TO authenticated USING (public.get_auth_role() IN ('Administrator', 'IT User'));
 
+-- ------------------------------------------------------------------------
+-- 7. public.helpdesk_requests
+-- ------------------------------------------------------------------------
+ALTER TABLE public.helpdesk_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Auth_Read_helpdesk_requests" ON public.helpdesk_requests;
+CREATE POLICY "Auth_Read_helpdesk_requests" ON public.helpdesk_requests FOR SELECT TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer')
+  OR employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Auth_Insert_helpdesk_requests" ON public.helpdesk_requests;
+CREATE POLICY "Auth_Insert_helpdesk_requests" ON public.helpdesk_requests FOR INSERT TO authenticated 
+WITH CHECK (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+  OR employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Auth_Update_helpdesk_requests" ON public.helpdesk_requests;
+CREATE POLICY "Auth_Update_helpdesk_requests" ON public.helpdesk_requests FOR UPDATE TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+  OR employee_id = public.get_auth_employee_id()
+);
+
+DROP POLICY IF EXISTS "Auth_Delete_helpdesk_requests" ON public.helpdesk_requests;
+CREATE POLICY "Auth_Delete_helpdesk_requests" ON public.helpdesk_requests FOR DELETE TO authenticated 
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+);
+
 
 -- ========================================================================
 -- Enable Realtime for Live Instant Helpdesk & Ticket Updates
@@ -568,7 +624,9 @@ BEGIN
         'asset_transactions',
         'project_tasks',
         'licenses',
-        'users'
+        'users',
+        'helpdesk_requests',
+        'notifications'
     ]
     LOOP
         IF NOT EXISTS (
