@@ -1555,6 +1555,9 @@
               <button class="btn btn-primary btn-lg" onclick="App.testDatabaseConnection()">
                 <i class="fas fa-vial"></i> <span data-i18n="testDbBtn">اختبار الاتصال بقاعدة البيانات (Test Database Connection)</span>
               </button>
+              <a href="https://supabase.com/dashboard/project/xzfudqyctujxlhbgpdbs/editor" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-lg user-admin-action" style="margin-inline-start: 10px;">
+                <i class="fas fa-external-link-alt"></i> <span data-i18n="openDbConsoleBtn">فتح وحدة تحكم قاعدة البيانات</span>
+              </a>
 
               <div id="dbTestResultContainer" class="mt-4" style="display: none;">
                 <!-- Result Banner injected via JS -->
@@ -4166,7 +4169,7 @@
         <div class="modal-body">
           <div class="form-group mb-3">
             <label><span data-i18n="usernameOrEmail">اسم المستخدم أو البريد الإلكتروني</span></label>
-            <input type="text" id="loginEmail" class="form-control" placeholder="admin / ituser / ahmed" required style="text-align: left; direction: ltr;">
+            <input type="text" id="loginEmail" class="form-control" placeholder="email@domain.com" required style="text-align: left; direction: ltr;">
           </div>
           <div class="form-group mb-3">
             <label data-i18n="password">كلمة المرور</label>

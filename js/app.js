@@ -93,45 +93,63 @@ class Application {
     try { await this.updateNotificationBadge(); } catch (e) { console.warn("updateNotificationBadge warning:", e); }
 
     // 6. Verify User Session & Authoritative Role from Cloud Database (Single Source of Truth)
-    if (AppState.currentUser && AppState.currentUser.id) {
-      if (db.supabase) {
-        try {
-          const { data: cloudUser, error } = await db.supabase
+    AppState.currentUser = null;
+    if (db.supabase) {
+      try {
+        const { data: { session }, error: sessionError } = await db.supabase.auth.getSession();
+        if (session && session.user) {
+          const authUser = session.user;
+          const { data: cloudUser, error: queryError } = await db.supabase
             .from('users')
             .select('*')
-            .eq('id', AppState.currentUser.id)
+            .eq('auth_user_id', authUser.id)
             .maybeSingle();
 
-          if (!error && cloudUser) {
+          if (!queryError && cloudUser) {
             if (cloudUser.active === false) {
               console.warn("User account is deactivated in cloud database.");
-              AppState.currentUser = null;
-              localStorage.removeItem("sdi_user");
-              sessionStorage.removeItem("sdi_user");
+              await db.supabase.auth.signOut();
             } else {
-              // Role and access are strictly DERIVED from Cloud Database
-              AppState.currentUser.role = cloudUser.role || "Viewer";
-              AppState.currentUser.employeeId = cloudUser.employee_id || cloudUser.employeeId || null;
-              AppState.currentUser.fullName = cloudUser.full_name || cloudUser.fullName || cloudUser.username;
-              AppState.currentUser.fullNameAr = cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name;
-              AppState.currentUser.fullNameEn = cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username;
-              AppState.currentUser.username = cloudUser.username || AppState.currentUser.username;
-              localStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
-              sessionStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
+              // Role and access are strictly DERIVED from Cloud Database mapping
+              AppState.currentUser = {
+                id: cloudUser.id,
+                username: cloudUser.username,
+                email: authUser.email || (cloudUser.username + "@sdi.ae"),
+                fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
+                fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
+                fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
+                role: cloudUser.role || "Viewer",
+                employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
+                active: cloudUser.active !== false
+              };
             }
+          } else {
+             // Authenticated but no public.users mapping
+             await db.supabase.auth.signOut();
           }
-        } catch (authErr) {
-          console.warn("Cloud authorization verification error:", authErr);
         }
-      }
-    } else {
-      const stored = localStorage.getItem("sdi_user") || sessionStorage.getItem("sdi_user");
-      if (stored) {
-        try {
-          AppState.currentUser = JSON.parse(stored);
-        } catch (e) {}
+      } catch (authErr) {
+        console.warn("Cloud authorization verification error:", authErr);
       }
     }
+
+    // Set up auth state change listener
+    if (db.supabase && !window.__SDI_AUTH_LISTENER_BOUND__) {
+      window.__SDI_AUTH_LISTENER_BOUND__ = true;
+      db.supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+           AppState.currentUser = null;
+           this.applyUserRolePermissions();
+           if (!document.getElementById("loginModal") || document.getElementById("loginModal").style.display !== "block") {
+              this.openLoginModal();
+           }
+        }
+      });
+    }
+
+    // Remove legacy local storage usage
+    localStorage.removeItem("sdi_user");
+    sessionStorage.removeItem("sdi_user");
 
     // Apply permissions derived from authoritative database state
     this.applyUserRolePermissions();
@@ -3325,96 +3343,79 @@ class Application {
     const lang = AppState.lang;
 
     if (!loginInput || !pass) {
-      this.showToast(lang === "ar" ? "يرجى إدخال اسم المستخدم وكلمة المرور" : "Please enter username and password", "error");
+      this.showToast(lang === "ar" ? "يرجى إدخال البريد الإلكتروني وكلمة المرور" : "Please enter email and password", "error");
       return;
     }
 
     let authenticatedUser = null;
 
-    // 1. Authenticate against Cloud Database (Single Source of Truth)
-    if (db.supabase) {
+    // 1. Authenticate against Cloud Database via REAL Supabase Auth
+    if (db.supabase && db.isCloudOnline) {
       try {
-        const { data: cloudUsers, error: queryError } = await db.supabase
-          .from('users')
-          .select('*');
+        const { data: authData, error: authError } = await db.supabase.auth.signInWithPassword({
+          email: loginInput,
+          password: pass
+        });
 
-        if (!queryError && Array.isArray(cloudUsers) && cloudUsers.length > 0) {
-          const matched = cloudUsers.find(u => 
-            (u.username && u.username.toLowerCase() === loginInput.toLowerCase()) ||
-            (u.id && u.id.toLowerCase() === loginInput.toLowerCase()) ||
-            (u.email && u.email.toLowerCase() === loginInput.toLowerCase())
-          );
+        if (authError) {
+          this.showToast(lang === "ar" ? "كلمة المرور غير صحيحة أو الحساب غير موجود" : "Invalid email or password", "error");
+          return;
+        }
 
-          if (matched) {
-            if (matched.password === pass || pass === "123") {
-              if (matched.active === false) {
-                this.showToast(lang === "ar" ? "الحساب معطل. يرجى مراجعة إدارة النظام." : "Account is disabled. Please contact the administrator.", "error");
-                return;
-              }
+        if (authData && authData.session && authData.user) {
+          const authUser = authData.user;
+          const { data: cloudUser, error: queryError } = await db.supabase
+            .from('users')
+            .select('*')
+            .eq('auth_user_id', authUser.id)
+            .maybeSingle();
 
-              authenticatedUser = {
-                id: matched.id,
-                username: matched.username,
-                email: matched.email || (matched.username + "@sdi.ae"),
-                fullName: matched.full_name || matched.fullName || matched.username,
-                fullNameAr: matched.full_name_ar || matched.fullNameAr || matched.full_name,
-                fullNameEn: matched.full_name_en || matched.fullNameEn || matched.username,
-                role: matched.role || "Viewer",
-                employeeId: matched.employee_id || matched.employeeId || null,
-                active: matched.active !== false
-              };
-            }
+          if (queryError || !cloudUser) {
+             await db.supabase.auth.signOut();
+             this.showToast(lang === "ar" ? "لا يوجد حساب متطابق في النظام" : "No matching account found in system", "error");
+             return;
           }
+
+          if (cloudUser.active === false) {
+             await db.supabase.auth.signOut();
+             this.showToast(lang === "ar" ? "الحساب معطل. يرجى مراجعة إدارة النظام." : "Account is disabled. Please contact the administrator.", "error");
+             return;
+          }
+
+          authenticatedUser = {
+            id: cloudUser.id,
+            username: cloudUser.username,
+            email: authUser.email || (cloudUser.username + "@sdi.ae"),
+            fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
+            fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
+            fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
+            role: cloudUser.role || "Viewer",
+            employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
+            active: cloudUser.active !== false
+          };
         }
       } catch (err) {
-        console.warn("Cloud user lookup error:", err);
+        console.warn("Cloud auth error:", err);
+        this.showToast("Cloud authentication failed.", "error");
+        return;
       }
-    }
-
-    // 2. Fallback / Offline authentication
-    if (!authenticatedUser) {
-      try {
-        const localUsers = await db.getAll("users");
-        const matchedLocal = localUsers.find(u => 
-          (u.username && u.username.toLowerCase() === loginInput.toLowerCase()) ||
-          (u.id && u.id.toLowerCase() === loginInput.toLowerCase()) ||
-          (u.email && u.email.toLowerCase() === loginInput.toLowerCase())
-        );
-
-        if (matchedLocal) {
-          if (matchedLocal.password === pass || pass === "123") {
-            if (matchedLocal.active === false) {
-              this.showToast(lang === "ar" ? "الحساب معطل. يرجى مراجعة إدارة النظام." : "Account is disabled. Please contact the administrator.", "error");
-              return;
-            }
-
-            authenticatedUser = {
-              id: matchedLocal.id,
-              username: matchedLocal.username,
-              email: matchedLocal.email || (matchedLocal.username + "@sdi.ae"),
-              fullName: matchedLocal.fullName || matchedLocal.username,
-              fullNameAr: matchedLocal.fullNameAr || matchedLocal.fullName,
-              fullNameEn: matchedLocal.fullNameEn || matchedLocal.username,
-              role: matchedLocal.role || "Viewer",
-              employeeId: matchedLocal.employeeId || null,
-              active: matchedLocal.active !== false
-            };
-          }
-        }
-      } catch (err) {
-        console.warn("Local user lookup error:", err);
-      }
+    } else {
+        // Offline / No Supabase
+        this.showToast(lang === "ar" ? "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة" : "Cannot login while cloud is offline", "error");
+        return;
     }
 
     if (!authenticatedUser) {
-      this.showToast(lang === "ar" ? "اسم المستخدم أو كلمة المرور غير صحيحة" : "Invalid username or password", "error");
+      this.showToast(lang === "ar" ? "فشل تسجيل الدخول" : "Login failed", "error");
       return;
     }
 
-    // Set session state
+    // Set session state exclusively from REAL Supabase Auth
     AppState.currentUser = authenticatedUser;
-    localStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
-    sessionStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
+    
+    // NO LOCAL STORAGE SAVING
+    localStorage.removeItem("sdi_user");
+    sessionStorage.removeItem("sdi_user");
 
     this.applyUserRolePermissions();
     this.closeModal("loginModal");
@@ -3442,6 +3443,11 @@ class Application {
     AppState.currentUser = null;
     localStorage.removeItem("sdi_user");
     sessionStorage.removeItem("sdi_user");
+    
+    if (db.supabase) {
+      await db.supabase.auth.signOut();
+    }
+    
     this.navHistory = [];
     this.hasUnsavedChanges = false;
     this.closeModal("userProfileModal");

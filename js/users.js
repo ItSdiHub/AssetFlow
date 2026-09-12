@@ -1006,7 +1006,7 @@ class OrganizationalManager {
       if (u) {
         document.getElementById("formUserId").value = u.id;
         document.getElementById("formUsername").value = u.username || "";
-        document.getElementById("formUserPass").value = u.password || "";
+        document.getElementById("formUserPass").value = ""; // Removed legacy password display
         document.getElementById("formUserFullName").value = u.fullName || "";
         document.getElementById("formUserRole").value = u.role || "IT User";
         document.getElementById("formUserActive").value = u.active !== false ? "true" : "false";
@@ -1067,7 +1067,7 @@ class OrganizationalManager {
     const userData = {
       id: id || nextSeq,
       username,
-      password,
+      password: "", // Never save plaintext password
       fullName,
       role,
       employeeId: role === "Employee" ? employeeId : null,
@@ -1096,26 +1096,12 @@ class OrganizationalManager {
   // REQ-26: Change Password for Current Logged-in User
   async handleChangePassword(event) {
     event.preventDefault();
-    const currentPass = document.getElementById("formCurrentPassword").value;
-    const newPass = document.getElementById("formNewPassword").value;
-    const confirmPass = document.getElementById("formConfirmPassword").value;
     const lang = AppState.lang;
+    const newPass = document.getElementById("formNewPassword")?.value || "";
+    const confirmPass = document.getElementById("formConfirmPassword")?.value || "";
 
-    if (!AppState.currentUser) return;
-
-    const user = await db.getById("users", AppState.currentUser.id);
-    if (!user) {
-      App.showToast(lang === "ar" ? "المستخدم غير موجود" : "User not found", "error");
-      return;
-    }
-
-    if (user.password !== currentPass) {
-      App.showToast(lang === "ar" ? "كلمة المرور الحالية غير صحيحة" : "Current password is incorrect", "error");
-      return;
-    }
-
-    if (!newPass || newPass.length < 3) {
-      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 3 أحرف على الأقل" : "New password must be at least 3 characters", "error");
+    if (!newPass || newPass.length < 6) {
+      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 6 أحرف على الأقل" : "New password must be at least 6 characters", "error");
       return;
     }
 
@@ -1124,13 +1110,20 @@ class OrganizationalManager {
       return;
     }
 
-    user.password = newPass;
-    await db.put("users", user);
-    AppState.currentUser.password = newPass;
-    sessionStorage.setItem("sdi_user", JSON.stringify(AppState.currentUser));
-
-    App.closeModal("changePasswordModal");
-    App.showToast(lang === "ar" ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", "success");
+    try {
+      if (db.supabase) {
+        const { error } = await db.supabase.auth.updateUser({ password: newPass });
+        if (error) throw error;
+        
+        App.closeModal("changePasswordModal");
+        App.showToast(lang === "ar" ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", "success");
+      } else {
+        App.showToast(lang === "ar" ? "الخدمة السحابية غير متوفرة" : "Cloud service unavailable", "error");
+      }
+    } catch (err) {
+      console.warn("Change password error:", err);
+      App.showToast((lang === "ar" ? "فشل تغيير كلمة المرور: " : "Failed to change password: ") + err.message, "error");
+    }
   }
 
   // =========================================================================

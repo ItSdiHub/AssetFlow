@@ -14,7 +14,7 @@ const SUPABASE_CONFIG = {
   allowDemoSeed: false
 };
 const PRODUCTION_CLOUD_REQUIRED = false;
-const STRICT_CLOUD_ONLY = false;
+const STRICT_CLOUD_ONLY = true;
 
 const STORE_TABLE_MAP = {
   assets: "assets",
