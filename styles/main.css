@@ -235,12 +235,19 @@ body {
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   background-color: var(--accent-emerald);
   border-radius: 50%;
   box-shadow: 0 0 8px var(--accent-emerald);
-  animation: pulse 2s infinite;
+  animation: pulse 4s infinite;
+  transition: background-color 0.4s, box-shadow 0.4s;
+}
+
+.status-dot.offline {
+  background-color: #ef4444; /* Red for offline */
+  box-shadow: 0 0 8px #ef4444;
+  animation: none;
 }
 
 @keyframes pulse {

@@ -946,7 +946,7 @@ class DBEngine {
           ? "Cloud & Local Database Connection Successful" 
           : "Local Database Connection Successful",
         messageAr: isCloudActive 
-          ? `تم الاتصال بالسحابة بنجاح! متصل بـ Supabase Cloud (${cloudAssetCount} أصل سحابي) + التخزين المحلي الآمن v5` 
+          ? `تم الاتصال بمحرك السحابة بنجاح! (Supabase Cloud) - تم العثور على ${cloudAssetCount} أصول مسجلة.` 
           : "تم الاتصال بقاعدة البيانات بنجاح " + (isIdbActive ? "(محرك IndexedDB v5)" : "(محرك التخزين المحلي الآمن)"),
         details: {
           dbName: DB_NAME,

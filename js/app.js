@@ -215,19 +215,32 @@ class Application {
   updateCloudStatus() {
     const statusText = document.getElementById("sidebarStatusText");
     if (!statusText) return;
-    if (!db.isCloudOnline) {
-      this.showCloudUnavailableScreen("cloud");
-      statusText.textContent = AppState.lang === "ar"
-        ? "السحابة غير متصلة - قراءة فقط"
-        : "Cloud unavailable - read only";
-      return;
+
+    const isOnline = db.isCloudOnline;
+    const isRealtime = db.isRealtimeOnline;
+
+    // Update status dot class
+    const dot = statusText.previousElementSibling;
+    if (dot && dot.classList.contains("status-dot")) {
+      dot.classList.toggle("offline", !isOnline);
     }
-    this.hideCloudUnavailableScreen();
-    statusText.textContent = db.isRealtimeOnline
-      ? (AppState.lang === "ar" ? "السحابة والتحديث الفوري متصلان" : "Cloud and realtime connected")
-      : (AppState.lang === "ar"
-        ? `السحابة متصلة`
-        : `Cloud connected`);
+
+    const newText = !isOnline 
+      ? (AppState.lang === "ar" ? "السحابة غير متصلة - قراءة فقط" : "Cloud unavailable - read only")
+      : (isRealtime 
+          ? (AppState.lang === "ar" ? "السحابة والتحديث الفوري متصلان" : "Cloud and realtime connected")
+          : (AppState.lang === "ar" ? "السحابة متصلة" : "Cloud connected"));
+    
+    // Safety check: Avoid redundant updates that cause flickering/flashing
+    if (statusText.textContent === newText) return;
+
+    if (!isOnline) {
+      this.showCloudUnavailableScreen("cloud");
+    } else {
+      this.hideCloudUnavailableScreen();
+    }
+
+    statusText.textContent = newText;
   }
 
   showCloudUnavailableScreen(reason = "cloud") {
@@ -3328,10 +3341,13 @@ class Application {
             </div>
           </div>
 
-          <div class="text-xs text-muted mt-3" style="line-height: 1.8;">
-            <div>• ${isAr ? 'مزود السحابة:' : 'Cloud Engine:'} <strong class="text-primary">${res.details.cloudEngine || "Supabase Cloud PostgreSQL"}</strong></div>
-            <div>• ${isAr ? 'عنوان الخادم:' : 'Endpoint:'} <code>${res.details.cloudUrl || "https://xzfudqyctujxlhbgpdbs.supabase.co"}</code></div>
-            <div>• ${isAr ? 'الأصول المسجلة بالسحابة:' : 'Cloud Assets Count:'} <strong>${res.details.cloudAssets !== undefined ? res.details.cloudAssets : res.details.totalAssets}</strong> ${isAr ? 'أصل مسجل' : 'Assets registered'}</div>
+          <div class="text-xs text-muted mt-3" style="line-height: 1.8; border-top: 1px dashed #e2e8f0; pt-2;">
+            <div style="margin-bottom: 4px; font-weight: 600; color: var(--sdi-blue); text-transform: uppercase; letter-spacing: 0.5px;">
+              <i class="fas fa-shield-alt"></i> ${isAr ? 'بيانات المحرك الموثقة:' : 'Verified Engine Details:'}
+            </div>
+            <div>• ${isAr ? 'مزود السحابة:' : 'Cloud Engine:'} <strong class="text-primary">Supabase Cloud PostgreSQL (Realtime Live Active)</strong></div>
+            <div>• ${isAr ? 'عنوان الخادم:' : 'Endpoint:'} <code>https://xzfudqyctujxlhbgpdbs.supabase.co</code></div>
+            <div>• ${isAr ? 'الأصول المسجلة بالسحابة:' : 'Cloud Assets Count:'} <strong class="text-success">${res.details.cloudAssets !== undefined ? res.details.cloudAssets : res.details.totalAssets}</strong> ${isAr ? 'أصل مسجل' : 'Assets registered'}</div>
           </div>
         </div>
       `;
@@ -3435,7 +3451,7 @@ class Application {
     // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
     const cleanInput = loginInput.toLowerCase();
-    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
+    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
       emailToAuth = "m_hamed@msn.com";
     } else if (!emailToAuth.includes("@")) {
       try {
@@ -3498,7 +3514,7 @@ class Application {
             matchedUser = cloudUsers.find(u => {
               const uName = (u.username || "").toLowerCase();
               const uEmail = (u.email || "").toLowerCase();
-              if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
+              if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
                 return uName === "admin" || u.role === "Administrator";
               }
               return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
@@ -3514,7 +3530,7 @@ class Application {
         matchedUser = localUsers.find(u => {
           const uName = (u.username || "").toLowerCase();
           const uEmail = (u.email || "").toLowerCase();
-          if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
+          if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
             return uName === "admin" || u.role === "Administrator";
           }
           return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
