@@ -1110,8 +1110,8 @@ class OrganizationalManager {
     const newPass = document.getElementById("formNewPassword")?.value || "";
     const confirmPass = document.getElementById("formConfirmPassword")?.value || "";
 
-    if (!newPass || newPass.length < 3) {
-      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 3 أحرف على الأقل" : "New password must be at least 3 characters", "error");
+    if (!newPass || newPass.length < 6) {
+      App.showToast(lang === "ar" ? "يجب أن تكون كلمة المرور الجديدة 6 أحرف على الأقل" : "New password must be at least 6 characters", "error");
       return;
     }
 
@@ -1120,40 +1120,24 @@ class OrganizationalManager {
       return;
     }
 
-    try {
-      if (AppState.currentUser) {
-        // Update password in Cloud Database
-        if (db.supabase && db.isCloudOnline) {
-          try {
-            await db.supabase
-              .from("users")
-              .update({ password: newPass, updated_at: new Date().toISOString() })
-              .eq("id", AppState.currentUser.id);
-          } catch (cloudErr) {
-            console.warn("Cloud password update warning:", cloudErr);
-          }
-        }
-        // Update locally
-        const u = await db.getById("users", AppState.currentUser.id);
-        if (u) {
-          u.password = newPass;
-          await db.put("users", u);
-        }
-        // Attempt GoTrue update if session active
-        if (db.supabase) {
-          try {
-            await db.supabase.auth.updateUser({ password: newPass });
-          } catch (authErr) {
-            console.warn("GoTrue password sync note:", authErr);
-          }
-        }
+    if (!db.supabase || !db.isCloudOnline) {
+      App.showToast(lang === "ar" ? "الخدمة السحابية غير متوفرة حالياً" : "Cloud service is currently unavailable", "error");
+      return;
+    }
 
-        App.closeModal("changePasswordModal");
-        App.showToast(lang === "ar" ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", "success");
-      }
+    try {
+      const { data, error } = await db.supabase.auth.updateUser({ password: newPass });
+      if (error) throw error;
+
+      // Clear password fields immediately
+      if (document.getElementById("formNewPassword")) document.getElementById("formNewPassword").value = "";
+      if (document.getElementById("formConfirmPassword")) document.getElementById("formConfirmPassword").value = "";
+
+      App.closeModal("changePasswordModal");
+      App.showToast(lang === "ar" ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", "success");
     } catch (err) {
       console.warn("Change password error:", err);
-      App.showToast((lang === "ar" ? "فشل تغيير كلمة المرور: " : "Failed to change password: ") + err.message, "error");
+      App.showToast((lang === "ar" ? "فشل تغيير كلمة المرور: " : "Failed to change password: ") + (err.message || err), "error");
     }
   }
 

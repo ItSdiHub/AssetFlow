@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "node -c server.js js/*.js",
-    "lint": "node -c server.js js/*.js",
+    "build": "node -e \"['server.js', ...fs.readdirSync('js').filter(f=>f.endsWith('.js')).map(f=>'js/'+f)].forEach(f => require('child_process').execSync('node --check ' + f, {stdio: 'inherit'}))\"",
+    "lint": "node -e \"['server.js', ...fs.readdirSync('js').filter(f=>f.endsWith('.js')).map(f=>'js/'+f)].forEach(f => require('child_process').execSync('node --check ' + f, {stdio: 'inherit'}))\"",
     "test": "node test_e2e_simulation.js"
   },
   "keywords": [

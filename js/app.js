@@ -73,9 +73,8 @@ class Application {
     localStorage.removeItem("sdi_user");
     sessionStorage.removeItem("sdi_user");
 
-    // 6. Verify User Session & Authoritative Role from Cloud Database (Single Source of Truth)
+    // Verify User Session & Authoritative Role from Cloud Database (Single Source of Truth)
     AppState.currentUser = null;
-    let sessionRestored = false;
 
     if (db.supabase && db.isCloudOnline) {
       try {
@@ -94,6 +93,7 @@ class Application {
               await db.supabase.auth.signOut();
             } else {
               // Role and access are strictly DERIVED from Cloud Database mapping
+              const normalizedRole = String(cloudUser.role || "Viewer").trim();
               AppState.currentUser = {
                 id: cloudUser.id,
                 username: cloudUser.username,
@@ -101,15 +101,14 @@ class Application {
                 fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
                 fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
                 fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-                role: cloudUser.role || "Viewer",
+                role: normalizedRole,
                 employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
                 active: cloudUser.active !== false
               };
-              sessionRestored = true;
             }
           } else {
-             // Authenticated but no public.users mapping
-             await db.supabase.auth.signOut();
+            // Authenticated in Supabase Auth but no matching public.users mapping
+            await db.supabase.auth.signOut();
           }
         }
       } catch (authErr) {
@@ -117,8 +116,8 @@ class Application {
       }
     }
 
-    // Verify session stored in sessionStorage
-    if (!sessionRestored) {
+    // Restore session if available in sessionStorage and verified against authoritative database
+    if (!AppState.currentUser) {
       try {
         const cached = sessionStorage.getItem("sdi_session_user");
         if (cached) {
@@ -132,6 +131,7 @@ class Application {
                 .eq('id', parsed.id)
                 .maybeSingle();
               if (cloudUser && cloudUser.active !== false) {
+                const normalizedRole = String(cloudUser.role || "Viewer").trim();
                 activeUser = {
                   id: cloudUser.id,
                   username: cloudUser.username,
@@ -139,7 +139,7 @@ class Application {
                   fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
                   fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
                   fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-                  role: cloudUser.role || "Viewer",
+                  role: normalizedRole,
                   employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
                   active: true
                 };
@@ -147,13 +147,11 @@ class Application {
             } else {
               const localUser = await db.getById("users", parsed.id);
               if (localUser && localUser.active !== false) {
-                activeUser = { ...parsed, role: localUser.role };
+                activeUser = { ...parsed, role: String(localUser.role || "Viewer").trim() };
               }
             }
-
             if (activeUser) {
               AppState.currentUser = activeUser;
-              sessionRestored = true;
             } else {
               sessionStorage.removeItem("sdi_session_user");
             }
@@ -357,12 +355,27 @@ class Application {
       }
     });
 
-    // Browser back button handler (REQ-46)
+    // Browser back button & hash navigation handlers (REQ-46)
     window.addEventListener("popstate", (e) => {
+      if (!AppState.currentUser) {
+        this.openLoginModal();
+        return;
+      }
       if (e.state && e.state.tab) {
         this.switchTab(e.state.tab, true);
       } else {
         this.navigateBack();
+      }
+    });
+
+    window.addEventListener("hashchange", () => {
+      if (!AppState.currentUser) {
+        this.openLoginModal();
+        return;
+      }
+      const hash = window.location.hash.replace("#", "");
+      if (hash) {
+        this.switchTab(hash, true);
       }
     });
   }
@@ -371,6 +384,11 @@ class Application {
   // 1. NAVIGATION & TAB SWITCHING (With Authorization & Unsaved Changes Guard)
   // =========================================================================
   async switchTab(tabName, skipHistory = false) {
+    if (!AppState.currentUser) {
+      this.openLoginModal();
+      return;
+    }
+
     if (this.hasUnsavedChanges) {
       this.pendingNavTarget = { type: 'tab', tab: tabName, skipHistory };
       this.openModal("unsavedChangesModal");
@@ -381,14 +399,19 @@ class Application {
     const role = AppState.currentUser ? AppState.currentUser.role : "Viewer";
     let targetTab = tabName;
 
+    // Diagnostic logging for development
+    console.log("[AUTH DIAGNOSTIC] switchTab requested:", tabName, "| User Role:", role);
+
     if (role === "Employee") {
       // Employee can ONLY access employeePortal or accessDenied
       if (tabName !== "employeePortal" && tabName !== "accessDenied") {
+        console.warn("[AUTH DIAGNOSTIC] Employee attempted restricted tab:", tabName);
         targetTab = "accessDenied";
       }
-    } else if (role !== "Administrator") {
+    } else if (String(role).trim() !== "Administrator") {
       // Non-administrators cannot access settings
       if (tabName === "settings") {
+        console.warn("[AUTH DIAGNOSTIC] Non-Admin attempted restricted tab:", tabName);
         targetTab = "accessDenied";
       }
     }
@@ -408,9 +431,12 @@ class Application {
       item.classList.toggle("active", item.getAttribute("data-tab") === targetTab);
     });
 
-    // Update Panes
+    // Update Panes (REQ-32: Ensure inline styles from applyUserRolePermissions don't override active class)
     document.querySelectorAll(".tab-pane").forEach(pane => {
-      pane.classList.toggle("active", pane.id === `tab-${targetTab}`);
+      const isActive = pane.id === `tab-${targetTab}`;
+      pane.classList.toggle("active", isActive);
+      // Reset inline style to allow CSS class to control visibility
+      pane.style.display = ""; 
     });
 
     // Refresh specific tab data
@@ -3406,37 +3432,36 @@ class Application {
     let cloudUser = null;
     let authSuccess = false;
 
-    // 1. Attempt GoTrue authentication if email format or mapped admin
+    // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
     const cleanInput = loginInput.toLowerCase();
-    if (!emailToAuth.includes("@")) {
-      if (cleanInput === "admin") {
-        emailToAuth = "m_hamed@msn.com";
-      } else {
-        try {
-          const { data: userRec } = await db.supabase
-            .from("users")
-            .select("id, username, employee_id")
-            .ilike("username", cleanInput)
-            .maybeSingle();
+    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
+      emailToAuth = "m_hamed@msn.com";
+    } else if (!emailToAuth.includes("@")) {
+      try {
+        const { data: userRec } = await db.supabase
+          .from("users")
+          .select("id, username, employee_id")
+          .ilike("username", cleanInput)
+          .maybeSingle();
 
-          if (userRec && userRec.employee_id) {
-            const { data: empRec } = await db.supabase
-              .from("employees")
-              .select("email")
-              .eq("id", userRec.employee_id)
-              .maybeSingle();
-            if (empRec && empRec.email) {
-              emailToAuth = empRec.email;
-            }
+        if (userRec && userRec.employee_id) {
+          const { data: empRec } = await db.supabase
+            .from("employees")
+            .select("email")
+            .eq("id", userRec.employee_id)
+            .maybeSingle();
+          if (empRec && empRec.email) {
+            emailToAuth = empRec.email;
           }
-        } catch (e) {
-          console.warn("Username to email resolution warning:", e);
         }
+      } catch (e) {
+        console.warn("Username to email resolution warning:", e);
       }
     }
 
-    if (emailToAuth.includes("@")) {
+    // 2. Try Supabase GoTrue Authentication first
+    if (emailToAuth && emailToAuth.includes("@")) {
       try {
         const { data: authData, error: authError } = await db.supabase.auth.signInWithPassword({
           email: emailToAuth,
@@ -3445,22 +3470,23 @@ class Application {
 
         if (!authError && authData && authData.user && authData.session) {
           authUser = authData.user;
-          const { data: cUser } = await db.supabase
+          const { data: cUser, error: queryError } = await db.supabase
             .from("users")
             .select("*")
             .eq("auth_user_id", authUser.id)
             .maybeSingle();
-          if (cUser) {
+
+          if (!queryError && cUser && cUser.active !== false) {
             cloudUser = cUser;
             authSuccess = true;
           }
         }
       } catch (err) {
-        console.warn("GoTrue sign in check note:", err);
+        console.warn("Supabase GoTrue sign-in note:", err);
       }
     }
 
-    // 2. Authoritative Database Users Table Verification (for provisioned system accounts)
+    // 3. Authoritative Database Users Table Verification (for provisioned system accounts & default passwords)
     if (!authSuccess) {
       let matchedUser = null;
       if (db.supabase && db.isCloudOnline) {
@@ -3499,6 +3525,15 @@ class Application {
         const storedPass = matchedUser.password || "123";
         const isPassValid = (pass === storedPass) || (pass === "123" && (!matchedUser.password || matchedUser.password === "123"));
         if (isPassValid) {
+          if (matchedUser.active === false) {
+            this.showToast(
+              lang === "ar"
+                ? "الحساب معطل. يرجى مراجعة إدارة النظام."
+                : "Account is disabled. Please contact the administrator.",
+              "error"
+            );
+            return;
+          }
           cloudUser = matchedUser;
           authSuccess = true;
         }
@@ -3515,17 +3550,7 @@ class Application {
       return;
     }
 
-    if (cloudUser.active === false) {
-      if (db.supabase) await db.supabase.auth.signOut().catch(() => {});
-      this.showToast(
-        lang === "ar"
-          ? "الحساب معطل. يرجى مراجعة إدارة النظام."
-          : "Account is disabled. Please contact the administrator.",
-        "error"
-      );
-      return;
-    }
-
+    // 4. Derive AppState.currentUser strictly from Cloud User and Session
     authenticatedUser = {
       id: cloudUser.id,
       username: cloudUser.username,
@@ -3533,15 +3558,16 @@ class Application {
       fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-      role: cloudUser.role || "Viewer",
+      role: String(cloudUser.role || "Viewer").trim(),
       employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
       active: cloudUser.active !== false
     };
 
     AppState.currentUser = authenticatedUser;
     sessionStorage.setItem("sdi_session_user", JSON.stringify(authenticatedUser));
-    localStorage.removeItem("sdi_user");
     sessionStorage.removeItem("sdi_user");
+    localStorage.removeItem("sdi_session_user");
+    localStorage.removeItem("sdi_user");
 
     if (document.getElementById("loginPassword")) {
       document.getElementById("loginPassword").value = "";
@@ -3703,6 +3729,9 @@ class Application {
     const roleEl = document.getElementById("currentUserRole");
     const lang = AppState.lang;
 
+    // Diagnostic logging
+    console.log("[AUTH DIAGNOSTIC] applyUserRolePermissions | User:", user ? user.username : "None", "| Role:", user ? user.role : "None");
+
     const itNavItems = [
       "navDashboard",
       "navAssets",
@@ -3728,8 +3757,24 @@ class Application {
       if (empPortalNav) empPortalNav.style.display = "none";
       document.querySelectorAll(".user-write-action").forEach(btn => btn.style.display = "none");
       document.querySelectorAll(".user-admin-action").forEach(btn => btn.style.display = "none");
+      
+      // Unauthenticated state: Hide all panes and show Access Denied as landing
+      document.querySelectorAll(".tab-pane").forEach(pane => {
+        pane.classList.remove("active");
+        pane.style.display = "none";
+      });
+      const deniedPane = document.getElementById("tab-accessDenied");
+      if (deniedPane) {
+        deniedPane.classList.add("active");
+        deniedPane.style.display = "block";
+      }
       return;
     }
+
+    // Authenticated state: Clear any previously set inline display styles for panes
+    document.querySelectorAll(".tab-pane").forEach(pane => {
+      pane.style.display = ""; 
+    });
 
     if (nameEl) {
       if (typeof getUserDisplayName === "function") {
@@ -3746,9 +3791,9 @@ class Application {
       roleEl.textContent = roleLabel;
     }
 
-    const isAdmin = user.role === "Administrator";
-    const isEmployee = user.role === "Employee";
-    const isViewer = user.role === "Viewer";
+    const isAdmin = String(user.role).trim() === "Administrator";
+    const isEmployee = String(user.role).trim() === "Employee";
+    const isViewer = String(user.role).trim() === "Viewer";
 
     // Sidebar items control (REQ-32, REQ-55)
     itNavItems.forEach(id => {
@@ -4173,6 +4218,10 @@ class Application {
   }
 
   closeModal(modalId) {
+    if (modalId === "loginModal" && !AppState.currentUser) {
+      this.handleLoginModalClose();
+      return;
+    }
     const modal = document.getElementById(modalId);
     if (modal) {
       modal.classList.remove("active");
