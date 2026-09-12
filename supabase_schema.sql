@@ -272,12 +272,14 @@ CREATE TABLE IF NOT EXISTS public.licenses (
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
+    email TEXT,
     password TEXT NOT NULL,
     full_name TEXT NOT NULL,
     full_name_ar TEXT,
     full_name_en TEXT,
     role TEXT NOT NULL DEFAULT 'Viewer',
     employee_id TEXT,
+    auth_user_id TEXT,
     active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -391,12 +393,12 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 -- 1. Helper Functions for RLS
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS text AS $
-  SELECT role FROM public.users WHERE id = auth.uid()::text LIMIT 1;
+  SELECT role FROM public.users WHERE auth_user_id = auth.uid()::text LIMIT 1;
 $ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 CREATE OR REPLACE FUNCTION public.get_auth_employee_id()
 RETURNS text AS $
-  SELECT employee_id FROM public.users WHERE id = auth.uid()::text LIMIT 1;
+  SELECT employee_id FROM public.users WHERE auth_user_id = auth.uid()::text LIMIT 1;
 $ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Revoke anon access to enforce authentication
@@ -423,7 +425,8 @@ END $$;
 -- 1. public.users
 -- ------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Auth_Read_Users" ON public.users;
-CREATE POLICY "Auth_Read_Users" ON public.users FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Auth_Read_Users" ON public.users FOR SELECT TO authenticated 
+USING (auth_user_id = auth.uid()::text OR public.get_auth_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Admin_Insert_Users" ON public.users;
 CREATE POLICY "Admin_Insert_Users" ON public.users FOR INSERT TO authenticated 

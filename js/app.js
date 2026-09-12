@@ -3536,6 +3536,20 @@ class Application {
           }
           cloudUser = matchedUser;
           authSuccess = true;
+
+          // 4. Automatic Linking (Audit Fix): If we have a successful Supabase Auth session but no link in public.users, create it now
+          if (authUser && !matchedUser.auth_user_id) {
+            console.info("Linking legacy profile to Supabase Auth account...");
+            await db.supabase
+              .from("users")
+              .update({ auth_user_id: authUser.id })
+              .eq("id", matchedUser.id)
+              .catch(e => console.warn("Failed to update auth_user_id in cloud:", e));
+            
+            // Also update locally
+            matchedUser.auth_user_id = authUser.id;
+            await db.put("users", matchedUser);
+          }
         }
       }
     }

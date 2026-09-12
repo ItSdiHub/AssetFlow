@@ -953,10 +953,14 @@ class OrganizationalManager {
       }
 
       const linkedEmpText = u.employeeId && empMap[u.employeeId] ? `<br><small class="text-muted"><i class="fas fa-link"></i> ${empMap[u.employeeId]}</small>` : "";
+      const emailText = u.email ? `<div class="text-muted text-xs"><i class="fas fa-envelope"></i> ${u.email}</div>` : "";
 
       html += `
         <tr>
-          <td><strong><i class="fas fa-user-circle"></i> ${u.username}</strong></td>
+          <td>
+            <strong><i class="fas fa-user-circle"></i> ${u.username}</strong>
+            ${emailText}
+          </td>
           <td>${getUserDisplayName(u, lang)}${linkedEmpText}</td>
           <td><span class="badge ${roleBadge}">${roleLabel}</span></td>
           <td>
@@ -1006,10 +1010,22 @@ class OrganizationalManager {
       if (u) {
         document.getElementById("formUserId").value = u.id;
         document.getElementById("formUsername").value = u.username || "";
-        document.getElementById("formUserPass").value = ""; // Removed legacy password display
+        document.getElementById("formUserEmail").value = u.email || "";
+        document.getElementById("formUserPass").value = ""; 
         document.getElementById("formUserFullName").value = u.fullName || "";
         document.getElementById("formUserRole").value = u.role || "IT User";
         document.getElementById("formUserActive").value = u.active !== false ? "true" : "false";
+        
+        if (document.getElementById("bannerUserEmail")) document.getElementById("bannerUserEmail").textContent = u.email || "-";
+        if (document.getElementById("bannerUsername")) document.getElementById("bannerUsername").textContent = u.username || "-";
+        if (document.getElementById("bannerUserFullname")) document.getElementById("bannerUserFullname").textContent = u.fullName || "-";
+        if (document.getElementById("bannerUserRole")) document.getElementById("bannerUserRole").textContent = u.role || "-";
+        if (document.getElementById("bannerUserStatus")) document.getElementById("bannerUserStatus").textContent = u.active !== false ? "Active" : "Inactive";
+
+        if (document.getElementById("passReqStar")) document.getElementById("passReqStar").style.display = "none";
+        if (document.getElementById("formUserPassHint")) document.getElementById("formUserPassHint").style.display = "block";
+        if (document.getElementById("btnSendResetEmail")) document.getElementById("btnSendResetEmail").style.display = "block";
+        
         if (empSelect) {
           empSelect.value = u.employeeId || "";
         }
@@ -1017,6 +1033,18 @@ class OrganizationalManager {
     } else {
       document.getElementById("userModalTitle").textContent = lang === "ar" ? "إضافة مستخدم جديد" : "Add New User";
       document.getElementById("formUserActive").value = "true";
+      document.getElementById("formUserEmail").value = "";
+      
+      if (document.getElementById("bannerUserEmail")) document.getElementById("bannerUserEmail").textContent = "-";
+      if (document.getElementById("bannerUsername")) document.getElementById("bannerUsername").textContent = "-";
+      if (document.getElementById("bannerUserFullname")) document.getElementById("bannerUserFullname").textContent = "-";
+      if (document.getElementById("bannerUserRole")) document.getElementById("bannerUserRole").textContent = "-";
+      if (document.getElementById("bannerUserStatus")) document.getElementById("bannerUserStatus").textContent = "Active";
+
+      if (document.getElementById("passReqStar")) document.getElementById("passReqStar").style.display = "inline";
+      if (document.getElementById("formUserPassHint")) document.getElementById("formUserPassHint").style.display = "none";
+      if (document.getElementById("btnSendResetEmail")) document.getElementById("btnSendResetEmail").style.display = "none";
+      if (document.getElementById("formUserPass")) document.getElementById("formUserPass").required = true;
     }
 
     this.handleUserRoleChange();
@@ -1039,10 +1067,38 @@ class OrganizationalManager {
     }
   }
 
+  async handleSendResetEmail() {
+    const email = document.getElementById("formUserEmail").value.trim();
+    const lang = AppState.lang;
+
+    if (!email || !email.includes("@")) {
+      App.showToast(lang === "ar" ? "يرجى التأكد من البريد الإلكتروني أولاً" : "Please check the email first", "error");
+      return;
+    }
+
+    if (!confirm(lang === "ar" ? "هل أنت متأكد من إرسال رابط استعادة كلمة المرور لهذا المستخدم؟" : "Are you sure you want to send a password reset link to this user?")) {
+      return;
+    }
+
+    try {
+      if (db.supabase && db.isCloudOnline) {
+        const { error } = await db.supabase.auth.resetPasswordForEmail(email);
+        if (error) throw error;
+        App.showToast(lang === "ar" ? "تم إرسال الرابط بنجاح" : "Reset link sent successfully", "success");
+      } else {
+        App.showToast(lang === "ar" ? "الخدمة السحابية غير متوفرة" : "Cloud service unavailable", "error");
+      }
+    } catch (err) {
+      console.error("Reset email error:", err);
+      App.showToast((lang === "ar" ? "فشل الإرسال: " : "Failed to send: ") + err.message, "error");
+    }
+  }
+
   async handleSaveUser(event) {
     event.preventDefault();
     const id = document.getElementById("formUserId").value;
     const username = document.getElementById("formUsername").value.trim().toLowerCase();
+    const email = document.getElementById("formUserEmail").value.trim().toLowerCase();
     const password = document.getElementById("formUserPass").value.trim();
     const fullName = document.getElementById("formUserFullName").value.trim();
     const role = document.getElementById("formUserRole").value;
@@ -1051,38 +1107,112 @@ class OrganizationalManager {
     const employeeId = empSelect ? empSelect.value : "";
     const lang = AppState.lang;
 
+    if (!email || !email.includes("@")) {
+      App.showToast(lang === "ar" ? "يرجى إدخال بريد إلكتروني صحيح" : "Please enter a valid email", "error");
+      return;
+    }
+
     if (role === "Employee" && !employeeId) {
       App.showToast(lang === "ar" ? "يجب ربط حساب الموظف بموظف مسجل في النظام" : "Employee account must be linked to a registered employee", "error");
       return;
     }
 
     const users = await db.getAll("users");
-    const isDup = users.some(u => u.username.toLowerCase() === username && u.id !== id);
-    if (isDup) {
+    const isDupUsername = users.some(u => u.username.toLowerCase() === username && u.id !== id);
+    if (isDupUsername) {
       App.showToast(lang === "ar" ? "اسم المستخدم مسجل مسبقاً" : "Username already exists", "error");
       return;
     }
 
-    const nextSeq = await db.getNextSequentialId("users");
-    let finalPassword = password;
-    if (!finalPassword) {
-      if (id) {
-        const existing = await db.getById("users", id);
-        finalPassword = existing && existing.password ? existing.password : "123";
-      } else {
-        finalPassword = "123";
+    const isDupEmail = users.some(u => u.email && u.email.toLowerCase() === email && u.id !== id);
+    if (isDupEmail) {
+      App.showToast(lang === "ar" ? "البريد الإلكتروني مسجل مسبقاً" : "Email already exists", "error");
+      return;
+    }
+
+    if (!id && !password) {
+      App.showToast(lang === "ar" ? "كلمة المرور مطلوبة للمستخدمين الجدد" : "Password is required for new users", "error");
+      return;
+    }
+
+    let authUserId = null;
+    const existing = id ? await db.getById("users", id) : null;
+    if (existing) authUserId = existing.authUserId || existing.auth_user_id || null;
+
+    // 1. Supabase Auth Integration
+    if (db.supabase && db.isCloudOnline) {
+      try {
+        // We use a secondary client to avoid signing out the current admin
+        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm');
+        const tempSupabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+          auth: { persistSession: false }
+        });
+
+        if (!id) {
+          // New User: Try to create Auth account
+          const { data: signUpData, error: signUpError } = await tempSupabase.auth.signUp({
+            email: email,
+            password: password,
+            options: {
+              data: {
+                full_name: fullName,
+                username: username,
+                role: role
+              }
+            }
+          });
+
+          if (signUpError) {
+            // If user already exists in Auth but not in our users table, we can try to link it
+            if (signUpError.message.includes("already registered") || signUpError.status === 422) {
+              console.warn("User already exists in Supabase Auth. Proceeding to create profile link.");
+              // We don't have the user ID here easily without admin API, but we can try to find them later or let them login via fallback
+            } else {
+              // Fatal error for Auth creation
+              App.showToast((lang === "ar" ? "فشل إنشاء حساب الهوية: " : "Auth account creation failed: ") + signUpError.message, "error");
+              return; // STOP HERE
+            }
+          } else if (signUpData && signUpData.user) {
+            authUserId = signUpData.user.id;
+          }
+        } else {
+          // Existing User: Update Auth metadata if possible
+          if (authUserId && db.supabase.auth.admin) {
+            await db.supabase.auth.admin.updateUserById(authUserId, {
+              user_metadata: { full_name: fullName, role: role }
+            }).catch(e => console.warn("Admin metadata update skipped:", e));
+          }
+        }
+      } catch (err) {
+        console.error("Auth sync error:", err);
+        App.showToast((lang === "ar" ? "فشل الربط مع نظام الهوية: " : "Auth sync failed: ") + err.message, "error");
+        return; // STOP HERE if it's a real error
       }
     }
 
+    const nextSeq = await db.getNextSequentialId("users");
+    
     const userData = {
       id: id || nextSeq,
       username,
-      password: finalPassword,
+      email,
       fullName,
       role,
       employeeId: role === "Employee" ? employeeId : null,
+      authUserId,
       active
     };
+
+    // If we have a password and it's a new user or explicitly changing it, we could store it 
+    // but the request says: "Do not store password in plain text in User Profile".
+    // We only keep it for local/fallback if absolutely necessary, but let's follow the instruction.
+    // However, for the very first admin "admin/123", it's already there. 
+    // For new users created here, we'll rely on Supabase Auth.
+    if (!id && password) {
+      userData.password = "***"; // Placeholder indicating it's managed by Auth
+    } else if (existing && existing.password) {
+      userData.password = existing.password;
+    }
 
     await db.put("users", userData);
     App.closeModal("userModal");

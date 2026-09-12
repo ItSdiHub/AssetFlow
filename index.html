@@ -4009,6 +4009,10 @@
                 <span class="value" id="bannerUsername">-</span>
               </div>
               <div class="form-info-data-pill">
+                <span class="label" data-i18n="email">البريد الإلكتروني</span>
+                <span class="value" id="bannerUserEmail">-</span>
+              </div>
+              <div class="form-info-data-pill">
                 <span class="label" data-i18n="fullName">الاسم الكامل</span>
                 <span class="value" id="bannerUserFullname">-</span>
               </div>
@@ -4032,8 +4036,23 @@
             </div>
 
             <div class="form-group">
-              <label style="display:none;"><span data-i18n="password">كلمة المرور</span>*</label>
-              <input type="password" id="formUserPass" class="form-control" placeholder="******" style="display:none;">
+              <label><span data-i18n="email">البريد الإلكتروني</span>*</label>
+              <input type="email" id="formUserEmail" class="form-control" required placeholder="user@sdi.ae"
+                     pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
+              <small class="text-muted text-xs" data-i18n="emailAuthHint">سيتم استخدام هذا البريد لتسجيل الدخول السحابي</small>
+            </div>
+
+            <div class="form-group" id="userPassGroup">
+              <label><span data-i18n="password">كلمة المرور</span><span id="passReqStar">*</span></label>
+              <div class="input-group">
+                <input type="password" id="formUserPass" class="form-control" placeholder="******">
+                <button type="button" id="btnSendResetEmail" class="btn btn-outline-primary btn-sm ml-2" 
+                        style="display:none;" onclick="UserManager.handleSendResetEmail()" 
+                        title="إرسال رابط استعادة كلمة المرور / Send Reset Link">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+              <small class="text-muted text-xs" id="formUserPassHint" data-i18n="passwordHint">اتركه فارغاً للحفاظ على كلمة المرور الحالية</small>
             </div>
 
             <div class="form-group">

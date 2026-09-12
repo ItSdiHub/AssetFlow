@@ -269,11 +269,13 @@ function toCloudRecord(storeName, item) {
     const record = {
       id: row.id,
       username: row.username || "",
+      email: row.email || "",
       full_name: row.fullName || row.full_name || "",
       full_name_ar: row.fullNameAr || row.full_name_ar || null,
       full_name_en: row.fullNameEn || row.full_name_en || null,
       role: row.role || "Viewer",
       employee_id: row.employeeId || row.employee_id || null,
+      auth_user_id: row.authUserId || row.auth_user_id || null,
       active: row.active !== false
     };
     if (row.password && row.password !== "***") {
@@ -443,10 +445,12 @@ function fromCloudRecord(storeName, row) {
     item.orgNameEn = row.org_name_en || row.orgNameEn;
     item.logoDataUrl = row.logo_data_url || row.logoDataUrl;
   } else if (storeName === "users") {
+    item.email = row.email || item.email || "";
     item.fullName = row.full_name || row.fullName;
     item.fullNameAr = row.full_name_ar || row.fullNameAr;
     item.fullNameEn = row.full_name_en || row.fullNameEn;
     item.employeeId = row.employee_id || row.employeeId;
+    item.authUserId = row.auth_user_id || item.authUserId || null;
     delete item.password;
   } else if (storeName === "helpdeskRequests") {
     item.requestId = row.request_number || row.requestId || row.id;
@@ -2008,11 +2012,11 @@ class DBEngine {
     const userCount = await this.count("users");
     if (userCount === 0) {
       const defaultUsers = [
-        { id: "usr-admin", username: "admin", password: "123", fullName: "مدير النظام", fullNameAr: "مدير النظام", fullNameEn: "System Administrator", role: "Administrator", employeeId: null, active: true },
-        { id: "usr-tech", username: "ituser", password: "123", fullName: "فني الدعم الفني", fullNameAr: "فني الدعم الفني", fullNameEn: "IT Support Technician", role: "IT User", employeeId: null, active: true },
-        { id: "usr-emp-101", username: "ahmed", password: "123", fullName: "م. أحمد الشامسي", fullNameAr: "م. أحمد الشامسي", fullNameEn: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true },
-        { id: "usr-emp-102", username: "maryam", password: "123", fullName: "مريم الحمادي", fullNameAr: "مريم الحمادي", fullNameEn: "Maryam Al Hammadi", role: "Employee", employeeId: "emp-102", active: true },
-        { id: "usr-view", username: "viewer", password: "123", fullName: "مستعرض التقارير", fullNameAr: "مستعرض التقارير", fullNameEn: "Reports Viewer", role: "Viewer", employeeId: null, active: true }
+        { id: "usr-admin", username: "admin", email: "admin@sdi.ae", password: "123", fullName: "مدير النظام", fullNameAr: "مدير النظام", fullNameEn: "System Administrator", role: "Administrator", employeeId: null, active: true },
+        { id: "usr-tech", username: "ituser", email: "it.tech@sdi.ae", password: "123", fullName: "فني الدعم الفني", fullNameAr: "فني الدعم الفني", fullNameEn: "IT Support Technician", role: "IT User", employeeId: null, active: true },
+        { id: "usr-emp-101", username: "ahmed", email: "ahmed.shamsi@sdi.ae", password: "123", fullName: "م. أحمد الشامسي", fullNameAr: "م. أحمد الشامسي", fullNameEn: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true },
+        { id: "usr-emp-102", username: "maryam", email: "maryam.h@sdi.ae", password: "123", fullName: "مريم الحمادي", fullNameAr: "مريم الحمادي", fullNameEn: "Maryam Al Hammadi", role: "Employee", employeeId: "emp-102", active: true },
+        { id: "usr-view", username: "viewer", email: "viewer@sdi.ae", password: "123", fullName: "مستعرض التقارير", fullNameAr: "مستعرض التقارير", fullNameEn: "Reports Viewer", role: "Viewer", employeeId: null, active: true }
       ];
       for (const u of defaultUsers) await this.put("users", u);
     } else {
