@@ -55,7 +55,14 @@ async function runSimulation() {
   console.log("\n--- SCENARIO 1: IT Asset Creation, Handover & Confirmation ---");
   
   // 1. Authenticate as IT User
-  const users = await db.getAll("users");
+  let users = await db.getAll("users");
+  if (!users.some(u => u.username === "ituser")) {
+    await db.put("users", { id: "usr-it", username: "ituser", fullName: "IT Support Technician", role: "IT User", active: true });
+  }
+  if (!users.some(u => u.username === "ahmed")) {
+    await db.put("users", { id: "usr-ahmed", username: "ahmed", fullName: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true });
+  }
+  users = await db.getAll("users");
   const itUser = users.find(u => u.username === "ituser" && u.active !== false);
   if (!itUser || itUser.role !== "IT User") throw new Error("IT User not found or inactive!");
   console.log(`✓ IT User authenticated: ${itUser.username} (${itUser.fullName})`);

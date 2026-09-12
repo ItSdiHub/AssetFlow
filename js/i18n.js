@@ -539,6 +539,7 @@ const I18N = {
 
     // Auth & Users
     username: "اسم المستخدم",
+    usernameOrEmail: "اسم المستخدم أو البريد الإلكتروني",
     password: "كلمة المرور",
     fullName: "الاسم الكامل",
     defaultAccountsNotice: "حسابات النظام الافتراضية:",
@@ -1680,6 +1681,7 @@ const I18N = {
 
     // Auth & Users
     username: "Username",
+    usernameOrEmail: "Username or Email",
     password: "Password",
     fullName: "Full Name",
     defaultAccountsNotice: "Default System Accounts:",

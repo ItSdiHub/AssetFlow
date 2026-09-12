@@ -264,16 +264,53 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "users") {
-    return {
+    const record = {
       id: row.id,
       username: row.username || "",
-      password: "***",
       full_name: row.fullName || row.full_name || "",
       full_name_ar: row.fullNameAr || row.full_name_ar || null,
       full_name_en: row.fullNameEn || row.full_name_en || null,
       role: row.role || "Viewer",
       employee_id: row.employeeId || row.employee_id || null,
       active: row.active !== false
+    };
+    if (row.password && row.password !== "***") {
+      record.password = row.password;
+    }
+    return record;
+  }
+  if (storeName === "helpdeskRequests") {
+    return {
+      id: row.id,
+      request_number: row.requestId || row.requestNumber || row.request_number || row.id,
+      employee_id: row.employeeId || row.employee_id,
+      asset_id: row.assetId || row.asset_id || null,
+      category: row.requestType || row.category || "Hardware",
+      title: row.subject || row.title || "",
+      description: row.description || "",
+      priority: row.priority || "Medium",
+      status: row.status || "New",
+      technician_notes: row.technicianNotes || row.technician_notes || null,
+      assigned_to: row.assignedTo || row.assigned_to || null,
+      messages: Array.isArray(row.messages) ? row.messages : [],
+      maintenance_id: row.maintenanceId || row.maintenance_id || null,
+      created_at: row.createdDate || row.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      closed_at: row.closedDate || row.closed_at || null
+    };
+  }
+  if (storeName === "notifications") {
+    return {
+      id: row.id,
+      employee_id: row.employeeId || row.employee_id || null,
+      title_ar: row.titleAr || row.title_ar || "",
+      title_en: row.titleEn || row.title_en || null,
+      message_ar: row.messageAr || row.message_ar || "",
+      message_en: row.messageEn || row.message_en || null,
+      type: row.type || "general",
+      related_id: row.relatedId || row.related_id || null,
+      read: !!row.read,
+      created_at: row.createdDate || row.created_at || new Date().toISOString()
     };
   }
   return row;
@@ -409,6 +446,32 @@ function fromCloudRecord(storeName, row) {
     item.fullNameEn = row.full_name_en || row.fullNameEn;
     item.employeeId = row.employee_id || row.employeeId;
     delete item.password;
+  } else if (storeName === "helpdeskRequests") {
+    item.requestId = row.request_number || row.requestId || row.id;
+    item.requestNumber = row.request_number || row.requestId || row.id;
+    item.employeeId = row.employee_id || row.employeeId;
+    item.assetId = row.asset_id || row.assetId;
+    item.requestType = row.category || row.requestType || "Hardware";
+    item.subject = row.title || row.subject;
+    item.description = row.description;
+    item.priority = row.priority;
+    item.status = row.status;
+    item.technicianNotes = row.technician_notes || row.technicianNotes;
+    item.assignedTo = row.assigned_to || row.assignedTo;
+    item.messages = Array.isArray(row.messages) ? row.messages : [];
+    item.maintenanceId = row.maintenance_id || row.maintenanceId;
+    item.createdDate = row.created_at || row.createdDate;
+    item.updatedAt = row.updated_at || row.updatedAt;
+    item.closedDate = row.closed_at || row.closedDate;
+  } else if (storeName === "notifications") {
+    item.employeeId = row.employee_id || row.employeeId;
+    item.titleAr = row.title_ar || row.titleAr;
+    item.titleEn = row.title_en || row.titleEn;
+    item.messageAr = row.message_ar || row.messageAr;
+    item.messageEn = row.message_en || row.messageEn;
+    item.relatedId = row.related_id || row.relatedId;
+    item.read = !!row.read;
+    item.createdDate = row.created_at || row.createdDate;
   } else if (storeName === "licenses") {
     item.licenseNo = row.license_no || row.licenseNo || row.id;
     item.name = row.software_name || row.softwareName || row.name;
@@ -1913,10 +1976,17 @@ class DBEngine {
     }
 
     // 5. Users Store (Authentication)
-    
     const userCount = await this.count("users");
-    if (userCount > 0) {
-
+    if (userCount === 0) {
+      const defaultUsers = [
+        { id: "usr-admin", username: "admin", password: "123", fullName: "مدير النظام", fullNameAr: "مدير النظام", fullNameEn: "System Administrator", role: "Administrator", employeeId: null, active: true },
+        { id: "usr-tech", username: "ituser", password: "123", fullName: "فني الدعم الفني", fullNameAr: "فني الدعم الفني", fullNameEn: "IT Support Technician", role: "IT User", employeeId: null, active: true },
+        { id: "usr-emp-101", username: "ahmed", password: "123", fullName: "م. أحمد الشامسي", fullNameAr: "م. أحمد الشامسي", fullNameEn: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true },
+        { id: "usr-emp-102", username: "maryam", password: "123", fullName: "مريم الحمادي", fullNameAr: "مريم الحمادي", fullNameEn: "Maryam Al Hammadi", role: "Employee", employeeId: "emp-102", active: true },
+        { id: "usr-view", username: "viewer", password: "123", fullName: "مستعرض التقارير", fullNameAr: "مستعرض التقارير", fullNameEn: "Reports Viewer", role: "Viewer", employeeId: null, active: true }
+      ];
+      for (const u of defaultUsers) await this.put("users", u);
+    } else {
       // Migrate existing users to ensure fullNameEn and fullNameAr exist
       const existingUsers = await this.getAll("users");
       for (const u of existingUsers) {
