@@ -503,6 +503,19 @@ class DBEngine {
     this.realtimeReconnectTimer = null;
     this.realtimeReconnectAttempts = 0;
     this.stores = Object.keys(STORE_TABLE_MAP);
+    
+    // AUTH-02: Early initialization of Supabase client to support Secure Auth Gate
+    this.initPromise = null;
+    this.initStatus = 'uninitialized'; // 'uninitialized', 'initializing', 'ready'
+    this.eventListenersAdded = false;
+    
+    if (typeof window !== "undefined" && window.supabase && SUPABASE_CONFIG.enabled) {
+      try {
+        this.supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+      } catch (e) {
+        console.error("Supabase early init error:", e);
+      }
+    }
   }
 
   getFallbackStore(storeName) {
@@ -548,214 +561,206 @@ class DBEngine {
   }
 
   async init() {
-    // 1. Initialize Supabase Cloud Client if library is available
-    if (typeof window !== "undefined" && window.supabase && SUPABASE_CONFIG.enabled) {
+    // 0. Initialization Guard: Prevent multiple simultaneous init calls
+    if (this.initStatus === 'ready') return Promise.resolve(this.db);
+    if (this.initStatus === 'initializing') return this.initPromise;
+
+    this.initStatus = 'initializing';
+    this.initPromise = (async () => {
       try {
-        this.supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-        const cloudCheck = await this.checkRequiredCloudTables();
-        if (!cloudCheck.success) throw cloudCheck.error;
-        this.isCloudOnline = true;
-        this.isOperationalReady = true;
-        console.log("SDI IT Asset Hub: Connected to Supabase Cloud Database!");
-
-        this.subscribeRealtime();
-        window.addEventListener("online", async () => {
-          await this.checkCloudConnection();
-          this.subscribeRealtime();
-          if (window.App && typeof window.App.refreshAllCloudViews === "function") {
-            window.App.refreshAllCloudViews();
-          }
-        });
-        window.addEventListener("offline", () => {
-          this.isCloudOnline = false;
-          this.isRealtimeOnline = false;
-          this.isOperationalReady = false;
-          this.realtimeStatus = "OFFLINE";
-          if (window.App && typeof window.App.updateCloudStatus === "function") {
-            window.App.updateCloudStatus();
-          }
-        });
-        document.addEventListener("visibilitychange", () => {
-          if (document.visibilityState === "visible") {
-            if (!this.isRealtimeOnline) this.subscribeRealtime();
-            if (window.App && typeof window.App.refreshAllCloudViews === "function") {
-              window.App.refreshAllCloudViews();
-            }
-          }
-        });
-      } catch (err) {
-        console.warn("Could not init Supabase client:", err);
-      }
-    }
-
-    return new Promise((resolve) => {
-      let isResolved = false;
-      const safeResolve = (val) => {
-        if (!isResolved) {
-          isResolved = true;
-          resolve(val);
-        }
-      };
-
-      // 1.5s Safety Timeout Guard: Never let the application hang if IndexedDB is blocked!
-      setTimeout(async () => {
-        if (!isResolved) {
-          console.warn("IndexedDB initialization timed out or blocked. Proceeding with storage fallback.");
-          this.useFallback = true;
+        // 1. Check Supabase Cloud Client availability (Initialized in constructor)
+        if (this.supabase) {
           try {
-            await this.ensureInitialSeedAndMigration();
-          } catch (e) {}
-          safeResolve(this.db);
+            const cloudCheck = await this.checkRequiredCloudTables();
+            if (cloudCheck.success) {
+              this.isCloudOnline = true;
+              this.isOperationalReady = true;
+              console.log("SDI IT Asset Hub: Connected to Supabase Cloud Database!");
+
+              this.subscribeRealtime();
+              
+              if (!this.eventListenersAdded) {
+                window.addEventListener("online", async () => {
+                  await this.checkCloudConnection();
+                  this.subscribeRealtime();
+                  if (window.App && typeof window.App.refreshAllCloudViews === "function") {
+                    window.App.refreshAllCloudViews();
+                  }
+                });
+                window.addEventListener("offline", () => {
+                  this.isCloudOnline = false;
+                  this.isRealtimeOnline = false;
+                  this.isOperationalReady = false;
+                  this.realtimeStatus = "OFFLINE";
+                  if (window.App && typeof window.App.updateCloudStatus === "function") {
+                    window.App.updateCloudStatus();
+                  }
+                });
+                document.addEventListener("visibilitychange", () => {
+                  if (document.visibilityState === "visible") {
+                    if (!this.isRealtimeOnline) this.subscribeRealtime();
+                    if (window.App && typeof window.App.refreshAllCloudViews === "function") {
+                      window.App.refreshAllCloudViews();
+                    }
+                  }
+                });
+                this.eventListenersAdded = true;
+              }
+            }
+          } catch (err) {
+            console.warn("Could not init Supabase client check:", err);
+          }
         }
-      }, 1500);
 
-      try {
-        if (typeof indexedDB === "undefined") {
-          console.warn("IndexedDB not available in this context.");
-          this.useFallback = true;
-          this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
-          return;
-        }
-
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-        request.onblocked = () => {
-          console.warn("IndexedDB upgrade is blocked by another connection.");
-          this.useFallback = true;
-          this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
-        };
-
-        request.onupgradeneeded = (event) => {
-          const db = event.target.result;
-
-          if (!db.objectStoreNames.contains("assetTypes")) {
-            db.createObjectStore("assetTypes", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("departments")) {
-            db.createObjectStore("departments", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("locations")) {
-            db.createObjectStore("locations", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("employees")) {
-            const empStore = db.createObjectStore("employees", { keyPath: "id" });
-            empStore.createIndex("departmentId", "departmentId", { unique: false });
-            empStore.createIndex("employeeNumber", "employeeNumber", { unique: true });
-          }
-          if (!db.objectStoreNames.contains("assets")) {
-            const assetStore = db.createObjectStore("assets", { keyPath: "id" });
-            assetStore.createIndex("assetId", "assetId", { unique: true });
-            assetStore.createIndex("assetTypeId", "assetTypeId", { unique: false });
-            assetStore.createIndex("serial", "serial", { unique: false });
-            assetStore.createIndex("status", "status", { unique: false });
-            assetStore.createIndex("departmentId", "departmentId", { unique: false });
-            assetStore.createIndex("locationId", "locationId", { unique: false });
-            assetStore.createIndex("currentEmployeeId", "currentEmployeeId", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("assetTransactions")) {
-            const txStore = db.createObjectStore("assetTransactions", { keyPath: "id" });
-            txStore.createIndex("assetId", "assetId", { unique: false });
-            txStore.createIndex("transactionDate", "transactionDate", { unique: false });
-            txStore.createIndex("transactionType", "transactionType", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("maintenance")) {
-            const maintStore = db.createObjectStore("maintenance", { keyPath: "id" });
-            maintStore.createIndex("assetId", "assetId", { unique: false });
-            maintStore.createIndex("status", "status", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("users")) {
-            const userStore = db.createObjectStore("users", { keyPath: "id" });
-            userStore.createIndex("username", "username", { unique: true });
-          }
-          if (!db.objectStoreNames.contains("systemSettings")) {
-            db.createObjectStore("systemSettings", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("branches")) {
-            db.createObjectStore("branches", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("staff")) {
-            db.createObjectStore("staff", { keyPath: "id" });
-          }
-          if (!db.objectStoreNames.contains("logs")) {
-            db.createObjectStore("logs", { keyPath: "id", autoIncrement: true });
-          }
-          if (!db.objectStoreNames.contains("helpdeskRequests")) {
-            const hdStore = db.createObjectStore("helpdeskRequests", { keyPath: "id" });
-            hdStore.createIndex("requestId", "requestId", { unique: true });
-            hdStore.createIndex("employeeId", "employeeId", { unique: false });
-            hdStore.createIndex("assetId", "assetId", { unique: false });
-            hdStore.createIndex("status", "status", { unique: false });
-            hdStore.createIndex("createdDate", "createdDate", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("notifications")) {
-            const notifStore = db.createObjectStore("notifications", { keyPath: "id" });
-            notifStore.createIndex("userId", "userId", { unique: false });
-            notifStore.createIndex("employeeId", "employeeId", { unique: false });
-            notifStore.createIndex("isRead", "isRead", { unique: false });
-            notifStore.createIndex("createdDate", "createdDate", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("warehouseIssues")) {
-            const wiStore = db.createObjectStore("warehouseIssues", { keyPath: "id" });
-            wiStore.createIndex("issueNo", "issueNo", { unique: true });
-            wiStore.createIndex("assetId", "assetId", { unique: false });
-            wiStore.createIndex("itEmployeeId", "itEmployeeId", { unique: false });
-            wiStore.createIndex("status", "status", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("assetTransfers")) {
-            const trStore = db.createObjectStore("assetTransfers", { keyPath: "id" });
-            trStore.createIndex("transferNo", "transferNo", { unique: true });
-            trStore.createIndex("assetId", "assetId", { unique: false });
-            trStore.createIndex("status", "status", { unique: false });
-            trStore.createIndex("transferDate", "transferDate", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("contractors")) {
-            const cntStore = db.createObjectStore("contractors", { keyPath: "id" });
-            cntStore.createIndex("code", "code", { unique: false });
-            cntStore.createIndex("status", "status", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("projects")) {
-            const prjStore = db.createObjectStore("projects", { keyPath: "id" });
-            prjStore.createIndex("projectNo", "projectNo", { unique: true });
-            prjStore.createIndex("status", "status", { unique: false });
-            prjStore.createIndex("contractorId", "contractorId", { unique: false });
-            prjStore.createIndex("locationId", "locationId", { unique: false });
-          }
-          if (!db.objectStoreNames.contains("projectTasks")) {
-            const tskStore = db.createObjectStore("projectTasks", { keyPath: "id" });
-            tskStore.createIndex("projectId", "projectId", { unique: false });
-            tskStore.createIndex("status", "status", { unique: false });
-          }
-        };
-
-        request.onsuccess = async (event) => {
-          this.db = event.target.result;
-          this.db.onversionchange = () => {
-            if (this.db) {
-              this.db.close();
-              console.log("DB connection closed for version change");
+        // 2. Open IndexedDB with 1.5s Safety Timeout
+        await new Promise((resolve) => {
+          let isResolved = false;
+          const safeResolve = (val) => {
+            if (!isResolved) {
+              isResolved = true;
+              resolve(val);
             }
           };
-          try {
-            await this.ensureInitialSeedAndMigration();
-          } catch (e) {
-            console.warn("Migration warning:", e);
-          }
-          safeResolve(this.db);
-        };
 
-        request.onerror = async (event) => {
-          console.warn("IndexedDB open error, using fallback storage:", event.target.error);
-          this.useFallback = true;
-          await this.ensureInitialSeedAndMigration();
-          safeResolve(null);
-        };
+          const timeoutId = setTimeout(async () => {
+            if (!isResolved) {
+              console.warn("IndexedDB initialization timed out or blocked. Proceeding with storage fallback.");
+              this.useFallback = true;
+              try {
+                await this.ensureInitialSeedAndMigration();
+              } catch (e) {}
+              safeResolve(this.db);
+            }
+          }, 1500);
+
+          try {
+            if (typeof indexedDB === "undefined") {
+              this.useFallback = true;
+              clearTimeout(timeoutId);
+              this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
+              return;
+            }
+
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onblocked = () => {
+              this.useFallback = true;
+              clearTimeout(timeoutId);
+              this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
+            };
+
+            request.onupgradeneeded = (event) => {
+              const db = event.target.result;
+              this.stores.forEach(store => {
+                if (!db.objectStoreNames.contains(store)) {
+                  if (store === "employees") {
+                    const empStore = db.createObjectStore("employees", { keyPath: "id" });
+                    empStore.createIndex("departmentId", "departmentId", { unique: false });
+                    empStore.createIndex("employeeNumber", "employeeNumber", { unique: true });
+                  } else if (store === "assets") {
+                    const assetStore = db.createObjectStore("assets", { keyPath: "id" });
+                    assetStore.createIndex("assetId", "assetId", { unique: true });
+                    assetStore.createIndex("assetTypeId", "assetTypeId", { unique: false });
+                    assetStore.createIndex("serial", "serial", { unique: false });
+                    assetStore.createIndex("status", "status", { unique: false });
+                    assetStore.createIndex("departmentId", "departmentId", { unique: false });
+                    assetStore.createIndex("locationId", "locationId", { unique: false });
+                    assetStore.createIndex("currentEmployeeId", "currentEmployeeId", { unique: false });
+                  } else if (store === "assetTransactions") {
+                    const txStore = db.createObjectStore("assetTransactions", { keyPath: "id" });
+                    txStore.createIndex("assetId", "assetId", { unique: false });
+                    txStore.createIndex("transactionDate", "transactionDate", { unique: false });
+                    txStore.createIndex("transactionType", "transactionType", { unique: false });
+                  } else if (store === "maintenance") {
+                    const maintStore = db.createObjectStore("maintenance", { keyPath: "id" });
+                    maintStore.createIndex("assetId", "assetId", { unique: false });
+                    maintStore.createIndex("status", "status", { unique: false });
+                  } else if (store === "users") {
+                    const userStore = db.createObjectStore("users", { keyPath: "id" });
+                    userStore.createIndex("username", "username", { unique: true });
+                  } else if (store === "logs") {
+                    db.createObjectStore("logs", { keyPath: "id", autoIncrement: true });
+                  } else if (store === "helpdeskRequests") {
+                    const hdStore = db.createObjectStore("helpdeskRequests", { keyPath: "id" });
+                    hdStore.createIndex("requestId", "requestId", { unique: true });
+                    hdStore.createIndex("employeeId", "employeeId", { unique: false });
+                    hdStore.createIndex("assetId", "assetId", { unique: false });
+                    hdStore.createIndex("status", "status", { unique: false });
+                    hdStore.createIndex("createdDate", "createdDate", { unique: false });
+                  } else if (store === "notifications") {
+                    const notifStore = db.createObjectStore("notifications", { keyPath: "id" });
+                    notifStore.createIndex("userId", "userId", { unique: false });
+                    notifStore.createIndex("employeeId", "employeeId", { unique: false });
+                    notifStore.createIndex("isRead", "isRead", { unique: false });
+                    notifStore.createIndex("createdDate", "createdDate", { unique: false });
+                  } else if (store === "warehouseIssues") {
+                    const wiStore = db.createObjectStore("warehouseIssues", { keyPath: "id" });
+                    wiStore.createIndex("issueNo", "issueNo", { unique: true });
+                    wiStore.createIndex("assetId", "assetId", { unique: false });
+                    wiStore.createIndex("itEmployeeId", "itEmployeeId", { unique: false });
+                    wiStore.createIndex("status", "status", { unique: false });
+                  } else if (store === "assetTransfers") {
+                    const trStore = db.createObjectStore("assetTransfers", { keyPath: "id" });
+                    trStore.createIndex("transferNo", "transferNo", { unique: true });
+                    trStore.createIndex("assetId", "assetId", { unique: false });
+                    trStore.createIndex("status", "status", { unique: false });
+                    trStore.createIndex("transferDate", "transferDate", { unique: false });
+                  } else if (store === "contractors") {
+                    const cntStore = db.createObjectStore("contractors", { keyPath: "id" });
+                    cntStore.createIndex("code", "code", { unique: false });
+                    cntStore.createIndex("status", "status", { unique: false });
+                  } else if (store === "projects") {
+                    const prjStore = db.createObjectStore("projects", { keyPath: "id" });
+                    prjStore.createIndex("projectNo", "projectNo", { unique: true });
+                    prjStore.createIndex("status", "status", { unique: false });
+                    prjStore.createIndex("contractorId", "contractorId", { unique: false });
+                    prjStore.createIndex("locationId", "locationId", { unique: false });
+                  } else if (store === "projectTasks") {
+                    const tskStore = db.createObjectStore("projectTasks", { keyPath: "id" });
+                    tskStore.createIndex("projectId", "projectId", { unique: false });
+                    tskStore.createIndex("status", "status", { unique: false });
+                  } else {
+                    db.createObjectStore(store, { keyPath: "id" });
+                  }
+                }
+              });
+            };
+
+            request.onsuccess = async (event) => {
+              this.db = event.target.result;
+              clearTimeout(timeoutId);
+              try {
+                await this.ensureInitialSeedAndMigration();
+              } catch (e) {}
+              safeResolve(this.db);
+            };
+
+            request.onerror = async (event) => {
+              this.useFallback = true;
+              clearTimeout(timeoutId);
+              await this.ensureInitialSeedAndMigration();
+              safeResolve(null);
+            };
+          } catch (err) {
+            this.useFallback = true;
+            clearTimeout(timeoutId);
+            this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
+          }
+        });
+
+        this.initStatus = 'ready';
+        return this.db;
       } catch (err) {
-        console.warn("Catch-all DB init error, using fallback storage:", err);
-        this.useFallback = true;
-        this.ensureInitialSeedAndMigration().then(() => safeResolve(null));
+        console.error("Critical DB Init Error:", err);
+        this.initStatus = 'uninitialized';
+        this.initPromise = null;
+        throw err;
       }
-    });
+    })();
+
+    return this.initPromise;
   }
+
 
   async checkCloudConnection() {
     if (!this.supabase) {
@@ -2646,6 +2651,26 @@ class DBEngine {
         relatedId: "req-000102"
       });
     }
+  }
+
+  /**
+   * Securely wipe all local IndexedDB data and reload.
+   * Used during logout to prevent data leakage between users.
+   */
+  async clearLocalData() {
+    if (!this.db) return;
+    const stores = Array.from(this.db.objectStoreNames);
+    const tx = this.db.transaction(stores, "readwrite");
+    for (const storeName of stores) {
+      tx.objectStore(storeName).clear();
+    }
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => {
+        console.log("Local IndexedDB cleared successfully.");
+        resolve();
+      };
+      tx.onerror = (e) => reject(e);
+    });
   }
 }
 

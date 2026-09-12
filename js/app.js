@@ -51,8 +51,60 @@ class Application {
       }
     });
 
-    // 3. Initialize Database
+    // 3. SECURE BOOT: Verify Session BEFORE Database Initialization
+    AppState.currentUser = null;
+
+    if (!db.supabase) {
+      console.error("Supabase client not initialized.");
+      this.openLoginModal();
+      return;
+    }
     try {
+      const { data: { session }, error: sessionError } = await db.supabase.auth.getSession();
+      
+      if (!session || !session.user) {
+        console.log("No active session found. Redirecting to login...");
+        this.openLoginModal();
+        return;
+      }
+
+      // Session exists - Verify Authoritative Role from Cloud Database
+      const authUser = session.user;
+      const { data: cloudUser, error: queryError } = await db.supabase
+        .from('users')
+        .select('*')
+        .eq('auth_user_id', authUser.id)
+        .maybeSingle();
+
+      if (queryError || !cloudUser) {
+        console.error("Auth mapping error or user not found in public.users");
+        await db.supabase.auth.signOut();
+        this.openLoginModal();
+        return;
+      }
+
+      if (cloudUser.active === false) {
+        console.warn("User account is deactivated.");
+        await db.supabase.auth.signOut();
+        this.openLoginModal();
+        return;
+      }
+
+      // Set User State from Authoritative Cloud Source
+      const normalizedRole = String(cloudUser.role || "Viewer").trim();
+      AppState.currentUser = {
+        id: cloudUser.id,
+        username: cloudUser.username,
+        email: authUser.email || (cloudUser.username + "@sdi.ae"),
+        fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
+        fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
+        fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
+        role: normalizedRole,
+        employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
+        active: cloudUser.active !== false
+      };
+
+      // Initialize Database only after successful Auth
       await db.init();
       this.updateCloudStatus();
       if (!db.isCloudOnline) {
@@ -60,257 +112,41 @@ class Application {
         return;
       }
       this.hideCloudUnavailableScreen();
-    } catch (e) {
-      console.warn("Database init warning:", e);
-      this.showCloudUnavailableScreen("cloud");
-      return;
-    }
 
-    // 4. Institutional Branding (Logo & System Name)
-    try { await this.applyBranding(); } catch (e) { console.warn("applyBranding warning:", e); }
+      // Institutional Branding (Logo & System Name)
+      try { await this.applyBranding(); } catch (e) { console.warn("applyBranding warning:", e); }
 
-    // 5. Remove legacy local storage usage
-    localStorage.removeItem("sdi_user");
-    sessionStorage.removeItem("sdi_user");
+      // Cleanup legacy storage
+      localStorage.removeItem("sdi_user");
+      sessionStorage.removeItem("sdi_user");
+      sessionStorage.removeItem("sdi_session_user");
 
-    // Verify User Session & Authoritative Role from Cloud Database (Single Source of Truth)
-    AppState.currentUser = null;
-
-    if (db.supabase && db.isCloudOnline) {
-      try {
-        const { data: { session }, error: sessionError } = await db.supabase.auth.getSession();
-        if (session && session.user) {
-          const authUser = session.user;
-          const { data: cloudUser, error: queryError } = await db.supabase
-            .from('users')
-            .select('*')
-            .eq('auth_user_id', authUser.id)
-            .maybeSingle();
-
-          if (!queryError && cloudUser) {
-            if (cloudUser.active === false) {
-              console.warn("User account is deactivated in cloud database.");
-              await db.supabase.auth.signOut();
-            } else {
-              // Role and access are strictly DERIVED from Cloud Database mapping
-              const normalizedRole = String(cloudUser.role || "Viewer").trim();
-              AppState.currentUser = {
-                id: cloudUser.id,
-                username: cloudUser.username,
-                email: authUser.email || (cloudUser.username + "@sdi.ae"),
-                fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
-                fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
-                fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-                role: normalizedRole,
-                employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
-                active: cloudUser.active !== false
-              };
-            }
-          } else {
-            // Authenticated in Supabase Auth but no matching public.users mapping
-            await db.supabase.auth.signOut();
+      // Set up auth state change listener
+      if (db.supabase && !window.__SDI_AUTH_LISTENER_BOUND__) {
+        window.__SDI_AUTH_LISTENER_BOUND__ = true;
+        db.supabase.auth.onAuthStateChange(async (event, session) => {
+          if (event === 'SIGNED_OUT') {
+             this.logout();
           }
-        }
-      } catch (authErr) {
-        console.warn("Cloud authorization verification error:", authErr);
+        });
       }
-    }
 
-    // Restore session if available in sessionStorage and verified against authoritative database
-    if (!AppState.currentUser) {
-      try {
-        const cached = sessionStorage.getItem("sdi_session_user");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed && parsed.id) {
-            let activeUser = null;
-            if (db.supabase && db.isCloudOnline) {
-              const { data: cloudUser } = await db.supabase
-                .from('users')
-                .select('*')
-                .eq('id', parsed.id)
-                .maybeSingle();
-              if (cloudUser && cloudUser.active !== false) {
-                const normalizedRole = String(cloudUser.role || "Viewer").trim();
-                activeUser = {
-                  id: cloudUser.id,
-                  username: cloudUser.username,
-                  email: cloudUser.email || parsed.email || (cloudUser.username + "@sdi.ae"),
-                  fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
-                  fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
-                  fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-                  role: normalizedRole,
-                  employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
-                  active: true
-                };
-              }
-            } else {
-              const localUser = await db.getById("users", parsed.id);
-              if (localUser && localUser.active !== false) {
-                activeUser = { ...parsed, role: String(localUser.role || "Viewer").trim() };
-              }
-            }
-            if (activeUser) {
-              AppState.currentUser = activeUser;
-            } else {
-              sessionStorage.removeItem("sdi_session_user");
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Session restore check note:", e);
-      }
-    }
+      console.log("SDI IT Asset Hub Initialized & Authenticated.");
 
-    // Set up auth state change listener
-    if (db.supabase && !window.__SDI_AUTH_LISTENER_BOUND__) {
-      window.__SDI_AUTH_LISTENER_BOUND__ = true;
-      db.supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-           AppState.currentUser = null;
-           this.applyUserRolePermissions();
-           this.openLoginModal();
-        }
-      });
-    }
-
-    // Apply permissions derived from authoritative database state
-    this.applyUserRolePermissions();
-
-    // Bind Enter key on password input
-    const pwdInput = document.getElementById("loginPassword");
-    if (pwdInput && !pwdInput.dataset.enterBound) {
-      pwdInput.dataset.enterBound = "true";
-      pwdInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          this.handleLoginSubmit(e);
-        }
-      });
-    }
-
-    // Require an explicitly provisioned account in production.
-    if (!AppState.currentUser) {
-      await this.openLoginModal();
-    } else {
+      // Apply permissions and navigate to initial view
+      this.applyUserRolePermissions();
       if (AppState.currentUser.role === "Employee") {
         await this.switchTab("employeePortal", true);
       } else {
         await this.switchTab("dashboard", true);
       }
       await this.renderAuthenticatedViews();
+
+    } catch (e) {
+      console.error("Critical Auth/Boot error:", e);
+      this.openLoginModal();
+      return;
     }
-
-    // Auto-enhance all selects across the entire system with live search comboboxes
-    try { this.enhanceAllSelects(document); } catch (e) { console.warn("enhanceAllSelects warning:", e); }
-
-    console.log("SDI IT Asset Hub initialized successfully.");
-  }
-
-  hideCloudUnavailableScreen() {
-    const overlay = document.getElementById("cloudUnavailableOverlay");
-    if (overlay) overlay.remove();
-  }
-
-  updateCloudStatus() {
-    const statusText = document.getElementById("sidebarStatusText");
-    if (!statusText) return;
-
-    const isOnline = db.isCloudOnline;
-    const isRealtime = db.isRealtimeOnline;
-
-    // Update status dot class
-    const dot = statusText.previousElementSibling;
-    if (dot && dot.classList.contains("status-dot")) {
-      dot.classList.toggle("offline", !isOnline);
-    }
-
-    const newText = !isOnline 
-      ? (AppState.lang === "ar" ? "السحابة غير متصلة - قراءة فقط" : "Cloud unavailable - read only")
-      : (isRealtime 
-          ? (AppState.lang === "ar" ? "السحابة والتحديث الفوري متصلان" : "Cloud and realtime connected")
-          : (AppState.lang === "ar" ? "السحابة متصلة" : "Cloud connected"));
-    
-    // Safety check: Avoid redundant updates that cause flickering/flashing
-    if (statusText.textContent === newText) return;
-
-    if (!isOnline) {
-      this.showCloudUnavailableScreen("cloud");
-    } else {
-      this.hideCloudUnavailableScreen();
-    }
-
-    statusText.textContent = newText;
-  }
-
-  showCloudUnavailableScreen(reason = "cloud") {
-    let overlay = document.getElementById("cloudUnavailableOverlay");
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = "cloudUnavailableOverlay";
-      overlay.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(7,18,32,.96);padding:24px;text-align:center;";
-      document.body.appendChild(overlay);
-    }
-    const isRealtime = reason === "realtime";
-    overlay.innerHTML = `
-      <div style="max-width:520px;">
-        <i class="fas ${isRealtime ? "fa-sync-alt fa-spin" : "fa-cloud-slash"}" style="font-size:48px;color:#f59e0b;margin-bottom:18px;"></i>
-        <h2>${isRealtime
-          ? (AppState.lang === "ar" ? "جاري تفعيل التحديث الفوري" : "Waiting for realtime synchronization")
-          : (AppState.lang === "ar" ? "الاتصال بالسحابة غير متاح" : "Cloud connection unavailable")}</h2>
-        <p>${isRealtime
-          ? (AppState.lang === "ar" ? "لن تبدأ العمليات حتى يتصل التحديث الفوري، حتى يرى جميع المستخدمين نفس التغييرات." : "Operations remain paused until realtime is connected so all users see the same changes.")
-          : (AppState.lang === "ar" ? "تم إيقاف النظام مؤقتاً حتى لا يتم عرض أو تسجيل بيانات محلية قديمة. أعد الاتصال بالإنترنت ثم أعد تحميل الصفحة." : "The system is paused so stale local data cannot be displayed or recorded. Reconnect to the internet and reload the page.")}</p>
-        <button class="btn btn-primary" onclick="App.retryCloudConnection()">
-          <i class="fas fa-redo me-1"></i>
-          ${AppState.lang === "ar" ? "إعادة المحاولة" : "Retry connection"}
-        </button>
-      </div>
-    `;
-  }
-
-  async retryCloudConnection() {
-    try {
-      if (!db.supabase) {
-        this.showCloudUnavailableScreen("cloud");
-        return;
-      }
-      const cloudReady = await db.checkCloudConnection();
-      if (!cloudReady) {
-        this.showCloudUnavailableScreen("cloud");
-        return;
-      }
-      this.hideCloudUnavailableScreen();
-      this.updateCloudStatus();
-      if (AppState.currentUser) {
-        await this.renderAuthenticatedViews();
-      } else {
-        await this.openLoginModal();
-      }
-    } catch (error) {
-      console.warn("Manual cloud retry failed:", error);
-      this.showCloudUnavailableScreen("cloud");
-    }
-  }
-
-  async refreshAllCloudViews() {
-    try {
-      if (typeof db.checkCloudConnection === "function" && !(await db.checkCloudConnection())) {
-        this.showCloudUnavailableScreen("cloud");
-        return;
-      }
-      this.hideCloudUnavailableScreen();
-      this.updateCloudStatus();
-      if (AppState.currentUser) {
-        await this.renderAuthenticatedViews();
-      }
-    } catch (error) {
-      console.warn("Realtime refresh error:", error);
-    }
-  }
-
-  isOperationalReady() {
-    return Boolean(db && db.isOperationalReady);
   }
 
   setupEventListeners() {
@@ -3451,7 +3287,7 @@ class Application {
     // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
     const cleanInput = loginInput.toLowerCase();
-    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
+    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
       emailToAuth = "m_hamed@msn.com";
     } else if (!emailToAuth.includes("@")) {
       try {
@@ -3514,7 +3350,7 @@ class Application {
             matchedUser = cloudUsers.find(u => {
               const uName = (u.username || "").toLowerCase();
               const uEmail = (u.email || "").toLowerCase();
-              if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
+              if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
                 return uName === "admin" || u.role === "Administrator";
               }
               return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
@@ -3530,7 +3366,7 @@ class Application {
         matchedUser = localUsers.find(u => {
           const uName = (u.username || "").toLowerCase();
           const uEmail = (u.email || "").toLowerCase();
-          if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com" || cleanInput === "emfalcon2025227@gmail.com") {
+          if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
             return uName === "admin" || u.role === "Administrator";
           }
           return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
@@ -3604,20 +3440,34 @@ class Application {
     }
 
     this.applyUserRolePermissions();
+    
+    // Initialize Database after successful login
+    try {
+      await db.init();
+      this.updateCloudStatus();
+      if (!db.isCloudOnline) {
+        this.showCloudUnavailableScreen("cloud");
+      } else {
+        this.hideCloudUnavailableScreen();
+      }
+    } catch (e) {
+      console.warn("Post-login DB init warning:", e);
+    }
+
+    // Final navigation and view rendering
+    if (AppState.currentUser.role === "Employee") {
+      await this.switchTab("employeePortal", true);
+    } else {
+      await this.switchTab("dashboard", true);
+    }
+    await this.renderAuthenticatedViews();
+    
     this.closeModal("loginModal");
 
     const welcomeName = typeof getUserDisplayName === "function"
       ? getUserDisplayName(AppState.currentUser, lang)
       : (AppState.currentUser.fullName || AppState.currentUser.username);
     this.showToast(`${lang === "ar" ? "مرحباً بك:" : "Welcome:"} ${welcomeName} (${AppState.currentUser.role})`, "success");
-
-    if (AppState.currentUser.role === "Employee") {
-      await this.switchTab("employeePortal", true);
-    } else {
-      await this.switchTab("dashboard", true);
-    }
-
-    await this.renderAuthenticatedViews();
   }
 
   async handleForgotPassword(event) {
@@ -3694,11 +3544,18 @@ class Application {
   // REQ-30 & REQ-31: Logout & Session Cleanup
   async logout() {
     AppState.currentUser = null;
-    sessionStorage.removeItem("sdi_session_user");
-    sessionStorage.removeItem("sdi_user");
-    localStorage.removeItem("sdi_session_user");
-    localStorage.removeItem("sdi_user");
+    sessionStorage.clear();
+    localStorage.clear();
     
+    // Securely wipe local IndexedDB to prevent data leakage
+    if (db && typeof db.clearLocalData === "function") {
+      try {
+        await db.clearLocalData();
+      } catch (e) {
+        console.error("Failed to clear local database:", e);
+      }
+    }
+
     if (db.supabase) {
       try {
         await db.supabase.auth.signOut();
@@ -3713,8 +3570,9 @@ class Application {
     this.closeModal("changePasswordModal");
     this.closeModal("notificationsModal");
     this.applyUserRolePermissions();
-    this.openLoginModal();
-    this.showToast(AppState.lang === "ar" ? "تم تسجيل الخروج بنجاح" : "Logged out successfully", "info");
+    
+    // Full page reload to ensure all memory state is destroyed
+    window.location.reload();
   }
 
   async renderAuthenticatedViews() {
