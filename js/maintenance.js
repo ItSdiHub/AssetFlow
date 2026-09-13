@@ -188,23 +188,41 @@ class MaintenanceController {
 
   // Cascading Linkage Handlers for Maintenance Modal
   async handleAssetSelect(assetId) {
-    if (!assetId) return;
+    if (!assetId) {
+      const empSelect = document.getElementById("formMaintEmployeeId");
+      if (empSelect && empSelect.value) {
+        await this.filterAssetsByEmployee(empSelect.value);
+      } else {
+        await this.populateAllAssets();
+      }
+      return;
+    }
+
     const asset = await db.getById("assets", assetId);
     if (!asset) return;
 
     // Link Employee, Section (Department), and Location from Asset
     if (asset.currentEmployeeId) {
       const empSelect = document.getElementById("formMaintEmployeeId");
-      if (empSelect) empSelect.value = asset.currentEmployeeId;
+      if (empSelect && empSelect.value !== asset.currentEmployeeId) {
+        empSelect.value = asset.currentEmployeeId;
+        // Re-populate and keep current asset selected
+        await this.filterAssetsByEmployee(asset.currentEmployeeId, assetId);
+      }
 
       const emp = await db.getById("employees", asset.currentEmployeeId);
       if (emp && emp.departmentId) {
         const deptSelect = document.getElementById("formMaintDepartmentId");
         if (deptSelect) deptSelect.value = emp.departmentId;
       }
-    } else if (asset.departmentId) {
-      const deptSelect = document.getElementById("formMaintDepartmentId");
-      if (deptSelect) deptSelect.value = asset.departmentId;
+    } else {
+      const empSelect = document.getElementById("formMaintEmployeeId");
+      if (empSelect) empSelect.value = "";
+
+      if (asset.departmentId) {
+        const deptSelect = document.getElementById("formMaintDepartmentId");
+        if (deptSelect) deptSelect.value = asset.departmentId;
+      }
     }
 
     if (asset.locationId) {
@@ -214,7 +232,13 @@ class MaintenanceController {
   }
 
   async handleEmployeeSelect(empId) {
-    if (!empId) return;
+    if (!empId) {
+      const deptSelect = document.getElementById("formMaintDepartmentId");
+      if (deptSelect) deptSelect.value = "";
+      await this.populateAllAssets();
+      return;
+    }
+
     const emp = await db.getById("employees", empId);
     if (!emp) return;
 
@@ -224,30 +248,121 @@ class MaintenanceController {
       if (deptSelect) deptSelect.value = emp.departmentId;
     }
 
-    // Auto-select asset assigned to this employee if not selected yet
+    // Link Location if available
+    let locId = emp.locationId;
+    if (!locId && emp.departmentId) {
+      const dept = await db.getById("departments", emp.departmentId);
+      if (dept) locId = dept.locationId;
+    }
+    if (locId) {
+      const locSelect = document.getElementById("formMaintLocationId");
+      if (locSelect) locSelect.value = locId;
+    }
+
+    // Filter and populate assets assigned to this employee
+    await this.filterAssetsByEmployee(empId);
+  }
+
+  async filterAssetsByEmployee(empId, keepSelectedId = null) {
+    const lang = AppState.lang;
     const assetSelect = document.getElementById("formMaintAssetId");
-    if (assetSelect && !assetSelect.value) {
-      const assets = await db.getAll("assets");
-      const assigned = assets.find(a => a.currentEmployeeId === empId && a.status === "Assigned");
-      if (assigned) {
-        assetSelect.value = assigned.id;
-        if (assigned.locationId) {
+    if (!assetSelect) return;
+
+    const allAssets = await db.getAll("assets");
+    const empAssets = allAssets.filter(a => a.currentEmployeeId === empId);
+
+    let optionsHtml = "";
+    if (empAssets.length === 0) {
+      optionsHtml = `<option value="">-- ${lang === 'ar' ? 'لا توجد أصول في عهدة هذا الموظف' : 'No assets in custody'} --</option>`;
+      assetSelect.innerHTML = optionsHtml;
+      assetSelect.value = "";
+    } else {
+      const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
+      optionsHtml = `<option value="">${selectPlaceholder}</option>` +
+        empAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
+      assetSelect.innerHTML = optionsHtml;
+
+      if (keepSelectedId && empAssets.some(a => a.id === keepSelectedId)) {
+        assetSelect.value = keepSelectedId;
+      } else if (empAssets.length === 1) {
+        assetSelect.value = empAssets[0].id;
+        if (empAssets[0].locationId) {
           const locSelect = document.getElementById("formMaintLocationId");
-          if (locSelect) locSelect.value = assigned.locationId;
+          if (locSelect) locSelect.value = empAssets[0].locationId;
         }
+      } else {
+        assetSelect.value = "";
       }
     }
   }
 
+  async populateAllAssets() {
+    const lang = AppState.lang;
+    const assetSelect = document.getElementById("formMaintAssetId");
+    if (!assetSelect) return;
+
+    const assets = await db.getAll("assets");
+    const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
+    assetSelect.innerHTML = `<option value="">${selectPlaceholder}</option>` +
+      assets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
+    assetSelect.value = "";
+  }
+
   async handleDepartmentSelect(deptId) {
-    if (!deptId) return;
-    // Auto-select location from department if location not set
-    const locSelect = document.getElementById("formMaintLocationId");
-    if (locSelect && !locSelect.value) {
-      const assets = await db.getAll("assets");
-      const matched = assets.find(a => a.departmentId === deptId && a.locationId);
-      if (matched) locSelect.value = matched.locationId;
+    const lang = AppState.lang;
+    const empSelect = document.getElementById("formMaintEmployeeId");
+    const assetSelect = document.getElementById("formMaintAssetId");
+    
+    if (!deptId) {
+      await this.populateAllEmployees();
+      await this.populateAllAssets();
+      return;
     }
+
+    const dept = await db.getById("departments", deptId);
+    if (dept && dept.locationId) {
+      const locSelect = document.getElementById("formMaintLocationId");
+      if (locSelect) locSelect.value = dept.locationId;
+    }
+
+    // Filter employees by department
+    const employees = await db.getAll("employees");
+    const deptEmployees = employees.filter(e => e.departmentId === deptId && e.status === "Active");
+    if (empSelect) {
+      const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
+      empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +
+        deptEmployees.map(e => {
+          const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
+          const orgPart = e.employeeNumber && e.employeeNumber !== e.id ? ` - #${e.employeeNumber}` : "";
+          return `<option value="${e.id}">${name} (${e.id}${orgPart})</option>`;
+        }).join("");
+      empSelect.value = "";
+    }
+
+    // Filter assets by department
+    const allAssets = await db.getAll("assets");
+    const deptAssets = allAssets.filter(a => a.departmentId === deptId);
+    if (assetSelect) {
+      const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
+      assetSelect.innerHTML = `<option value="">${selectPlaceholder}</option>` +
+        deptAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
+      assetSelect.value = "";
+    }
+  }
+
+  async populateAllEmployees() {
+    const lang = AppState.lang;
+    const empSelect = document.getElementById("formMaintEmployeeId");
+    if (!empSelect) return;
+    const employees = await db.getAll("employees");
+    const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
+    empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +
+      employees.filter(e => e.status === "Active").map(e => {
+        const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
+        const orgPart = e.employeeNumber && e.employeeNumber !== e.id ? ` - #${e.employeeNumber}` : "";
+        return `<option value="${e.id}">${name} (${e.id}${orgPart})</option>`;
+      }).join("");
+    empSelect.value = "";
   }
 
   async openAddModalForAsset(assetId) {
@@ -330,6 +445,18 @@ class MaintenanceController {
     if (!problem) {
       App.showToast(I18N[AppState.lang].errProblemReq, "error");
       return;
+    }
+
+    // Validate custody relationship if both are selected
+    if (empId && assetId) {
+      const actualAsset = await db.getById("assets", assetId);
+      if (!actualAsset || actualAsset.currentEmployeeId !== empId) {
+        const msg = AppState.lang === "ar" 
+          ? "تنبيه: هذا الجهاز غير مسند للموظف المختار!" 
+          : "Alert: This asset is not assigned to the selected employee!";
+        App.showToast(msg, "error");
+        return;
+      }
     }
 
     // Auto-detect employee / department / location from asset if not set

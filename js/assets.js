@@ -1200,10 +1200,14 @@ class AssetInventoryManager {
       const allMaint = await db.getAll("maintenance");
       const assetMaint = allMaint.filter(m => m.assetId === asset.id);
 
+      const allRequests = await db.getAll("helpdeskRequests");
+      const assetRequests = allRequests.filter(r => r.assetId === asset.id);
+
+      let maintHtml = "";
       if (assetMaint.length === 0) {
-        html = `<div class="text-center py-4 text-muted"><i class="fas fa-clipboard-check fa-2x mb-2"></i><div>${lang === 'ar' ? 'لا توجد سجلات صيانة لهذا الأصل' : 'No maintenance records for this asset'}</div></div>`;
+        maintHtml = `<div class="text-center py-4 text-muted"><i class="fas fa-clipboard-check fa-lg mb-1"></i><div>${lang === 'ar' ? 'لا توجد سجلات صيانة لهذا الأصل' : 'No maintenance records for this asset'}</div></div>`;
       } else {
-        html = `
+        maintHtml = `
           <div class="table-responsive">
             <table class="data-table">
               <thead>
@@ -1232,6 +1236,57 @@ class AssetInventoryManager {
           </div>
         `;
       }
+
+      let helpdeskHtml = "";
+      if (assetRequests.length === 0) {
+        helpdeskHtml = `<div class="text-center py-4 text-muted"><i class="fas fa-headset fa-lg mb-1"></i><div>${lang === 'ar' ? 'لا توجد طلبات دعم فني مرتبطة' : 'No linked support requests'}</div></div>`;
+      } else {
+        helpdeskHtml = `
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>${lang === 'ar' ? 'رقم الطلب' : 'Request No'}</th>
+                  <th>${lang === 'ar' ? 'التاريخ' : 'Date'}</th>
+                  <th>${lang === 'ar' ? 'الموضوع' : 'Subject'}</th>
+                  <th>${lang === 'ar' ? 'النوع' : 'Type'}</th>
+                  <th>${lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${assetRequests.map(r => `
+                  <tr>
+                    <td><strong>${r.requestId || r.id}</strong></td>
+                    <td>${r.createdDate ? r.createdDate.substring(0, 10) : "-"}</td>
+                    <td>${r.subject || "-"}</td>
+                    <td>${r.requestType || "-"}</td>
+                    <td><span class="badge ${r.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${r.status}</span></td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      html = `
+        <div class="maint-tab-content" style="display: flex; flex-direction: column; gap: 20px;">
+          <div>
+            <h5 class="font-bold text-sm mb-2" style="color: var(--accent-cyan); display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-tools"></i>
+              <span>${lang === 'ar' ? 'سجل الصيانة الميدانية' : 'Field Maintenance History'}</span>
+            </h5>
+            ${maintHtml}
+          </div>
+          <div style="border-top: 1px dashed rgba(255, 255, 255, 0.1); padding-top: 15px;">
+            <h5 class="font-bold text-sm mb-2" style="color: var(--accent-cyan); display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-headset"></i>
+              <span>${lang === 'ar' ? 'طلبات الدعم الفني المرتبطة' : 'Linked Support Requests'}</span>
+            </h5>
+            ${helpdeskHtml}
+          </div>
+        </div>
+      `;
     } else if (tabName === "history") {
       // FULL AUDIT LOG TIMELINE
       const history = await db.getAssetHistory(asset.id);

@@ -777,6 +777,17 @@ class HelpdeskManager {
         deviceSelect.innerHTML = optionsHtml;
         if (preselectedAssetId) deviceSelect.value = preselectedAssetId;
       }
+
+      // Context-aware: If we have preselectedAssetId, load its current employee context automatically!
+      if (preselectedAssetId) {
+        const preselectedAsset = allAssets.find(a => a.id === preselectedAssetId);
+        if (preselectedAsset && preselectedAsset.currentEmployeeId) {
+          if (empSelect) {
+            empSelect.value = preselectedAsset.currentEmployeeId;
+            await this.handleFormEmployeeChange(preselectedAsset.currentEmployeeId);
+          }
+        }
+      }
     } else {
       // Ordinary employee
       if (empGroup) empGroup.style.display = "none";
