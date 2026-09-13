@@ -394,13 +394,15 @@ class Application {
   // 2. DASHBOARD KPI COUNTERS & SUMMARIES
   // =========================================================================
   async updateDashboard() {
-    const assets = await db.getAll("assets");
-    const employees = await db.getAll("employees");
-    const departments = await db.getAll("departments");
-    const locations = await db.getAll("locations");
-    const assetTypes = await db.getAll("assetTypes");
-    const maintenance = await db.getAll("maintenance");
-    const projects = await db.getAll("projects");
+    const [assets, employees, departments, locations, assetTypes, maintenance, projects] = await Promise.all([
+      db.getAll("assets"),
+      db.getAll("employees"),
+      db.getAll("departments"),
+      db.getAll("locations"),
+      db.getAll("assetTypes"),
+      db.getAll("maintenance"),
+      db.getAll("projects")
+    ]);
     const lang = AppState.lang;
 
     // 1. Institutional High-Level Counts
@@ -3269,7 +3271,23 @@ class Application {
       return;
     }
 
-    if (!db.supabase || !db.isCloudOnline) {
+    if (!db.supabase) {
+      this.showToast(
+        lang === "ar"
+          ? "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة"
+          : "Cannot login while cloud is offline",
+        "error"
+      );
+      return;
+    }
+
+    if (!db.isCloudOnline) {
+      if (typeof db.checkCloudConnection === "function") {
+        await db.checkCloudConnection();
+      }
+    }
+
+    if (!db.isCloudOnline) {
       this.showToast(
         lang === "ar"
           ? "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة"
@@ -3454,15 +3472,20 @@ class Application {
       console.warn("Post-login DB init warning:", e);
     }
 
-    // Final navigation and view rendering
-    if (AppState.currentUser.role === "Employee") {
-      await this.switchTab("employeePortal", true);
-    } else {
-      await this.switchTab("dashboard", true);
-    }
-    await this.renderAuthenticatedViews();
-    
+    // Close login modal immediately after successful authentication and DB initialization
     this.closeModal("loginModal");
+
+    // Final navigation and view rendering
+    try {
+      if (AppState.currentUser.role === "Employee") {
+        await this.switchTab("employeePortal", true);
+      } else {
+        await this.switchTab("dashboard", true);
+      }
+      await this.renderAuthenticatedViews();
+    } catch (renderError) {
+      console.error("Authenticated view rendering error:", renderError);
+    }
 
     const welcomeName = typeof getUserDisplayName === "function"
       ? getUserDisplayName(AppState.currentUser, lang)
@@ -3579,31 +3602,7 @@ class Application {
     if (!AppState.currentUser) return;
     try {
       if (typeof AssetManager !== "undefined") {
-        await AssetManager.populateDropdowns();
-      }
-      if (AppState.currentUser.role === "Employee") {
-        if (typeof HelpdeskManager !== "undefined") {
-          await HelpdeskManager.render();
-        }
-      } else {
-        await this.updateDashboard();
-        if (typeof AssetManager !== "undefined") await AssetManager.render();
-        if (typeof UserManager !== "undefined") {
-          await UserManager.renderEmployees();
-          await UserManager.renderDepartments();
-          await UserManager.renderLocations();
-          await UserManager.renderAssetTypes();
-          await UserManager.renderUsers();
-        }
-        if (window.TreeManager) await TreeManager.render();
-        if (typeof MaintManager !== "undefined") await MaintManager.render();
-        if (typeof OpsManager !== "undefined") {
-          await OpsManager.renderWarehouseIssues();
-          await OpsManager.renderAwaitingInstall();
-          await OpsManager.renderInstalledDevices();
-          await OpsManager.renderTransfers();
-        }
-        await this.generateSelectedReport();
+        AssetManager.populateDropdowns().catch(e => console.warn("populateDropdowns background error:", e));
       }
       await this.updateNotificationBadge();
     } catch (e) {
@@ -4478,9 +4477,6 @@ class Application {
     const label = document.getElementById("langToggleLabel");
     if (label) label.textContent = lang === "ar" ? "English" : "Arabic";
 
-    const statusText = document.getElementById("sidebarStatusText");
-    if (statusText) statusText.textContent = lang === 'ar' ? "قاعدة بيانات محلية متصلة" : "Local Database Connected";
-
     // Translate all [data-i18n]
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
@@ -4518,6 +4514,35 @@ class Application {
 
     // Re-apply database institutional branding
     this.applyBranding();
+
+    // Dynamic Cloud connection status update
+    this.updateCloudStatus();
+  }
+
+  updateCloudStatus() {
+    const statusText = document.getElementById("sidebarStatusText");
+    const statusDot = document.querySelector(".status-dot");
+    const lang = (window.AppState && window.AppState.lang) || localStorage.getItem("sdi_lang") || "ar";
+
+    if (statusText) {
+      const isOnline = !!(window.db && window.db.isCloudOnline);
+      const key = isOnline ? "connectedStatus" : "offlineStatus";
+      if (window.I18N && window.I18N[lang] && window.I18N[lang][key]) {
+        statusText.textContent = window.I18N[lang][key];
+      } else {
+        statusText.textContent = isOnline
+          ? (lang === "ar" ? "متصل بسحابة Supabase" : "Supabase Cloud Connected")
+          : (lang === "ar" ? "قاعدة بيانات محلية (غير متصل)" : "Local Database (Offline)");
+      }
+    }
+
+    if (statusDot) {
+      if (window.db && window.db.isCloudOnline) {
+        statusDot.classList.remove("offline");
+      } else {
+        statusDot.classList.add("offline");
+      }
+    }
   }
 
   toggleThemePaletteDropdown(forceState) {

@@ -762,14 +762,14 @@ class DBEngine {
   }
 
 
-  async checkCloudConnection() {
+  async checkCloudConnection(force = false) {
     if (!this.supabase) {
       this.isCloudOnline = false;
       this.isOperationalReady = false;
       return false;
     }
     try {
-      const cloudCheck = await this.checkRequiredCloudTables();
+      const cloudCheck = await this.checkRequiredCloudTables(force);
       this.isCloudOnline = cloudCheck.success;
       if (!cloudCheck.success) {
         console.warn("Required cloud table check failed:", cloudCheck.table, cloudCheck.error);
@@ -782,19 +782,44 @@ class DBEngine {
     return this.isCloudOnline;
   }
 
-  async checkRequiredCloudTables() {
-    const coreTables = ["assets", "employees", "departments", "locations", "asset_types", "maintenance"];
-    for (const table of coreTables) {
-      try {
-        const { error } = await this.supabase.from(table).select("id").limit(1);
-        if (error) return { success: false, table, error };
-      } catch (error) {
-        return { success: false, table, error };
-      }
+  async checkRequiredCloudTables(force = false) {
+    const NOW = Date.now();
+    if (!force && this._lastCloudCheckResult && this._lastCloudCheckResult.success && (NOW - (this._lastCloudCheckTime || 0) < 30000)) {
+      return this._lastCloudCheckResult;
     }
-    // Check secondary tables non-fatally (log warning if missing/404)
-    for (const table of REQUIRED_CLOUD_TABLES) {
-      if (!coreTables.includes(table)) {
+
+    const coreTables = ["assets", "employees", "departments", "locations", "asset_types", "maintenance"];
+    
+    try {
+      const coreResults = await Promise.all(
+        coreTables.map(async (table) => {
+          try {
+            const { error } = await this.supabase.from(table).select("id").limit(1);
+            return { table, error };
+          } catch (error) {
+            return { table, error };
+          }
+        })
+      );
+
+      const failedCore = coreResults.find(r => r.error);
+      if (failedCore) {
+        const result = { success: false, table: failedCore.table, error: failedCore.error };
+        this._lastCloudCheckResult = result;
+        this._lastCloudCheckTime = NOW;
+        return result;
+      }
+    } catch (error) {
+      const result = { success: false, table: "core", error };
+      this._lastCloudCheckResult = result;
+      this._lastCloudCheckTime = NOW;
+      return result;
+    }
+
+    // Secondary tables checked concurrently (non-fatal)
+    const secondaryTables = REQUIRED_CLOUD_TABLES.filter(t => !coreTables.includes(t));
+    await Promise.all(
+      secondaryTables.map(async (table) => {
         try {
           const { error } = await this.supabase.from(table).select("id").limit(1);
           if (error) {
@@ -803,9 +828,13 @@ class DBEngine {
         } catch (error) {
           console.warn(`Optional cloud table '${table}' check error:`, error);
         }
-      }
-    }
-    return { success: true };
+      })
+    ).catch(e => console.warn("Secondary cloud tables check error:", e));
+
+    const result = { success: true };
+    this._lastCloudCheckResult = result;
+    this._lastCloudCheckTime = NOW;
+    return result;
   }
 
   subscribeRealtime() {
@@ -940,9 +969,12 @@ class DBEngine {
       const isIdbActive = !!(this.db && !this.useFallback);
       const testKey = "__conn_test__";
       const testData = { id: testKey, timestamp: Date.now() };
-      await this.put("systemSettings", testData);
-      const readBack = await this.getById("systemSettings", testKey);
-      await this.delete("systemSettings", testKey);
+      try {
+        this.saveToFallbackStore("systemSettings", testData);
+        this.deleteFromFallbackStore("systemSettings", testKey);
+      } catch (testErr) {
+        console.warn("Local storage test warning:", testErr);
+      }
       const localAssetCount = await this.count("assets");
 
       return {
@@ -1244,7 +1276,8 @@ class DBEngine {
     if (storeName === "assetTypes" && !item.code) item.code = item.id;
 
     // Sync to Supabase Cloud
-    if (this.supabase && STORE_TABLE_MAP[storeName]) {
+    const isTestProbe = item.id && typeof item.id === "string" && item.id.startsWith("__");
+    if (this.supabase && STORE_TABLE_MAP[storeName] && !isTestProbe) {
       try {
         const table = STORE_TABLE_MAP[storeName];
         const cloudRecord = toCloudRecord(storeName, item);
@@ -1258,6 +1291,10 @@ class DBEngine {
         }
       } catch (e) {
         console.warn(`Supabase sync error:`, e);
+        if (storeName === "systemSettings" && (e.code === "42501" || (e.message && e.message.includes("row-level security")))) {
+          console.warn("systemSettings RLS write skipped for restricted user role.");
+          return item;
+        }
         throw e;
       }
 
@@ -1391,17 +1428,26 @@ class DBEngine {
   }
 
   async incrementAssetIdSeq() {
-    let settings = await this.getById("systemSettings", "general");
-    if (!settings) {
-      settings = { id: "general", nextAssetSeq: 2, orgNameAr: "معهد الشارقة للسياقة", orgNameEn: "Sharjah Driving Institute" };
-    } else {
-      settings.nextAssetSeq = (settings.nextAssetSeq || 1) + 1;
+    try {
+      let settings = await this.getById("systemSettings", "general");
+      if (!settings) {
+        settings = { id: "general", nextAssetSeq: 2, orgNameAr: "معهد الشارقة للسياقة", orgNameEn: "Sharjah Driving Institute" };
+      } else {
+        settings.nextAssetSeq = (settings.nextAssetSeq || 1) + 1;
+      }
+      await this.put("systemSettings", settings);
+    } catch (e) {
+      console.warn("Could not increment systemSettings asset sequence:", e);
     }
-    await this.put("systemSettings", settings);
   }
 
   async getSystemSettings() {
-    let settings = await this.getById("systemSettings", "general");
+    let settings = null;
+    try {
+      settings = await this.getById("systemSettings", "general");
+    } catch (e) {
+      console.warn("Could not fetch systemSettings from cloud:", e);
+    }
     if (!settings) {
       settings = {
         id: "general",
@@ -1416,7 +1462,11 @@ class DBEngine {
         lang: "ar",
         theme: "sdi"
       };
-      await this.put("systemSettings", settings);
+      try {
+        await this.put("systemSettings", settings);
+      } catch (e) {
+        console.warn("Could not save default systemSettings:", e);
+      }
     }
     return settings;
   }
@@ -1428,7 +1478,11 @@ class DBEngine {
       ...newSettings,
       id: "general"
     };
-    await this.put("systemSettings", updated);
+    try {
+      await this.put("systemSettings", updated);
+    } catch (e) {
+      console.warn("Could not update systemSettings:", e);
+    }
     return updated;
   }
 
@@ -2048,29 +2102,33 @@ class DBEngine {
     }
 
     // 6. System Settings Store
-    let settings = await this.getById("systemSettings", "general");
-    if (!settings) {
-      settings = {
-        id: "general",
-        nextAssetSeq: 11,
-        orgNameAr: "معهد الشارقة للسياقة",
-        orgNameEn: "Sharjah Driving Institute",
-        systemNameAr: "SDI IT Asset Hub",
-        systemNameEn: "SDI IT Asset Hub",
-        logoDataUrl: null,
-        primaryColor: "#0B3C68",
-        accentColor: "#F37021",
-        lang: "ar",
-        theme: "sdi"
-      };
-      await this.put("systemSettings", settings);
-    } else {
-      let modifiedSettings = false;
-      if (!settings.primaryColor) { settings.primaryColor = "#0B3C68"; modifiedSettings = true; }
-      if (!settings.accentColor) { settings.accentColor = "#F37021"; modifiedSettings = true; }
-      if (!settings.systemNameAr) { settings.systemNameAr = "SDI IT Asset Hub"; modifiedSettings = true; }
-      if (!settings.systemNameEn) { settings.systemNameEn = "SDI IT Asset Hub"; modifiedSettings = true; }
-      if (modifiedSettings) await this.put("systemSettings", settings);
+    try {
+      let settings = await this.getById("systemSettings", "general");
+      if (!settings) {
+        settings = {
+          id: "general",
+          nextAssetSeq: 11,
+          orgNameAr: "معهد الشارقة للسياقة",
+          orgNameEn: "Sharjah Driving Institute",
+          systemNameAr: "SDI IT Asset Hub",
+          systemNameEn: "SDI IT Asset Hub",
+          logoDataUrl: null,
+          primaryColor: "#0B3C68",
+          accentColor: "#F37021",
+          lang: "ar",
+          theme: "sdi"
+        };
+        await this.put("systemSettings", settings);
+      } else {
+        let modifiedSettings = false;
+        if (!settings.primaryColor) { settings.primaryColor = "#0B3C68"; modifiedSettings = true; }
+        if (!settings.accentColor) { settings.accentColor = "#F37021"; modifiedSettings = true; }
+        if (!settings.systemNameAr) { settings.systemNameAr = "SDI IT Asset Hub"; modifiedSettings = true; }
+        if (!settings.systemNameEn) { settings.systemNameEn = "SDI IT Asset Hub"; modifiedSettings = true; }
+        if (modifiedSettings) await this.put("systemSettings", settings);
+      }
+    } catch (e) {
+      console.warn("Seed systemSettings skipped due to permission/RLS constraint:", e);
     }
 
     // 7. Assets Migration / Seed
