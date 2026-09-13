@@ -9,7 +9,7 @@ window.AppState = window.AppState || {
     try { return localStorage.getItem("sdi_lang") || "ar"; } catch(e) { return "ar"; }
   })(),
   theme: (() => {
-    try { return localStorage.getItem("sdi_theme") || "dark"; } catch(e) { return "dark"; }
+    try { localStorage.setItem("sdi_theme", "light"); return "light"; } catch(e) { return "light"; }
   })(),
   currentTab: "dashboard",
   currentSettingsSubTab: "dbTest",
