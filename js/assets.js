@@ -182,38 +182,6 @@ class AssetInventoryManager {
     });
 
     tableBody.innerHTML = html;
-
-    const mobileCardsContainer = document.getElementById("assetsMobileCards");
-    if (mobileCardsContainer) {
-      if (filtered.length === 0) {
-        mobileCardsContainer.innerHTML = `<div class="empty-state text-center py-4"><p class="text-muted">${I18N[lang].noResultsFound}</p></div>`;
-      } else {
-        let mobileHtml = "";
-        filtered.forEach(asset => {
-          const typeObj = typeMap[asset.assetTypeId];
-          const typeName = typeObj ? (lang === "ar" ? typeObj.nameAr : (typeObj.nameEn || typeObj.nameAr)) : "-";
-          const empName = empMap[asset.currentEmployeeId] || "-";
-          const statusClass = this.getStatusBadgeClass(asset.status);
-          const statusText = this.formatStatus(asset.status);
-
-          mobileHtml += `
-            <div class="mobile-asset-card" onclick="AssetManager.openDetailsModal('${asset.id}')">
-              <div class="d-flex justify-between items-center mb-1">
-                <span class="asset-id-tag">${asset.assetId}</span>
-                <span class="badge ${statusClass}">${statusText}</span>
-              </div>
-              <div class="font-bold text-base">${asset.brand || ""} ${asset.model || ""}</div>
-              <div class="text-xs text-muted mb-2"><i class="fas fa-barcode"></i> <code>${asset.serial || "-"}</code></div>
-              <div class="d-flex justify-between items-center text-xs pt-2 border-top">
-                <span><i class="fas fa-user text-primary"></i> ${empName}</span>
-                <span class="badge badge-secondary">${typeName}</span>
-              </div>
-            </div>
-          `;
-        });
-        mobileCardsContainer.innerHTML = mobileHtml;
-      }
-    }
   }
 
   getStatusBadgeClass(status) {

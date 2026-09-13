@@ -1066,6 +1066,71 @@ class DBEngine {
     });
   }
 
+  async getFiltered(storeName, filterColumn, filterValue) {
+    if (this.supabase && STORE_TABLE_MAP[storeName]) {
+      try {
+        const table = STORE_TABLE_MAP[storeName];
+        const cloudCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
+        const { data, error } = await this.supabase
+          .from(table)
+          .select('*')
+          .eq(cloudCol, filterValue);
+        
+        if (!error && Array.isArray(data)) {
+          return data.map(r => fromCloudRecord(storeName, r));
+        }
+        if (error) console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
+      } catch (cloudErr) {
+        console.warn(`Supabase getFiltered(${storeName}) failed:`, cloudErr);
+      }
+    }
+    const all = await this.getAll(storeName);
+    return all.filter(item => item[filterColumn] === filterValue);
+  }
+
+  async populateFilteredDropdown(storeName, filterColumn, filterValue, selectElementId, placeholderAr, placeholderEn) {
+    const selectElement = document.getElementById(selectElementId);
+    if (!selectElement) {
+      console.warn(`Dropdown element ${selectElementId} not found.`);
+      return;
+    }
+    const lang = typeof AppState !== "undefined" ? AppState.lang : "ar";
+    const placeholder = lang === "ar" ? placeholderAr : placeholderEn;
+
+    try {
+      selectElement.disabled = true;
+      selectElement.innerHTML = `<option value="">-- ${lang === "ar" ? "جاري تحميل البيانات..." : "Loading data..."} --</option>`;
+
+      const data = await this.getFiltered(storeName, filterColumn, filterValue);
+
+      let html = `<option value="">-- ${placeholder} --</option>`;
+      if (data && data.length > 0) {
+        const activeData = storeName === "employees" ? data.filter(e => e.status === "Active") : data;
+        
+        activeData.forEach(item => {
+          let name = lang === "ar" ? item.nameAr : (item.nameEn || item.nameAr);
+          if (storeName === "employees" && item.employeeNumber) {
+            name += ` (${item.employeeNumber})`;
+          }
+          html += `<option value="${item.id}">${name}</option>`;
+        });
+      } else {
+        html = `<option value="">-- ${lang === "ar" ? "لا توجد نتائج مطابقة" : "No matching results"} --</option>`;
+      }
+      selectElement.innerHTML = html;
+    } catch (err) {
+      console.error(`Failed to populate dropdown ${selectElementId}:`, err);
+      selectElement.innerHTML = `<option value="">-- ${lang === "ar" ? "فشل جلب البيانات" : "Failed to load data"} --</option>`;
+    } finally {
+      selectElement.disabled = false;
+      if (typeof ProjectManager !== "undefined" && typeof ProjectManager.enhanceSelectWithSearch === "function") {
+        ProjectManager.enhanceSelectWithSearch(selectElementId, placeholder, lang === "ar" ? "ابحث..." : "Search...");
+      } else if (typeof AssetManager !== "undefined" && typeof AssetManager.enhanceSelectWithSearch === "function") {
+        AssetManager.enhanceSelectWithSearch(selectElementId, placeholder, lang === "ar" ? "ابحث..." : "Search...");
+      }
+    }
+  }
+
   async getById(storeName, id) {
     if (!id && id !== 0) return null;
     const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;

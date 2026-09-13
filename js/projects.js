@@ -1388,12 +1388,14 @@ class AssetOperationsController {
       this.enhanceSelectWithSearch("formWiWarehouseLoc", lang === "ar" ? "اختر المستودع *" : "Select Warehouse *", lang === "ar" ? "ابحث عن المستودع..." : "Search warehouse...");
     }
 
-    const empSelect = document.getElementById("formWiItEmp");
-    if (empSelect) {
-      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر فني تقنية المعلومات المستلم" : "Select Receiving IT Technician"} --</option>` +
-        employees.filter(e => e.status === "Active").map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber})</option>`).join("");
-      this.enhanceSelectWithSearch("formWiItEmp", lang === "ar" ? "اختر فني التقنية المستلم *" : "Select IT Technician *", lang === "ar" ? "ابحث عن الفني بالاسم أو الرقم..." : "Search technician...");
-    }
+    await db.populateFilteredDropdown(
+      "employees",
+      "departmentId",
+      "dept-it",
+      "formWiItEmp",
+      "اختر فني تقنية المعلومات المستلم *",
+      "Select IT Technician *"
+    );
 
     const prjSelect = document.getElementById("formWiProject");
     if (prjSelect) {
