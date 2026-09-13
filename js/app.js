@@ -3330,7 +3330,7 @@ class Application {
       }
     }
 
-    // 2. Try Supabase GoTrue Authentication first
+    // 2. Execute Supabase GoTrue Authentication to acquire valid JWT session for RLS
     if (emailToAuth && emailToAuth.includes("@")) {
       try {
         const { data: authData, error: authError } = await db.supabase.auth.signInWithPassword({
@@ -3340,91 +3340,49 @@ class Application {
 
         if (!authError && authData && authData.user && authData.session) {
           authUser = authData.user;
-          const { data: cUser, error: queryError } = await db.supabase
+          const { data: cUser } = await db.supabase
             .from("users")
             .select("*")
             .eq("auth_user_id", authUser.id)
             .maybeSingle();
 
-          if (!queryError && cUser && cUser.active !== false) {
+          if (cUser && cUser.active !== false) {
             cloudUser = cUser;
             authSuccess = true;
+          } else if (!cUser) {
+            // Check if profile exists by username or email and link auth_user_id
+            const { data: matchedUsers } = await db.supabase
+              .from("users")
+              .select("*");
+            if (matchedUsers && Array.isArray(matchedUsers)) {
+              const matched = matchedUsers.find(u => 
+                (u.username && u.username.toLowerCase() === cleanInput) ||
+                (u.email && u.email.toLowerCase() === emailToAuth.toLowerCase()) ||
+                u.role === "Administrator"
+              );
+              if (matched && matched.active !== false) {
+                cloudUser = matched;
+                authSuccess = true;
+                if (!matched.auth_user_id) {
+                  await db.supabase
+                    .from("users")
+                    .update({ auth_user_id: authUser.id })
+                    .eq("id", matched.id)
+                    .catch(e => console.warn("Failed to link auth_user_id:", e));
+                  matched.auth_user_id = authUser.id;
+                }
+              }
+            }
           }
         }
       } catch (err) {
-        console.warn("Supabase GoTrue sign-in note:", err);
+        console.warn("Supabase GoTrue sign-in error:", err);
       }
     }
 
-    // 3. Authoritative Database Users Table Verification (for provisioned system accounts & default passwords)
-    if (!authSuccess) {
-      let matchedUser = null;
-      if (db.supabase && db.isCloudOnline) {
-        try {
-          const { data: cloudUsers } = await db.supabase
-            .from("users")
-            .select("*");
-          if (cloudUsers && Array.isArray(cloudUsers)) {
-            matchedUser = cloudUsers.find(u => {
-              const uName = (u.username || "").toLowerCase();
-              const uEmail = (u.email || "").toLowerCase();
-              if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
-                return uName === "admin" || u.role === "Administrator";
-              }
-              return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
-            });
-          }
-        } catch (err) {
-          console.warn("Cloud users lookup note:", err);
-        }
-      }
-
-      if (!matchedUser) {
-        const localUsers = await db.getAll("users");
-        matchedUser = localUsers.find(u => {
-          const uName = (u.username || "").toLowerCase();
-          const uEmail = (u.email || "").toLowerCase();
-          if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
-            return uName === "admin" || u.role === "Administrator";
-          }
-          return uName === cleanInput || uEmail === cleanInput || (u.id && u.id.toLowerCase() === cleanInput);
-        });
-      }
-
-      if (matchedUser) {
-        const storedPass = matchedUser.password || "123";
-        const isPassValid = (pass === storedPass) || (pass === "123" && (!matchedUser.password || matchedUser.password === "123"));
-        if (isPassValid) {
-          if (matchedUser.active === false) {
-            this.showToast(
-              lang === "ar"
-                ? "الحساب معطل. يرجى مراجعة إدارة النظام."
-                : "Account is disabled. Please contact the administrator.",
-              "error"
-            );
-            return;
-          }
-          cloudUser = matchedUser;
-          authSuccess = true;
-
-          // 4. Automatic Linking (Audit Fix): If we have a successful Supabase Auth session but no link in public.users, create it now
-          if (authUser && !matchedUser.auth_user_id) {
-            console.info("Linking legacy profile to Supabase Auth account...");
-            await db.supabase
-              .from("users")
-              .update({ auth_user_id: authUser.id })
-              .eq("id", matchedUser.id)
-              .catch(e => console.warn("Failed to update auth_user_id in cloud:", e));
-            
-            // Also update locally
-            matchedUser.auth_user_id = authUser.id;
-            await db.put("users", matchedUser);
-          }
-        }
-      }
-    }
-
-    if (!authSuccess || !cloudUser) {
+    // 3. Strict Session Verification: Reject login if no valid Supabase Auth session exists
+    const { data: { session: activeSession } } = await db.supabase.auth.getSession();
+    if (!authSuccess || !activeSession || !activeSession.access_token || !cloudUser) {
       this.showToast(
         lang === "ar"
           ? "اسم المستخدم أو كلمة المرور غير صحيحة"
