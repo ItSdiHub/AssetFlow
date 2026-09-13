@@ -102,7 +102,7 @@ class HelpdeskManager {
 
     let html = "";
     filtered.forEach(req => {
-      const empName = empMap[req.employeeId] || (lang === "ar" ? "موظف غير معروف" : "Unknown Employee");
+      const empName = req.employeeId ? (empMap[req.employeeId] || (lang === "ar" ? "موظف غير معروف" : "Unknown Employee")) : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee");
       const asset = assetMap[req.assetId];
       const assetDisplay = asset ? `${asset.assetId} - ${asset.brand} ${asset.model}` : (lang === "ar" ? "طلب عام / بدون جهاز" : "General / No device");
       const statusBadge = this.getStatusBadge(req.status);
@@ -438,8 +438,8 @@ class HelpdeskManager {
     const user = AppState.currentUser;
     const isIT = user.role === "Administrator" || user.role === "IT User";
 
-    const employee = await db.getById("employees", req.employeeId);
-    const empName = employee ? getEntityName(employee, lang) : (lang === "ar" ? "موظف" : "Employee");
+    const employee = req.employeeId ? await db.getById("employees", req.employeeId) : null;
+    const empName = employee ? getEntityName(employee, lang) : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee");
     
     let deptName = "-";
     if (employee && employee.departmentId) {
@@ -604,15 +604,17 @@ class HelpdeskManager {
       }
 
       // Notify Employee
-      await db.createNotification({
-        employeeId: req.employeeId,
-        titleAr: `رد جديد من الدعم الفني على طلبك (${req.requestId})`,
-        titleEn: `IT replied to your request (${req.requestId})`,
-        messageAr: text,
-        messageEn: text,
-        type: "it_reply",
-        relatedId: req.id
-      });
+      if (req.employeeId) {
+        await db.createNotification({
+          employeeId: req.employeeId,
+          titleAr: `رد جديد من الدعم الفني على طلبك (${req.requestId})`,
+          titleEn: `IT replied to your request (${req.requestId})`,
+          messageAr: text,
+          messageEn: text,
+          type: "it_reply",
+          relatedId: req.id
+        });
+      }
     } else {
       // Employee replying
       if (req.status === "Waiting for Employee") {
@@ -658,15 +660,17 @@ class HelpdeskManager {
     await db.put("helpdeskRequests", req);
 
     // Notify employee
-    await db.createNotification({
-      employeeId: req.employeeId,
-      titleAr: `تحديث حالة طلب الدعم (${req.requestId})`,
-      titleEn: `Status updated on request (${req.requestId})`,
-      messageAr: `أصبحت حالة طلبك: ${this.formatStatus(newStatus)}`,
-      messageEn: `Your request status is now: ${this.formatStatus(newStatus)}`,
-      type: "request_update",
-      relatedId: req.id
-    });
+    if (req.employeeId) {
+      await db.createNotification({
+        employeeId: req.employeeId,
+        titleAr: `تحديث حالة طلب الدعم (${req.requestId})`,
+        titleEn: `Status updated on request (${req.requestId})`,
+        messageAr: `أصبحت حالة طلبك: ${this.formatStatus(newStatus)}`,
+        messageEn: `Your request status is now: ${this.formatStatus(newStatus)}`,
+        type: "request_update",
+        relatedId: req.id
+      });
+    }
 
     App.showToast(I18N[AppState.lang].saveSuccess, "success");
     await this.openRequestDetails(req.id);
@@ -708,15 +712,17 @@ class HelpdeskManager {
     await db.put("helpdeskRequests", req);
 
     // Notify employee
-    await db.createNotification({
-      employeeId: req.employeeId,
-      titleAr: `تم اكتمال طلب الدعم الفني (${req.requestId})`,
-      titleEn: `Support Request Completed (${req.requestId})`,
-      messageAr: "تم اكتمال طلب الدعم الفني الخاص بك بنجاح.",
-      messageEn: "Your support request has been completed successfully.",
-      type: "request_completed",
-      relatedId: req.id
-    });
+    if (req.employeeId) {
+      await db.createNotification({
+        employeeId: req.employeeId,
+        titleAr: `تم اكتمال طلب الدعم الفني (${req.requestId})`,
+        titleEn: `Support Request Completed (${req.requestId})`,
+        messageAr: "تم اكتمال طلب الدعم الفني الخاص بك بنجاح.",
+        messageEn: "Your support request has been completed successfully.",
+        type: "request_completed",
+        relatedId: req.id
+      });
+    }
 
     App.showToast(I18N[AppState.lang].saveSuccess || "تم إكمال الطلب بنجاح", "success");
     await this.render();
@@ -731,26 +737,131 @@ class HelpdeskManager {
     const form = document.getElementById("newSupportRequestForm");
     if (form) form.reset();
 
-    const deviceSelect = document.getElementById("nsrDeviceSelect") || document.getElementById("formReqAssetId");
-    const allAssets = await db.getAll("assets");
+    const empGroup = document.getElementById("formGroupReqEmployee");
+    const empDetails = document.getElementById("formReqEmployeeDetails");
+    const empSelect = document.getElementById("formReqEmployeeId");
+    const deviceSelect = document.getElementById("formReqAssetId") || document.getElementById("nsrDeviceSelect");
     
-    let candidateAssets = [];
-    if (user.role === "Employee" && user.employeeId) {
-      candidateAssets = allAssets.filter(a => a.currentEmployeeId === user.employeeId);
-    } else {
-      candidateAssets = allAssets;
-    }
+    const allAssets = await db.getAll("assets");
 
-    let optionsHtml = `<option value="">-- ${lang === 'ar' ? 'طلب عام (بدون تحديد جهاز)' : 'General (No specific device)'} --</option>`;
-    candidateAssets.forEach(a => {
-      optionsHtml += `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${a.serial || ''})</option>`;
-    });
-    if (deviceSelect) {
-      deviceSelect.innerHTML = optionsHtml;
-      if (preselectedAssetId) deviceSelect.value = preselectedAssetId;
+    if (user.role === "Administrator" || user.role === "IT User") {
+      // Show Employee selection for admins/IT users
+      if (empGroup) empGroup.style.display = "block";
+      if (empDetails) empDetails.style.display = "none"; // hidden until an employee is selected
+      
+      // Populate Employee dropdown
+      if (empSelect) {
+        const employees = await db.getAll("employees");
+        // Sort active employees alphabetically
+        const activeEmployees = employees.filter(e => e.status === "Active").sort((a, b) => {
+          const nameA = lang === "ar" ? a.nameAr : (a.nameEn || a.nameAr);
+          const nameB = lang === "ar" ? b.nameAr : (b.nameEn || b.nameAr);
+          return nameA.localeCompare(nameB, lang === "ar" ? "ar" : "en");
+        });
+
+        let empOptionsHtml = `<option value="">-- ${lang === 'ar' ? 'طلب عام / بدون موظف' : 'General Request / No Employee'} --</option>`;
+        activeEmployees.forEach(e => {
+          const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
+          empOptionsHtml += `<option value="${e.id}">${name} (${e.employeeNumber || e.employeeId || ''})</option>`;
+        });
+        empSelect.innerHTML = empOptionsHtml;
+        empSelect.value = ""; // Default to General Request
+      }
+
+      // Populate assets initially for General Request (show all assets)
+      let optionsHtml = `<option value="">-- ${lang === 'ar' ? 'بدون جهاز محدد / طلب عام' : 'No specific device / General'} --</option>`;
+      allAssets.forEach(a => {
+        optionsHtml += `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${a.serial || ''})</option>`;
+      });
+      if (deviceSelect) {
+        deviceSelect.innerHTML = optionsHtml;
+        if (preselectedAssetId) deviceSelect.value = preselectedAssetId;
+      }
+    } else {
+      // Ordinary employee
+      if (empGroup) empGroup.style.display = "none";
+      if (empDetails) empDetails.style.display = "none";
+
+      const candidateAssets = allAssets.filter(a => a.currentEmployeeId === user.employeeId);
+      let optionsHtml = `<option value="">-- ${lang === 'ar' ? 'بدون جهاز محدد / طلب عام' : 'No specific device / General'} --</option>`;
+      candidateAssets.forEach(a => {
+        optionsHtml += `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${a.serial || ''})</option>`;
+      });
+      if (deviceSelect) {
+        deviceSelect.innerHTML = optionsHtml;
+        if (preselectedAssetId) deviceSelect.value = preselectedAssetId;
+      }
     }
 
     App.openModal("newSupportRequestModal");
+  }
+
+  async handleFormEmployeeChange(employeeId) {
+    const lang = AppState.lang;
+    const detailsContainer = document.getElementById("formReqEmployeeDetails");
+    const numEl = document.getElementById("reqEmpNumber");
+    const deptEl = document.getElementById("reqEmpDept");
+    const locEl = document.getElementById("reqEmpLoc");
+    const officeEl = document.getElementById("reqEmpOffice");
+    const deviceSelect = document.getElementById("formReqAssetId");
+
+    const allAssets = await db.getAll("assets");
+
+    if (!employeeId) {
+      if (detailsContainer) detailsContainer.style.display = "none";
+      // General Request - allow any asset
+      let optionsHtml = `<option value="">-- ${lang === 'ar' ? 'بدون جهاز محدد / طلب عام' : 'No specific device / General'} --</option>`;
+      allAssets.forEach(a => {
+        optionsHtml += `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${a.serial || ''})</option>`;
+      });
+      if (deviceSelect) deviceSelect.innerHTML = optionsHtml;
+      return;
+    }
+
+    // Load selected employee info
+    const emp = await db.getById("employees", employeeId);
+    if (emp) {
+      if (detailsContainer) detailsContainer.style.display = "block";
+      if (numEl) numEl.textContent = emp.employeeNumber || emp.employeeId || "-";
+      
+      // Get Department Name
+      let deptName = "-";
+      if (emp.departmentId) {
+        const dept = await db.getById("departments", emp.departmentId);
+        if (dept) {
+          deptName = lang === "ar" ? dept.nameAr : (dept.nameEn || dept.nameAr);
+        } else {
+          deptName = emp.departmentId;
+        }
+      }
+      if (deptEl) deptEl.textContent = deptName;
+
+      // Get Location Name
+      let locName = "-";
+      let locId = emp.locationId;
+      if (!locId && emp.departmentId) {
+        const dept = await db.getById("departments", emp.departmentId);
+        if (dept) locId = dept.locationId;
+      }
+      if (locId) {
+        const loc = await db.getById("locations", locId);
+        if (loc) {
+          locName = lang === "ar" ? loc.nameAr : (loc.nameEn || loc.nameAr);
+        } else {
+          locName = locId;
+        }
+      }
+      if (locEl) locEl.textContent = locName;
+      if (officeEl) officeEl.textContent = emp.officeName || emp.office || "-";
+
+      // Filter assets assigned to this employee
+      const empAssets = allAssets.filter(a => a.currentEmployeeId === employeeId);
+      let optionsHtml = `<option value="">-- ${lang === 'ar' ? 'بدون جهاز محدد / طلب عام' : 'No specific device / General'} --</option>`;
+      empAssets.forEach(a => {
+        optionsHtml += `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${a.serial || ''})</option>`;
+      });
+      if (deviceSelect) deviceSelect.innerHTML = optionsHtml;
+    }
   }
 
   async handleNewSupportRequestSubmit(event) {
@@ -772,6 +883,33 @@ class HelpdeskManager {
       return;
     }
 
+    // Determine target employee ID based on user role and selection
+    let employeeId = null;
+    if (user.role === "Administrator" || user.role === "IT User") {
+      const empSelect = document.getElementById("formReqEmployeeId");
+      if (empSelect && empSelect.value) {
+        employeeId = empSelect.value;
+      } else {
+        employeeId = null; // General Request
+      }
+    } else {
+      employeeId = user.employeeId || null;
+    }
+
+    const targetAssetId = deviceId || null;
+
+    // Validate asset relationship if both employee and asset are selected
+    if (employeeId && targetAssetId) {
+      const asset = await db.getById("assets", targetAssetId);
+      if (!asset || asset.currentEmployeeId !== employeeId) {
+        const msg = lang === "ar" 
+          ? "تنبيه: هذا الجهاز غير مسند للموظف المختار!" 
+          : "Alert: This asset is not assigned to the selected employee!";
+        App.showToast(msg, "error");
+        return;
+      }
+    }
+
     const nextReqId = await db.getNextRequestId();
     const nextSeq = await db.getNextSequentialId("helpdeskRequests");
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
@@ -779,8 +917,8 @@ class HelpdeskManager {
     const newReq = {
       id: nextSeq,
       requestId: nextReqId,
-      employeeId: user.employeeId || "emp-101",
-      assetId: deviceId || null,
+      employeeId: employeeId,
+      assetId: targetAssetId,
       requestType: reqType,
       subject,
       description,
