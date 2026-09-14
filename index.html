@@ -3495,7 +3495,7 @@
 
             <div class="form-group">
               <label><span data-i18n="maintLocation">الموقع / الفرع</span></label>
-              <select id="formMaintLocationId" class="form-control">
+              <select id="formMaintLocationId" class="form-control" onchange="MaintManager.handleLocationSelect(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>

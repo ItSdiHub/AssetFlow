@@ -187,182 +187,258 @@ class MaintenanceController {
   }
 
   // Cascading Linkage Handlers for Maintenance Modal
-  async handleAssetSelect(assetId) {
-    if (!assetId) {
-      const empSelect = document.getElementById("formMaintEmployeeId");
-      if (empSelect && empSelect.value) {
-        await this.filterAssetsByEmployee(empSelect.value);
-      } else {
-        await this.populateAllAssets();
-      }
-      return;
-    }
-
-    const asset = await db.getById("assets", assetId);
-    if (!asset) return;
-
-    // Link Employee, Section (Department), and Location from Asset
-    if (asset.currentEmployeeId) {
-      const empSelect = document.getElementById("formMaintEmployeeId");
-      if (empSelect && empSelect.value !== asset.currentEmployeeId) {
-        empSelect.value = asset.currentEmployeeId;
-        // Re-populate and keep current asset selected
-        await this.filterAssetsByEmployee(asset.currentEmployeeId, assetId);
-      }
-
-      const emp = await db.getById("employees", asset.currentEmployeeId);
-      if (emp && emp.departmentId) {
-        const deptSelect = document.getElementById("formMaintDepartmentId");
-        if (deptSelect) deptSelect.value = emp.departmentId;
-      }
-    } else {
-      const empSelect = document.getElementById("formMaintEmployeeId");
-      if (empSelect) empSelect.value = "";
-
-      if (asset.departmentId) {
-        const deptSelect = document.getElementById("formMaintDepartmentId");
-        if (deptSelect) deptSelect.value = asset.departmentId;
-      }
-    }
-
-    if (asset.locationId) {
-      const locSelect = document.getElementById("formMaintLocationId");
-      if (locSelect) locSelect.value = asset.locationId;
-    }
-  }
-
-  async handleEmployeeSelect(empId) {
-    if (!empId) {
-      const deptSelect = document.getElementById("formMaintDepartmentId");
-      if (deptSelect) deptSelect.value = "";
-      await this.populateAllAssets();
-      return;
-    }
-
-    const emp = await db.getById("employees", empId);
-    if (!emp) return;
-
-    // Link Section / Department from Employee
-    if (emp.departmentId) {
-      const deptSelect = document.getElementById("formMaintDepartmentId");
-      if (deptSelect) deptSelect.value = emp.departmentId;
-    }
-
-    // Link Location if available
-    let locId = emp.locationId;
-    if (!locId && emp.departmentId) {
-      const dept = await db.getById("departments", emp.departmentId);
-      if (dept) locId = dept.locationId;
-    }
-    if (locId) {
-      const locSelect = document.getElementById("formMaintLocationId");
-      if (locSelect) locSelect.value = locId;
-    }
-
-    // Filter and populate assets assigned to this employee
-    await this.filterAssetsByEmployee(empId);
-  }
-
-  async filterAssetsByEmployee(empId, keepSelectedId = null) {
-    const lang = AppState.lang;
-    const assetSelect = document.getElementById("formMaintAssetId");
-    if (!assetSelect) return;
-
-    const allAssets = await db.getAll("assets");
-    const empAssets = allAssets.filter(a => a.currentEmployeeId === empId);
-
-    let optionsHtml = "";
-    if (empAssets.length === 0) {
-      optionsHtml = `<option value="">-- ${lang === 'ar' ? 'لا توجد أصول في عهدة هذا الموظف' : 'No assets in custody'} --</option>`;
-      assetSelect.innerHTML = optionsHtml;
-      assetSelect.value = "";
-    } else {
-      const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
-      optionsHtml = `<option value="">${selectPlaceholder}</option>` +
-        empAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
-      assetSelect.innerHTML = optionsHtml;
-
-      if (keepSelectedId && empAssets.some(a => a.id === keepSelectedId)) {
-        assetSelect.value = keepSelectedId;
-      } else if (empAssets.length === 1) {
-        assetSelect.value = empAssets[0].id;
-        if (empAssets[0].locationId) {
-          const locSelect = document.getElementById("formMaintLocationId");
-          if (locSelect) locSelect.value = empAssets[0].locationId;
-        }
-      } else {
-        assetSelect.value = "";
-      }
-    }
-  }
-
-  async populateAllAssets() {
-    const lang = AppState.lang;
-    const assetSelect = document.getElementById("formMaintAssetId");
-    if (!assetSelect) return;
-
-    const assets = await db.getAll("assets");
-    const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
-    assetSelect.innerHTML = `<option value="">${selectPlaceholder}</option>` +
-      assets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
-    assetSelect.value = "";
+  async handleLocationSelect(locationId) {
+    await this.syncMaintenanceFilters("location", locationId);
   }
 
   async handleDepartmentSelect(deptId) {
-    const lang = AppState.lang;
-    const empSelect = document.getElementById("formMaintEmployeeId");
-    const assetSelect = document.getElementById("formMaintAssetId");
-    
-    if (!deptId) {
-      await this.populateAllEmployees();
-      await this.populateAllAssets();
-      return;
-    }
-
-    const dept = await db.getById("departments", deptId);
-    if (dept && dept.locationId) {
-      const locSelect = document.getElementById("formMaintLocationId");
-      if (locSelect) locSelect.value = dept.locationId;
-    }
-
-    // Filter employees by department
-    const employees = await db.getAll("employees");
-    const deptEmployees = employees.filter(e => e.departmentId === deptId && e.status === "Active");
-    if (empSelect) {
-      const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
-      empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +
-        deptEmployees.map(e => {
-          const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
-          const orgPart = e.employeeNumber && e.employeeNumber !== e.id ? ` - #${e.employeeNumber}` : "";
-          return `<option value="${e.id}">${name} (${e.id}${orgPart})</option>`;
-        }).join("");
-      empSelect.value = "";
-    }
-
-    // Filter assets by department
-    const allAssets = await db.getAll("assets");
-    const deptAssets = allAssets.filter(a => a.departmentId === deptId);
-    if (assetSelect) {
-      const selectPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
-      assetSelect.innerHTML = `<option value="">${selectPlaceholder}</option>` +
-        deptAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
-      assetSelect.value = "";
-    }
+    await this.syncMaintenanceFilters("department", deptId);
   }
 
-  async populateAllEmployees() {
+  async handleEmployeeSelect(empId) {
+    await this.syncMaintenanceFilters("employee", empId);
+  }
+
+  async handleAssetSelect(assetId) {
+    await this.syncMaintenanceFilters("asset", assetId);
+  }
+
+  async syncMaintenanceFilters(triggerSource, value) {
     const lang = AppState.lang;
+    const locSelect = document.getElementById("formMaintLocationId");
+    const deptSelect = document.getElementById("formMaintDepartmentId");
     const empSelect = document.getElementById("formMaintEmployeeId");
-    if (!empSelect) return;
-    const employees = await db.getAll("employees");
+    const assetSelect = document.getElementById("formMaintAssetId");
+
+    if (!locSelect || !deptSelect || !empSelect || !assetSelect) return;
+
+    // 1. Gather current selected values (before any change or after trigger)
+    let locId = locSelect.value;
+    let deptId = deptSelect.value;
+    let empId = empSelect.value;
+    let assetId = assetSelect.value;
+
+    // Update based on the trigger field
+    if (triggerSource === "location") {
+      locId = value;
+    } else if (triggerSource === "department") {
+      deptId = value;
+    } else if (triggerSource === "employee") {
+      empId = value;
+    } else if (triggerSource === "asset") {
+      assetId = value;
+    }
+
+    // 2. Load necessary metadata from database
+    const [locations, departments, employees, assets] = await Promise.all([
+      db.getAll("locations"),
+      db.getAll("departments"),
+      db.getAll("employees"),
+      db.getAll("assets")
+    ]);
+
+    const activeLocations = locations.filter(l => l.active !== false);
+    const activeDepts = departments.filter(d => d.active !== false);
+    const activeEmps = employees.filter(e => e.status === "Active");
+
+    const deptMap = {};
+    activeDepts.forEach(d => { deptMap[d.id] = d; });
+    const empMap = {};
+    activeEmps.forEach(e => { empMap[e.id] = e; });
+    const assetMap = {};
+    assets.forEach(a => { assetMap[a.id] = a; });
+
+    // Helper functions for validation
+    const getEmpLocation = (emp) => {
+      if (emp.locationId) return emp.locationId;
+      if (emp.departmentId && deptMap[emp.departmentId]) {
+        return deptMap[emp.departmentId].locationId;
+      }
+      return null;
+    };
+
+    // 3. Resolve Trigger Context & Cascading Validations
+    if (triggerSource === "asset") {
+      if (assetId) {
+        const targetAsset = assetMap[assetId];
+        if (targetAsset) {
+          // If the asset has a current employee assigned, select that employee
+          empId = targetAsset.currentEmployeeId || "";
+          
+          // Department can be derived from the asset, or if not present, from the employee
+          deptId = targetAsset.departmentId || "";
+          if (!deptId && empId && empMap[empId]) {
+            deptId = empMap[empId].departmentId || "";
+          }
+
+          // Location can be derived from the asset, or employee, or department
+          locId = targetAsset.locationId || "";
+          if (!locId && empId && empMap[empId]) {
+            locId = getEmpLocation(empMap[empId]) || "";
+          }
+          if (!locId && deptId && deptMap[deptId]) {
+            locId = deptMap[deptId].locationId || "";
+          }
+        }
+      }
+    } else if (triggerSource === "employee") {
+      if (empId) {
+        const targetEmp = empMap[empId];
+        if (targetEmp) {
+          deptId = targetEmp.departmentId || "";
+          locId = getEmpLocation(targetEmp) || "";
+        }
+        // Validate assetId: Is the asset in this employee's custody?
+        if (assetId) {
+          const targetAsset = assetMap[assetId];
+          if (!targetAsset || targetAsset.currentEmployeeId !== empId) {
+            assetId = ""; // Clear invalid asset
+          }
+        }
+      } else {
+        // If employee is cleared, we should clear assetId if it belongs to some employee
+        if (assetId) {
+          const targetAsset = assetMap[assetId];
+          if (targetAsset && targetAsset.currentEmployeeId) {
+            assetId = "";
+          }
+        }
+      }
+    } else if (triggerSource === "department") {
+      if (deptId) {
+        const targetDept = deptMap[deptId];
+        if (targetDept && targetDept.locationId) {
+          // Respect already set locId if they match, or override if different
+          locId = targetDept.locationId;
+        }
+        // Validate employeeId: Does the employee belong to the new department?
+        if (empId) {
+          const targetEmp = empMap[empId];
+          if (!targetEmp || targetEmp.departmentId !== deptId) {
+            empId = "";
+            assetId = ""; // Also clear asset if employee is cleared
+          }
+        }
+        // Validate assetId (when no employee is chosen): Does the asset belong to the department?
+        if (assetId && !empId) {
+          const targetAsset = assetMap[assetId];
+          if (!targetAsset || targetAsset.departmentId !== deptId) {
+            assetId = "";
+          }
+        }
+      } else {
+        // If department is cleared: Clear children
+        empId = "";
+        assetId = "";
+      }
+    } else if (triggerSource === "location") {
+      if (locId) {
+        // Validate department: Does department belong to the new location?
+        if (deptId) {
+          const targetDept = deptMap[deptId];
+          if (!targetDept || targetDept.locationId !== locId) {
+            deptId = "";
+            empId = ""; // Also clear child employee
+            assetId = ""; // Also clear child asset
+          }
+        }
+        // Validate employee: Does employee belong to the new location?
+        if (empId) {
+          const targetEmp = empMap[empId];
+          if (!targetEmp || getEmpLocation(targetEmp) !== locId) {
+            empId = "";
+            assetId = "";
+          }
+        }
+        // Validate asset: Does asset belong to the new location?
+        if (assetId) {
+          const targetAsset = assetMap[assetId];
+          if (!targetAsset || targetAsset.locationId !== locId) {
+            assetId = "";
+          }
+        }
+      }
+    }
+
+    // 4. Set Selection Dropdowns values in DOM
+    locSelect.value = locId;
+    deptSelect.value = deptId;
+    empSelect.value = empId;
+    assetSelect.value = assetId;
+
+    // 5. Re-render/Re-populate Option Lists based on the active filtered context
+
+    // --- REBUILD DEPARTMENTS ---
+    let filteredDepts = activeDepts;
+    if (locId) {
+      filteredDepts = activeDepts.filter(d => d.locationId === locId);
+    }
+    const selectDeptPlaceholder = lang === "ar" ? "-- اختر القسم / الإدارة --" : "-- Select Department --";
+    deptSelect.innerHTML = `<option value="">${selectDeptPlaceholder}</option>` +
+      filteredDepts.map(d => {
+        const name = lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr);
+        return `<option value="${d.id}">${name} (${d.code || d.id})</option>`;
+      }).join("");
+
+    // Restore selected value, or auto-select if there is exactly 1 department (Location First)
+    if (deptId && filteredDepts.some(d => d.id === deptId)) {
+      deptSelect.value = deptId;
+    } else if (!deptId && filteredDepts.length === 1 && triggerSource === "location") {
+      deptId = filteredDepts[0].id;
+      deptSelect.value = deptId;
+    } else {
+      deptId = "";
+      deptSelect.value = "";
+    }
+
+    // --- REBUILD EMPLOYEES ---
+    let filteredEmps = activeEmps;
+    if (deptId) {
+      filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
+    }
+    if (locId) {
+      filteredEmps = filteredEmps.filter(e => getEmpLocation(e) === locId);
+    }
     const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
     empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +
-      employees.filter(e => e.status === "Active").map(e => {
+      filteredEmps.map(e => {
         const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
         const orgPart = e.employeeNumber && e.employeeNumber !== e.id ? ` - #${e.employeeNumber}` : "";
         return `<option value="${e.id}">${name} (${e.id}${orgPart})</option>`;
       }).join("");
-    empSelect.value = "";
+
+    if (empId && filteredEmps.some(e => e.id === empId)) {
+      empSelect.value = empId;
+    } else {
+      empId = "";
+      empSelect.value = "";
+    }
+
+    // --- REBUILD ASSETS ---
+    let filteredAssets = assets;
+    if (empId) {
+      filteredAssets = assets.filter(a => a.currentEmployeeId === empId);
+    } else {
+      if (deptId) {
+        filteredAssets = filteredAssets.filter(a => a.departmentId === deptId);
+      }
+      if (locId) {
+        filteredAssets = filteredAssets.filter(a => a.locationId === locId);
+      }
+    }
+    const selectAssetPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
+    assetSelect.innerHTML = `<option value="">${selectAssetPlaceholder}</option>` +
+      filteredAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");
+
+    if (assetId && filteredAssets.some(a => a.id === assetId)) {
+      assetSelect.value = assetId;
+    } else if (!assetId && filteredAssets.length === 1 && empId) {
+      assetId = filteredAssets[0].id;
+      assetSelect.value = assetId;
+    } else {
+      assetId = "";
+      assetSelect.value = "";
+    }
   }
 
   async openAddModalForAsset(assetId) {
