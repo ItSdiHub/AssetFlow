@@ -27,6 +27,22 @@ CREATE TABLE IF NOT EXISTS public.locations (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 2b. Offices Table (Master Data: Location -> Department -> Office)
+CREATE TABLE IF NOT EXISTS public.offices (
+    id TEXT PRIMARY KEY,
+    code TEXT,
+    name_ar TEXT NOT NULL,
+    name_en TEXT,
+    status TEXT DEFAULT 'Active',
+    location_id TEXT NOT NULL REFERENCES public.locations(id) ON DELETE RESTRICT,
+    department_id TEXT NOT NULL REFERENCES public.departments(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS offices_location_idx ON public.offices (location_id);
+CREATE INDEX IF NOT EXISTS offices_department_idx ON public.offices (department_id);
+
 -- 3. Employees Table
 CREATE TABLE IF NOT EXISTS public.employees (
     id TEXT PRIMARY KEY,
@@ -328,10 +344,10 @@ ALTER TABLE public.departments
     ADD CONSTRAINT IF NOT EXISTS departments_location_fk FOREIGN KEY (location_id)
     REFERENCES public.locations(id) ON DELETE RESTRICT;
 
--- Step 6: Add foreign key from employees.office_id -> locations.id (office locations)
+-- Step 6: Add foreign key from employees.office_id -> offices.id (standalone offices table)
 ALTER TABLE public.employees
     ADD CONSTRAINT IF NOT EXISTS employees_office_fk FOREIGN KEY (office_id)
-    REFERENCES public.locations(id) ON DELETE SET NULL;
+    REFERENCES public.offices(id) ON DELETE SET NULL;
 
 -- Note: We avoid adding a strict FK from locations.department_id -> departments.id to prevent circular dependency
 -- Instead locations.department_id is used to tag office locations with their owning department (enforced at app level)

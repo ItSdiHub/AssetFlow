@@ -167,9 +167,11 @@ class OrganizationalManager {
   async onEmployeeDeptChange(selectedOfficeId = null) {
     const deptSelect = document.getElementById("formEmpDept");
     const officeSelect = document.getElementById("formEmpOffice");
+    const locSelect = document.getElementById("formEmpLoc");
     if (!deptSelect || !officeSelect) return;
 
     const deptId = deptSelect.value;
+    const locId = locSelect ? locSelect.value : null;
     const lang = AppState.lang;
 
     if (!deptId) {
@@ -178,14 +180,11 @@ class OrganizationalManager {
       return;
     }
 
-    const locations = await db.getAll("locations");
-    const dept = await db.getById("departments", deptId);
-    if (!dept) return;
-    
-    const deptOffices = locations.filter(l => l.department_id === deptId || (l.parentId === dept.locationId && l.type === 'room'));
+    const offices = await db.getAll("offices");
+    const deptOffices = offices.filter(o => o.department_id === deptId && (!locId || o.location_id === locId));
 
     officeSelect.innerHTML = `<option value="">-- ${lang === 'ar' ? 'لم يتم تحديد مكتب (اختياري)' : 'No office (optional)'} --</option>` +
-      deptOffices.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} (${l.code || l.id})</option>`).join("");
+      deptOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} (${o.code || o.id})</option>`).join("");
       
     officeSelect.disabled = false;
     if (selectedOfficeId) officeSelect.value = selectedOfficeId;
@@ -262,12 +261,12 @@ class OrganizationalManager {
           id: `off-${Date.now()}`,
           nameAr: name,
           nameEn: name,
-          parentId: locId,
+          location_id: locId,
           department_id: deptId,
-          type: "room",
+          status: "Active",
           code: "O" + Math.floor(Math.random() * 1000)
         };
-        await db.create("locations", newOffice);
+        await db.create("offices", newOffice);
         await this.onEmployeeDeptChange(newOffice.id);
       }
       App.closeModal("quickAddModal");
@@ -397,9 +396,9 @@ class OrganizationalManager {
 
     // Validation: Office must belong to Selected Department & Location
     if (officeId) {
-      const officeLoc = await db.getById("locations", officeId);
-      if (officeLoc) {
-        if (deptId && officeLoc.department_id && officeLoc.department_id !== deptId) {
+      const office = await db.getById("offices", officeId);
+      if (office) {
+        if (deptId && office.department_id && office.department_id !== deptId) {
           App.showToast(
             AppState.lang === "ar"
               ? "خطأ: المكتب المحدد لا ينتمي إلى القسم المختار."
@@ -409,7 +408,7 @@ class OrganizationalManager {
           return;
         }
         const locId = document.getElementById("formEmpLoc")?.value;
-        if (locId && officeLoc.parentId && officeLoc.parentId !== locId) {
+        if (locId && office.location_id && office.location_id !== locId) {
           App.showToast(
             AppState.lang === "ar"
               ? "خطأ: المكتب المحدد لا ينتمي إلى الموقع المختار."

@@ -21,6 +21,7 @@ const STORE_TABLE_MAP = {
   employees: "employees",
   departments: "departments",
   locations: "locations",
+  offices: "offices",
   assetTypes: "asset_types",
   maintenance: "maintenance",
   assetTransactions: "asset_transactions",
@@ -161,6 +162,17 @@ function toCloudRecord(storeName, item) {
       parent_id: row.parentId !== undefined ? row.parentId : (row.parent_id || null)
     };
   }
+  if (storeName === "offices") {
+    return {
+      id: row.id,
+      code: row.code || null,
+      name_ar: row.nameAr || row.name_ar || "",
+      name_en: row.nameEn || row.name_en || null,
+      status: row.status || "Active",
+      location_id: row.locationId || row.location_id || "",
+      department_id: row.departmentId || row.department_id || ""
+    };
+  }
   if (storeName === "employees") {
     return {
       id: row.id,
@@ -171,6 +183,7 @@ function toCloudRecord(storeName, item) {
       phone: row.phone || null,
       job_title: row.jobTitle || row.job_title || null,
       department_id: row.departmentId || row.department_id || null,
+      office_id: row.officeId || row.office_id || null,
       status: row.status || "Active"
     };
   }
@@ -382,12 +395,18 @@ function fromCloudRecord(storeName, row) {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
     item.parentId = row.parent_id !== undefined ? row.parent_id : row.parentId;
+  } else if (storeName === "offices") {
+    item.nameAr = row.name_ar || row.nameAr;
+    item.nameEn = row.name_en || row.nameEn;
+    item.locationId = row.location_id || row.locationId;
+    item.departmentId = row.department_id || row.departmentId;
   } else if (storeName === "employees") {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
     item.employeeId = row.employee_id || row.employeeId || row.id;
     item.employeeNumber = row.employee_id || row.employeeNumber || row.id;
     item.departmentId = row.department_id || row.departmentId;
+    item.officeId = row.office_id || row.officeId;
     item.jobTitle = row.job_title || row.jobTitle;
   } else if (storeName === "assetTypes") {
     item.nameAr = row.name_ar || row.nameAr;

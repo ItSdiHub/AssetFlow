@@ -1808,18 +1808,21 @@ class AssetOperationsController {
     else if (triggerSource === "department") deptId = value;
     else if (triggerSource === "office") officeId = value;
 
-    const [locations, departments, employees] = await Promise.all([
+    const [locations, departments, offices, employees] = await Promise.all([
       db.getAll("locations"),
       db.getAll("departments"),
+      db.getAll("offices"),
       db.getAll("employees")
     ]);
 
     const activeLocs = locations.filter(l => l.active !== false);
     const activeDepts = departments.filter(d => d.active !== false);
+    const activeOffices = offices.filter(o => o.status !== "Inactive");
     const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
 
     const deptMap = {}; activeDepts.forEach(d => deptMap[d.id] = d);
     const locMap = {}; activeLocs.forEach(l => locMap[l.id] = l);
+    const officeMap = {}; activeOffices.forEach(o => officeMap[o.id] = o);
     const empMap = {}; activeEmps.forEach(e => empMap[e.id] = e);
 
     if (triggerSource === "location") {
@@ -1827,7 +1830,7 @@ class AssetOperationsController {
         if (deptId && deptMap[deptId]?.locationId && deptMap[deptId].locationId !== locId) {
           deptId = ""; officeId = ""; empId = "";
         }
-        if (officeId && locMap[officeId]?.parentId !== locId) {
+        if (officeId && officeMap[officeId]?.location_id !== locId) {
           officeId = ""; empId = "";
         }
       }
@@ -1836,7 +1839,7 @@ class AssetOperationsController {
         if (deptMap[deptId]?.locationId) {
           locId = deptMap[deptId].locationId;
         }
-        if (officeId && locMap[officeId]?.department_id && locMap[officeId].department_id !== deptId) {
+        if (officeId && officeMap[officeId]?.department_id && officeMap[officeId].department_id !== deptId) {
           officeId = ""; empId = "";
         }
         if (empId && empMap[empId]?.departmentId !== deptId) {
@@ -1847,9 +1850,9 @@ class AssetOperationsController {
       }
     } else if (triggerSource === "office") {
       if (officeId) {
-        const off = locMap[officeId];
+        const off = officeMap[officeId];
         if (off) {
-          if (off.parentId) locId = off.parentId;
+          if (off.location_id) locId = off.location_id;
           if (off.department_id) deptId = off.department_id;
         }
         if (empId && empMap[empId]?.officeId !== officeId) {
@@ -1871,13 +1874,13 @@ class AssetOperationsController {
     if (deptId && filteredDepts.some(d => d.id === deptId)) deptSelect.value = deptId;
     else if (!deptId && filteredDepts.length === 1 && locId) { deptId = filteredDepts[0].id; deptSelect.value = deptId; }
 
-    let filteredOffices = activeLocs.filter(l => l.type === 'room' || l.code?.startsWith('OF'));
-    if (locId) filteredOffices = filteredOffices.filter(l => l.parentId === locId);
-    if (deptId) filteredOffices = filteredOffices.filter(l => !l.department_id || l.department_id === deptId);
+    let filteredOffices = activeOffices;
+    if (locId) filteredOffices = filteredOffices.filter(o => o.location_id === locId);
+    if (deptId) filteredOffices = filteredOffices.filter(o => o.department_id === deptId);
 
     officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب / القاعة (اختياري)" : "Select Office (Optional)"} --</option>` +
-      filteredOffices.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} ${l.code ? `(${l.code})` : ""}</option>`).join("");
-    if (officeId && filteredOffices.some(l => l.id === officeId)) officeSelect.value = officeId;
+      filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
+    if (officeId && filteredOffices.some(o => o.id === officeId)) officeSelect.value = officeId;
     else officeId = "";
 
     let filteredEmps = activeEmps;
