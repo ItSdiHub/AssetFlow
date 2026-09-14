@@ -4969,7 +4969,7 @@ body[data-theme="dark"] .combobox-empty {
 
   .print-table th.col-report-model,
   .print-table td.col-report-model {
-    min-width: 130px !important;
+    min-width: 80px !important;
     width: 18% !important;
     white-space: normal !important;
     word-break: break-word !important;
@@ -4977,7 +4977,7 @@ body[data-theme="dark"] .combobox-empty {
 
   .print-table th.col-report-notes,
   .print-table td.col-report-notes {
-    min-width: 180px !important;
+    min-width: 100px !important;
     width: 26% !important;
     white-space: normal !important;
     word-break: break-word !important;
