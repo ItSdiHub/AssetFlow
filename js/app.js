@@ -416,6 +416,9 @@ class Application {
     if (subTabName === "licenses" && window.TechTools && typeof window.TechTools.renderSoftware === "function") {
       await window.TechTools.renderSoftware();
     }
+    if (subTabName === "dataIntegrity") {
+      await this.runDataIntegrityCheck();
+    }
   }
 
   // =========================================================================
@@ -3338,6 +3341,171 @@ class Application {
         </div>
       `;
       this.showToast(isAr ? res.messageAr : res.message, "error");
+    }
+  }
+  
+  async runDataIntegrityCheck() {
+    try {
+      const isAr = AppState.lang === "ar";
+      const [locations, departments, offices, assets, employees] = await Promise.all([
+        db.getAll("locations"),
+        db.getAll("departments"),
+        db.getAll("offices"),
+        db.getAll("assets"),
+        db.getAll("employees")
+      ]);
+
+      // Count stats
+      const locTotal = locations.length;
+      const deptTotal = departments.length;
+      const officeTotal = offices.length;
+      const assetTotal = assets.length;
+
+      // Update basic cards
+      const elCountLoc = document.getElementById("diCountLocations");
+      if (elCountLoc) elCountLoc.textContent = locTotal;
+      const elCountDept = document.getElementById("diCountDepartments");
+      if (elCountDept) elCountDept.textContent = deptTotal;
+      const elCountOff = document.getElementById("diCountOffices");
+      if (elCountOff) elCountOff.textContent = officeTotal;
+      const elCountAss = document.getElementById("diCountAssets");
+      if (elCountAss) elCountAss.textContent = assetTotal;
+
+      // 1. Locations Integrity Check
+      const locOrphans = locations.filter(l => l.parentId && !locations.some(parent => parent.id === l.parentId)).length;
+      
+      // 2. Departments Integrity Check
+      const deptOrphans = departments.filter(d => d.locationId && !locations.some(l => l.id === d.locationId)).length;
+      const deptUnassigned = departments.filter(d => !d.locationId).length;
+
+      // 3. Offices Integrity Check
+      const offLocOrphans = offices.filter(o => {
+        const locId = o.location_id || o.locationId;
+        return locId && !locations.some(l => l.id === locId);
+      }).length;
+      const offDeptOrphans = offices.filter(o => {
+        const deptId = o.department_id || o.departmentId;
+        return deptId && !departments.some(d => d.id === deptId);
+      }).length;
+      const offUnassignedLoc = offices.filter(o => !(o.location_id || o.locationId)).length;
+      const offUnassignedDept = offices.filter(o => !(o.department_id || o.departmentId)).length;
+
+      // 4. Assets Integrity Check
+      const assetLocOrphans = assets.filter(a => a.locationId && !locations.some(l => l.id === a.locationId)).length;
+      const assetEmpOrphans = assets.filter(a => a.currentEmployeeId && !employees.some(e => e.id === a.currentEmployeeId)).length;
+      const assetOffOrphans = assets.filter(a => a.officeId && !offices.some(o => o.id === a.officeId)).length;
+      const assetDeptOrphans = assets.filter(a => a.departmentId && !departments.some(d => d.id === a.departmentId)).length;
+
+      const totalOffOrphans = offLocOrphans + offDeptOrphans;
+      const totalAssetOrphans = assetLocOrphans + assetEmpOrphans + assetOffOrphans + assetDeptOrphans;
+
+      // Populate Table Values
+      const elLocTotal = document.getElementById("diLocTotal");
+      if (elLocTotal) elLocTotal.textContent = locTotal;
+      const elLocOrphans = document.getElementById("diLocOrphans");
+      if (elLocOrphans) {
+        if (locOrphans === 0) {
+          elLocOrphans.innerHTML = `<span class="text-success"><i class="fas fa-check"></i> ${isAr ? '0 (روابط سليمة)' : '0 (Stable references)'}</span>`;
+        } else {
+          elLocOrphans.innerHTML = `<span class="text-danger font-bold"><i class="fas fa-exclamation-triangle"></i> ${locOrphans} ${isAr ? 'مراجع مفقودة' : 'missing parents'}</span>`;
+        }
+      }
+
+      const elDeptTotal = document.getElementById("diDeptTotal");
+      if (elDeptTotal) elDeptTotal.textContent = deptTotal;
+      const elDeptOrphans = document.getElementById("diDeptOrphans");
+      if (elDeptOrphans) {
+        let text = "";
+        if (deptOrphans > 0) {
+          text += `<span class="text-danger font-bold"><i class="fas fa-exclamation-triangle"></i> ${deptOrphans} ${isAr ? 'روابط مواقع غير صالحة' : 'invalid locations'}</span>`;
+        } else {
+          text += `<span class="text-success"><i class="fas fa-check"></i> ${isAr ? 'جميع المواقع صالحة' : 'All locations valid'}</span>`;
+        }
+        text += ` <span class="text-xs text-muted">(${deptUnassigned} ${isAr ? 'بدون موقع/اختياري' : 'unassigned/optional'})</span>`;
+        elDeptOrphans.innerHTML = text;
+      }
+
+      const elOfficeTotal = document.getElementById("diOfficeTotal");
+      if (elOfficeTotal) elOfficeTotal.textContent = officeTotal;
+      const elOfficeOrphans = document.getElementById("diOfficeOrphans");
+      if (elOfficeOrphans) {
+        let text = [];
+        if (offLocOrphans > 0) {
+          text.push(`<span class="text-danger font-bold">${offLocOrphans} ${isAr ? 'مواقع غير صالحة' : 'invalid locations'}</span>`);
+        }
+        if (offDeptOrphans > 0) {
+          text.push(`<span class="text-danger font-bold">${offDeptOrphans} ${isAr ? 'أقسام غير صالحة' : 'invalid departments'}</span>`);
+        }
+        if (text.length === 0) {
+          text.push(`<span class="text-success"><i class="fas fa-check"></i> ${isAr ? 'العلاقات سليمة' : 'All relations valid'}</span>`);
+        }
+        let unassignedText = ` <span class="text-xs text-muted">(${offUnassignedLoc} ${isAr ? 'بدون موقع' : 'unassigned loc'} / ${offUnassignedDept} ${isAr ? 'بدون قسم' : 'unassigned dept'})</span>`;
+        elOfficeOrphans.innerHTML = text.join(" + ") + unassignedText;
+      }
+
+      const elAssetTotal = document.getElementById("diAssetTotal");
+      if (elAssetTotal) elAssetTotal.textContent = assetTotal;
+      const elAssetOrphans = document.getElementById("diAssetOrphans");
+      if (elAssetOrphans) {
+        let parts = [];
+        if (assetLocOrphans > 0) parts.push(`<span class="text-danger font-bold">${assetLocOrphans} ${isAr ? 'موقع خطأ' : 'invalid loc'}</span>`);
+        if (assetEmpOrphans > 0) parts.push(`<span class="text-danger font-bold">${assetEmpOrphans} ${isAr ? 'عهدة موظف خطأ' : 'invalid emp'}</span>`);
+        if (assetOffOrphans > 0) parts.push(`<span class="text-danger font-bold">${assetOffOrphans} ${isAr ? 'مكتب خطأ' : 'invalid office'}</span>`);
+        if (assetDeptOrphans > 0) parts.push(`<span class="text-danger font-bold">${assetDeptOrphans} ${isAr ? 'قسم خطأ' : 'invalid dept'}</span>`);
+        if (parts.length === 0) {
+          parts.push(`<span class="text-success"><i class="fas fa-check"></i> ${isAr ? 'سليم تماماً' : 'All references valid'}</span>`);
+        }
+        elAssetOrphans.innerHTML = parts.join(" / ");
+      }
+
+      // Update Health Status Badges
+      const elLocStatus = document.getElementById("diLocStatus");
+      if (elLocStatus) {
+        if (locOrphans === 0) {
+          elLocStatus.className = "badge badge-success";
+          elLocStatus.innerHTML = `<i class="fas fa-check-circle"></i> ${isAr ? 'مستقر' : 'Stable'}`;
+        } else {
+          elLocStatus.className = "badge badge-danger";
+          elLocStatus.innerHTML = `<i class="fas fa-times-circle"></i> ${isAr ? 'روابط تالفة' : 'Broken Links'}`;
+        }
+      }
+
+      const elDeptStatus = document.getElementById("diDeptStatus");
+      if (elDeptStatus) {
+        if (deptOrphans === 0) {
+          elDeptStatus.className = "badge badge-success";
+          elDeptStatus.innerHTML = `<i class="fas fa-check-circle"></i> ${isAr ? 'مستقر' : 'Stable'}`;
+        } else {
+          elDeptStatus.className = "badge badge-danger";
+          elDeptStatus.innerHTML = `<i class="fas fa-times-circle"></i> ${isAr ? 'مرجع غير صالح' : 'Invalid Link'}`;
+        }
+      }
+
+      const elOfficeStatus = document.getElementById("diOfficeStatus");
+      if (elOfficeStatus) {
+        if (totalOffOrphans === 0) {
+          elOfficeStatus.className = "badge badge-success";
+          elOfficeStatus.innerHTML = `<i class="fas fa-check-circle"></i> ${isAr ? 'مستقر' : 'Stable'}`;
+        } else {
+          elOfficeStatus.className = "badge badge-danger";
+          elOfficeStatus.innerHTML = `<i class="fas fa-times-circle"></i> ${isAr ? 'روابط تالفة' : 'Broken Links'}`;
+        }
+      }
+
+      const elAssetStatus = document.getElementById("diAssetStatus");
+      if (elAssetStatus) {
+        if (totalAssetOrphans === 0) {
+          elAssetStatus.className = "badge badge-success";
+          elAssetStatus.innerHTML = `<i class="fas fa-check-circle"></i> ${isAr ? 'مستقر' : 'Stable'}`;
+        } else {
+          elAssetStatus.className = "badge badge-danger";
+          elAssetStatus.innerHTML = `<i class="fas fa-times-circle"></i> ${isAr ? 'روابط مفقودة' : 'Broken Refs'}`;
+        }
+      }
+
+    } catch (e) {
+      console.error("[runDataIntegrityCheck] error:", e);
+      this.showToast(AppState.lang === "ar" ? "فشل إجراء فحص سلامة البيانات" : "Failed to execute data integrity verification", "error");
     }
   }
 

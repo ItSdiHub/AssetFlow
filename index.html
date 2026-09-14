@@ -1538,6 +1538,9 @@
             <button class="settings-tab-btn" data-subtab="licenses" id="settingsTab-licenses" onclick="App.switchSettingsSubTab('licenses')">
               <i class="fas fa-certificate"></i> <span data-i18n="tabLicenses">تراخيص البرمجيات</span>
             </button>
+            <button class="settings-tab-btn" data-subtab="dataIntegrity" id="settingsTab-dataIntegrity" onclick="App.switchSettingsSubTab('dataIntegrity')">
+              <i class="fas fa-shield-alt"></i> <span data-i18n="tabDataIntegrity">سلامة البيانات</span>
+            </button>
           </div>
 
           <!-- SubTab: Database Connection Test -->
@@ -1721,6 +1724,103 @@
                     <!-- Populated via TechTools.renderSoftware -->
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- SubTab: Data Integrity Verification -->
+          <div class="settings-pane" id="settingsPane-dataIntegrity" style="display: none;">
+            <div class="card p-4">
+              <h3 class="mb-3"><i class="fas fa-shield-alt text-primary"></i> <span data-i18n="dataIntegrityHeader">فحص سلامة واستقرار البيانات (Data Integrity Control)</span></h3>
+              <p class="text-muted mb-4" data-i18n="dataIntegrityDesc">
+                يقوم هذا النظام بفحص ومراقبة استقرار العلاقات التنظيمية (Location → Department → Office → Employee → Asset) وتتبع وجود أي سجلات معزولة أو مفقودة العلاقات (Orphans).
+              </p>
+
+              <!-- Stats Cards for counts -->
+              <div class="stats-cards-grid mb-4" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                <div class="stat-card card-indigo">
+                  <div class="stat-content">
+                    <span class="stat-label" data-i18n="diTotalLocations">إجمالي المواقع</span>
+                    <span class="stat-number" id="diCountLocations">0</span>
+                  </div>
+                  <div class="stat-icon-wrapper"><i class="fas fa-map-marked-alt text-primary"></i></div>
+                </div>
+                <div class="stat-card card-teal">
+                  <div class="stat-content">
+                    <span class="stat-label" data-i18n="diTotalDepartments">إجمالي الأقسام</span>
+                    <span class="stat-number" id="diCountDepartments">0</span>
+                  </div>
+                  <div class="stat-icon-wrapper"><i class="fas fa-sitemap text-success"></i></div>
+                </div>
+                <div class="stat-card card-rose">
+                  <div class="stat-content">
+                    <span class="stat-label" data-i18n="diTotalOffices">إجمالي المكاتب</span>
+                    <span class="stat-number" id="diCountOffices">0</span>
+                  </div>
+                  <div class="stat-icon-wrapper"><i class="fas fa-door-open text-danger"></i></div>
+                </div>
+                <div class="stat-card card-blue">
+                  <div class="stat-content">
+                    <span class="stat-label" data-i18n="diTotalAssets">إجمالي الأصول</span>
+                    <span class="stat-number" id="diCountAssets">0</span>
+                  </div>
+                  <div class="stat-icon-wrapper"><i class="fas fa-laptop text-info"></i></div>
+                </div>
+              </div>
+
+              <!-- Integrity Analysis Table -->
+              <h4 class="font-bold mb-3" data-i18n="diOrphanStatus">تقرير فحص العلاقات والبيانات المعزولة (Orphan Status Log)</h4>
+              <div class="table-responsive">
+                <table class="custom-table w-full">
+                  <thead>
+                    <tr>
+                      <th data-i18n="diEntity">الكيان (Entity)</th>
+                      <th data-i18n="diTotalRecords">عدد السجلات</th>
+                      <th data-i18n="diOrphanRecords">السجلات المعزولة (Orphaned / Unassigned)</th>
+                      <th data-i18n="diStatus">حالة السلامة (Health Status)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="font-bold" data-i18n="diLocationsLabel">المواقع (Locations)</td>
+                      <td id="diLocTotal">0</td>
+                      <td id="diLocOrphans">0</td>
+                      <td>
+                        <span id="diLocStatus" class="badge badge-success">مستقر (Stable)</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="font-bold" data-i18n="diDepartmentsLabel">الأقسام (Departments)</td>
+                      <td id="diDeptTotal">0</td>
+                      <td id="diDeptOrphans">0</td>
+                      <td>
+                        <span id="diDeptStatus" class="badge badge-success">مستقر (Stable)</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="font-bold" data-i18n="diOfficesLabel">المكاتب (Offices)</td>
+                      <td id="diOfficeTotal">0</td>
+                      <td id="diOfficeOrphans">0</td>
+                      <td>
+                        <span id="diOfficeStatus" class="badge badge-success">مستقر (Stable)</span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="font-bold" data-i18n="diAssetsLabel">الأصول والأجهزة (Assets)</td>
+                      <td id="diAssetTotal">0</td>
+                      <td id="diAssetOrphans">0</td>
+                      <td>
+                        <span id="diAssetStatus" class="badge badge-success">مستقر (Stable)</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mt-4">
+                <button class="btn btn-primary" onclick="App.runDataIntegrityCheck()">
+                  <i class="fas fa-sync-alt"></i> <span data-i18n="diBtnRefresh">تحديث تشخيص سلامة البيانات</span>
+                </button>
               </div>
             </div>
           </div>

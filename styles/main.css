@@ -4517,6 +4517,36 @@ body[data-theme="dark"] .combobox-empty {
   width: 100%;
 }
 
+/* Responsive enhancements for screen display */
+@media (max-width: 1024px) {
+  .printable-report-card {
+    padding: 20px 24px 20px 24px !important;
+    min-height: auto !important;
+  }
+}
+@media (max-width: 768px) {
+  .printable-report-card {
+    padding: 14px 12px 14px 12px !important;
+  }
+  .report-header-main-row {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    justify-items: center !important;
+    text-align: center !important;
+  }
+  .report-header-brand {
+    justify-self: center !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .report-brand-text {
+    text-align: center !important;
+  }
+  .unified-report-header {
+    margin-bottom: 12px !important;
+  }
+}
+
 /* Report Header Container */
 .unified-report-header {
   direction: ltr; /* Keeps institutional letterhead alignment consistent */
@@ -4916,9 +4946,11 @@ body[data-theme="dark"] .combobox-empty {
 
   .print-table th,
   .print-table td {
-    padding: 6px 8px !important;
-    font-size: 11px !important;
-    word-break: normal !important;
+    padding: 3px 5px !important;
+    font-size: 9.5px !important;
+    word-break: break-word !important;
+    word-wrap: break-word !important;
+    white-space: normal !important;
   }
 
   .print-table thead th:not(.report-print-header-th) {
