@@ -2510,21 +2510,28 @@
           <div class="form-grid">
             <div class="form-group">
               <label><span data-i18n="transferToLoc">إلى الموقع الجديد</span>*</label>
-              <select id="formTrToLoc" class="form-control" required>
-                <!-- Populated via JS -->
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label><span data-i18n="toEmployee">الموظف / المستلم الجديد (اختياري)</span></label>
-              <select id="formTrToEmp" class="form-control" onchange="AssetManager.handleTransferEmpChange(this.value)">
+              <select id="formTrToLoc" class="form-control" required onchange="AssetManager.syncTransferFilters('location')">
                 <!-- Populated via JS -->
               </select>
             </div>
 
             <div class="form-group">
               <label><span data-i18n="toDepartment">القسم الجديد</span></label>
-              <select id="formTrToDept" class="form-control">
+              <select id="formTrToDept" class="form-control" onchange="AssetManager.syncTransferFilters('department')">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label><span data-i18n="toOffice">المكتب الجديد (Office)</span></label>
+              <select id="formTrToOffice" class="form-control" onchange="AssetManager.syncTransferFilters('office')">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label><span data-i18n="toEmployee">الموظف / المستلم الجديد (اختياري)</span></label>
+              <select id="formTrToEmp" class="form-control" onchange="AssetManager.syncTransferFilters('employee')">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -2815,7 +2822,7 @@
             <div class="form-group">
               <label><span data-i18n="officeName">اسم المكتب / القاعة (Office)</span></label>
               <div class="combobox-wrapper" id="comboboxWrapInstOffice">
-                <select id="formInstOffice" class="form-control">
+                <select id="formInstOffice" class="form-control" onchange="OpsManager.handleInstallationOfficeChange(this.value)">
                   <!-- Populated from database locations/offices -->
                 </select>
               </div>

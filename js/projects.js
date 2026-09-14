@@ -1494,6 +1494,8 @@ class AssetOperationsController {
       assetId: asset.id,
       warehouseLocationId: warehouseLocId,
       itEmployeeId: itEmpId,
+      issuerUserId: AppState.currentUser ? AppState.currentUser.id : null,
+      issuerName: currentUserName,
       issueDate: date,
       projectId,
       status: "In Transit",
@@ -1776,12 +1778,116 @@ class AssetOperationsController {
     this.enhanceSelectWithSearch("formInstUser", lang === "ar" ? "الموظف المستلم (اختياري)" : "Employee (Optional)", lang === "ar" ? "ابحث في الموظفين..." : "Search employees...");
   }
 
-  handleInstallationLocationChange(locationId) {
-    this.populateOfficeDropdown(locationId);
+  async handleInstallationLocationChange(locationId) {
+    await this.syncInstallationFilters("location", locationId);
   }
 
-  handleInstallationDeptChange(departmentId) {
-    this.populateEmployeeDropdown(departmentId);
+  async handleInstallationDeptChange(departmentId) {
+    await this.syncInstallationFilters("department", departmentId);
+  }
+
+  async handleInstallationOfficeChange(officeId) {
+    await this.syncInstallationFilters("office", officeId);
+  }
+
+  async syncInstallationFilters(triggerSource, value) {
+    const lang = AppState.lang;
+    const locSelect = document.getElementById("formInstLoc");
+    const deptSelect = document.getElementById("formInstDept");
+    const officeSelect = document.getElementById("formInstOffice");
+    const empSelect = document.getElementById("formInstUser");
+
+    if (!locSelect || !deptSelect || !officeSelect || !empSelect) return;
+
+    let locId = locSelect.value;
+    let deptId = deptSelect.value;
+    let officeId = officeSelect.value;
+    let empId = empSelect.value;
+
+    if (triggerSource === "location") locId = value;
+    else if (triggerSource === "department") deptId = value;
+    else if (triggerSource === "office") officeId = value;
+
+    const [locations, departments, employees] = await Promise.all([
+      db.getAll("locations"),
+      db.getAll("departments"),
+      db.getAll("employees")
+    ]);
+
+    const activeLocs = locations.filter(l => l.active !== false);
+    const activeDepts = departments.filter(d => d.active !== false);
+    const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+
+    const deptMap = {}; activeDepts.forEach(d => deptMap[d.id] = d);
+    const locMap = {}; activeLocs.forEach(l => locMap[l.id] = l);
+    const empMap = {}; activeEmps.forEach(e => empMap[e.id] = e);
+
+    if (triggerSource === "location") {
+      if (locId) {
+        if (deptId && deptMap[deptId]?.locationId && deptMap[deptId].locationId !== locId) {
+          deptId = ""; officeId = ""; empId = "";
+        }
+        if (officeId && locMap[officeId]?.parentId !== locId) {
+          officeId = ""; empId = "";
+        }
+      }
+    } else if (triggerSource === "department") {
+      if (deptId) {
+        if (deptMap[deptId]?.locationId) {
+          locId = deptMap[deptId].locationId;
+        }
+        if (officeId && locMap[officeId]?.department_id && locMap[officeId].department_id !== deptId) {
+          officeId = ""; empId = "";
+        }
+        if (empId && empMap[empId]?.departmentId !== deptId) {
+          empId = "";
+        }
+      } else {
+        officeId = ""; empId = "";
+      }
+    } else if (triggerSource === "office") {
+      if (officeId) {
+        const off = locMap[officeId];
+        if (off) {
+          if (off.parentId) locId = off.parentId;
+          if (off.department_id) deptId = off.department_id;
+        }
+        if (empId && empMap[empId]?.officeId !== officeId) {
+          empId = "";
+        }
+      }
+    }
+
+    locSelect.value = locId;
+    deptSelect.value = deptId;
+    officeSelect.value = officeId;
+    empSelect.value = empId;
+
+    let filteredDepts = activeDepts;
+    if (locId) filteredDepts = activeDepts.filter(d => d.locationId === locId);
+    
+    deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الإدارة / القسم (اختياري)" : "Department (Optional)"} --</option>` +
+      filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+    if (deptId && filteredDepts.some(d => d.id === deptId)) deptSelect.value = deptId;
+    else if (!deptId && filteredDepts.length === 1 && locId) { deptId = filteredDepts[0].id; deptSelect.value = deptId; }
+
+    let filteredOffices = activeLocs.filter(l => l.type === 'room' || l.code?.startsWith('OF'));
+    if (locId) filteredOffices = filteredOffices.filter(l => l.parentId === locId);
+    if (deptId) filteredOffices = filteredOffices.filter(l => !l.department_id || l.department_id === deptId);
+
+    officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب / القاعة (اختياري)" : "Select Office (Optional)"} --</option>` +
+      filteredOffices.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} ${l.code ? `(${l.code})` : ""}</option>`).join("");
+    if (officeId && filteredOffices.some(l => l.id === officeId)) officeSelect.value = officeId;
+    else officeId = "";
+
+    let filteredEmps = activeEmps;
+    if (deptId) filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
+    if (officeId) filteredEmps = filteredEmps.filter(e => e.officeId === officeId);
+
+    empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف المستلم (اختياري)" : "Employee (Optional)"} --</option>` +
+      filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+    if (empId && filteredEmps.some(e => e.id === empId)) empSelect.value = empId;
+    else empId = "";
   }
 
   async saveInstallationDraft() {
@@ -2116,7 +2222,7 @@ class AssetOperationsController {
         const assetName = `${a.brand || ''} ${a.model || a.name || ''}`.trim() || "-";
         const locName = locMap[a.locationId] || "-";
         const deptName = deptMap[a.departmentId] || "-";
-        const areaRoom = a.office || a.room || a.specs?.office || "-";
+        const areaRoom = locMap[a.office] || a.office || a.room || locMap[a.specs?.office] || a.specs?.office || "-";
         const prjName = prjMap[a.projectId] || "-";
         const instDate = a.installationDate || a.assignmentDate || "-";
         const installedBy = empMap[a.installedBy] || a.installedBy || "-";
@@ -2207,7 +2313,7 @@ class AssetOperationsController {
 
     const deptName = deptMap[asset.departmentId] || "-";
     const prjName = prjMap[asset.projectId] || "-";
-    const areaRoom = asset.office || asset.room || asset.specs?.office || "-";
+    const areaRoom = locMap[asset.office] || asset.office || asset.room || locMap[asset.specs?.office] || asset.specs?.office || "-";
     const instDate = asset.installationDate || asset.assignmentDate || "-";
     
     // Resolve Technician who installed the device
@@ -2344,7 +2450,7 @@ class AssetOperationsController {
 
     const summaryHtml = `
       <strong>${isAr ? 'الجهاز' : 'Asset'}:</strong> <code class="serial-tag">${asset.assetId || asset.id}</code> - ${asset.brand || ''} ${asset.model || ''} (${asset.serial || '-'})<br>
-      <strong>${isAr ? 'الموقع الحالي' : 'Current Location'}:</strong> ${locMap[asset.locationId] || '-'} (${asset.office || '-'})
+      <strong>${isAr ? 'الموقع الحالي' : 'Current Location'}:</strong> ${locMap[asset.locationId] || '-'} (${locMap[asset.office] || asset.office || '-'})
     `;
     document.getElementById("removeAssetSummaryDisplay").innerHTML = summaryHtml;
 

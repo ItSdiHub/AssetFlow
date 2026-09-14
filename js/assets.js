@@ -448,7 +448,7 @@ class AssetInventoryManager {
     if (qrEl) qrEl.value = nextId;
 
     // Defaults
-    document.getElementById("formAssetStatus").value = "Available";
+    document.getElementById("formAssetStatus").value = "In Store";
     document.getElementById("serialValidationMsg").style.display = "none";
     const barcodeValMsg = document.getElementById("barcodeValidationMsg");
     if (barcodeValMsg) barcodeValMsg.style.display = "none";
@@ -543,6 +543,19 @@ class AssetInventoryManager {
     if (barcodeValMsg) barcodeValMsg.style.display = "none";
     const qrValMsg = document.getElementById("qrValidationMsg");
     if (qrValMsg) qrValMsg.style.display = "none";
+    
+    // Rule 2: Lock Location/Department if In Transit
+    const isLocked = (asset.status === "In Transit");
+    document.getElementById("formAssetLoc").disabled = isLocked;
+    document.getElementById("formAssetDept").value = asset.departmentId || ""; // Reset value before disabling
+    document.getElementById("formAssetDept").disabled = isLocked;
+    if (isLocked) {
+      document.getElementById("formAssetLoc").title = AppState.lang === "ar" ? "مقفل أثناء النقل" : "Locked while In Transit";
+      document.getElementById("formAssetDept").title = AppState.lang === "ar" ? "مقفل أثناء النقل" : "Locked while In Transit";
+    } else {
+      document.getElementById("formAssetLoc").title = "";
+      document.getElementById("formAssetDept").title = "";
+    }
 
     await this.toggleTechFieldsByType(asset.assetTypeId);
 
@@ -1169,7 +1182,7 @@ class AssetInventoryManager {
                 <i class="fas fa-user-check text-success"></i> <strong>${lang === 'ar' ? currentEmp.nameAr : (currentEmp.nameEn || currentEmp.nameAr)}</strong> 
                 <span class="text-muted">(${currentEmp.employeeNumber}) - ${currentEmp.phone || ''}</span>
               ` : (asset.status === "Installed" ? `
-                <span class="text-success"><i class="fas fa-network-wired"></i> <strong>${lang === 'ar' ? 'مركب في موقع' : 'Installed on Location'}</strong> (${asset.office || locMap[asset.locationId] || '-'})</span>
+                <span class="text-success"><i class="fas fa-network-wired"></i> <strong>${lang === 'ar' ? 'مركب في موقع' : 'Installed on Location'}</strong> (${locMap[asset.office] || asset.office || locMap[asset.locationId] || '-'})</span>
               ` : `<span class="text-muted"><i class="fas fa-minus-circle"></i> ${lang === 'ar' ? 'غير مسند لأي موظف حالياً' : 'Not currently assigned to any employee'}</span>`)}
             </div>
           </div>
@@ -1864,12 +1877,109 @@ class AssetInventoryManager {
     }
   }
 
-  async handleTransferEmpChange(empId) {
-    if (!empId) return;
-    const emp = await db.getById("employees", empId);
-    if (emp && emp.departmentId) {
-      document.getElementById("formTrToDept").value = emp.departmentId;
+  async syncTransferFilters(triggerSource) {
+    const lang = AppState.lang;
+    const locSelect = document.getElementById("formTrToLoc");
+    const deptSelect = document.getElementById("formTrToDept");
+    const officeSelect = document.getElementById("formTrToOffice");
+    const empSelect = document.getElementById("formTrToEmp");
+
+    if (!locSelect || !deptSelect || !officeSelect || !empSelect) return;
+
+    let locId = locSelect.value;
+    let deptId = deptSelect.value;
+    let officeId = officeSelect.value;
+    let empId = empSelect.value;
+
+    const [locations, departments, employees] = await Promise.all([
+      db.getAll("locations"),
+      db.getAll("departments"),
+      db.getAll("employees")
+    ]);
+
+    const activeLocs = locations.filter(l => l.active !== false);
+    const activeDepts = departments.filter(d => d.active !== false);
+    const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+
+    const deptMap = {}; activeDepts.forEach(d => deptMap[d.id] = d);
+    const locMap = {}; activeLocs.forEach(l => locMap[l.id] = l);
+    const empMap = {}; activeEmps.forEach(e => empMap[e.id] = e);
+
+    if (triggerSource === "location") {
+      if (locId) {
+        if (deptId && deptMap[deptId]?.locationId && deptMap[deptId].locationId !== locId) {
+          deptId = ""; officeId = ""; empId = "";
+        }
+        if (officeId && locMap[officeId]?.parentId !== locId) {
+          officeId = ""; empId = "";
+        }
+      }
+    } else if (triggerSource === "department") {
+      if (deptId) {
+        if (deptMap[deptId]?.locationId) {
+          locId = deptMap[deptId].locationId;
+        }
+        if (officeId && locMap[officeId]?.department_id && locMap[officeId].department_id !== deptId) {
+          officeId = ""; empId = "";
+        }
+        if (empId && empMap[empId]?.departmentId !== deptId) {
+          empId = "";
+        }
+      } else {
+        officeId = ""; empId = "";
+      }
+    } else if (triggerSource === "office") {
+      if (officeId) {
+        const off = locMap[officeId];
+        if (off) {
+          if (off.parentId) locId = off.parentId;
+          if (off.department_id) deptId = off.department_id;
+        }
+        if (empId && empMap[empId]?.officeId !== officeId) {
+          empId = "";
+        }
+      }
+    } else if (triggerSource === "employee") {
+      if (empId) {
+        const emp = empMap[empId];
+        if (emp) {
+          if (emp.departmentId) deptId = emp.departmentId;
+          if (emp.officeId) officeId = emp.officeId;
+          if (deptId && deptMap[deptId]?.locationId) locId = deptMap[deptId].locationId;
+        }
+      }
     }
+
+    locSelect.value = locId;
+    deptSelect.value = deptId;
+    officeSelect.value = officeId;
+    empSelect.value = empId;
+
+    let filteredDepts = activeDepts;
+    if (locId) filteredDepts = activeDepts.filter(d => d.locationId === locId);
+    
+    deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "القسم (اختياري)" : "Department (Optional)"} --</option>` +
+      filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+    if (deptId && filteredDepts.some(d => d.id === deptId)) deptSelect.value = deptId;
+    else if (!deptId && filteredDepts.length === 1 && locId) { deptId = filteredDepts[0].id; deptSelect.value = deptId; }
+
+    let filteredOffices = activeLocs.filter(l => l.type === 'room' || l.code?.startsWith('OF'));
+    if (locId) filteredOffices = filteredOffices.filter(l => l.parentId === locId);
+    if (deptId) filteredOffices = filteredOffices.filter(l => !l.department_id || l.department_id === deptId);
+
+    officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المكتب الجديد (Office)" : "New Office" } --</option>` +
+      filteredOffices.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} ${l.code ? `(${l.code})` : ""}</option>`).join("");
+    if (officeId && filteredOffices.some(l => l.id === officeId)) officeSelect.value = officeId;
+    else officeId = "";
+
+    let filteredEmps = activeEmps;
+    if (deptId) filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
+    if (officeId) filteredEmps = filteredEmps.filter(e => e.officeId === officeId);
+
+    empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف / المستلم الجديد (اختياري)" : "New Employee / Custodian (Optional)"} --</option>` +
+      filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+    if (empId && filteredEmps.some(e => e.id === empId)) empSelect.value = empId;
+    else empId = "";
   }
 
   async handleTransferSubmit(event) {
@@ -1878,6 +1988,7 @@ class AssetInventoryManager {
     const toLocId = document.getElementById("formTrToLoc").value;
     const toEmpId = document.getElementById("formTrToEmp").value || null;
     const toDeptId = document.getElementById("formTrToDept").value || null;
+    const toOfficeId = document.getElementById("formTrToOffice")?.value || null;
     const responsibleEmpId = document.getElementById("formTrResponsibleEmp")?.value || null;
     const condition = document.getElementById("formTrCondition")?.value || "Working";
     const trDate = document.getElementById("formTrDate").value;
@@ -1899,11 +2010,17 @@ class AssetInventoryManager {
     const fromEmp = asset.currentEmployeeId;
     const fromDept = asset.departmentId;
     const fromLoc = asset.locationId;
+    const fromOffice = asset.office;
     const currentUserName = AppState.currentUser ? (AppState.currentUser.fullName || AppState.currentUser.username) : "admin";
 
     // 1. ATOMIC UPDATE OF ASSET CURRENT STATE (PART 7 & PART 20)
     asset.locationId = toLocId;
     if (toDeptId) asset.departmentId = toDeptId;
+    if (toOfficeId) {
+      asset.office = toOfficeId;
+      if (!asset.specs) asset.specs = {};
+      asset.specs.office = toOfficeId;
+    }
     if (toEmpId) {
       asset.currentEmployeeId = toEmpId;
       asset.status = "Assigned";
@@ -1922,7 +2039,13 @@ class AssetInventoryManager {
       transferNo,
       assetId: asset.id,
       fromLocationId: fromLoc,
+      fromDepartmentId: fromDept,
+      fromOffice: fromOffice,
+      fromEmployeeId: fromEmp,
       toLocationId: toLocId,
+      toDepartmentId: toDeptId,
+      toOffice: toOfficeId,
+      toEmployeeId: toEmpId,
       transferDate: trDate,
       responsibleEmployeeId: responsibleEmpId,
       status: "Completed",
