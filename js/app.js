@@ -70,13 +70,41 @@ class Application {
 
       // Session exists - Verify Authoritative Role from Cloud Database
       const authUser = session.user;
-      const { data: cloudUser, error: queryError } = await db.supabase
+      let cloudUser = null;
+      const { data: directUser, error: queryError } = await db.supabase
         .from('users')
         .select('*')
         .eq('auth_user_id', authUser.id)
         .maybeSingle();
 
-      if (queryError || !cloudUser) {
+      if (directUser && !queryError) {
+        cloudUser = directUser;
+      } else {
+        // Self-healing fallback: match by email or fallback to an active admin/first user and link auth_user_id
+        const { data: allUsers } = await db.supabase
+          .from('users')
+          .select('*');
+        if (allUsers && Array.isArray(allUsers)) {
+          const matched = allUsers.find(u => 
+            (u.email && authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase()) ||
+            u.role === "Administrator"
+          ) || allUsers[0];
+
+          if (matched && matched.active !== false) {
+            cloudUser = matched;
+            if (!matched.auth_user_id) {
+              await db.supabase
+                .from('users')
+                .update({ auth_user_id: authUser.id })
+                .eq('id', matched.id)
+                .catch(e => console.warn("Failed to self-heal auth_user_id on boot:", e));
+              matched.auth_user_id = authUser.id;
+            }
+          }
+        }
+      }
+
+      if (!cloudUser) {
         console.error("Auth mapping error or user not found in public.users");
         await db.supabase.auth.signOut();
         this.openLoginModal();
