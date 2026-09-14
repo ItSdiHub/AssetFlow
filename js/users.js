@@ -395,6 +395,32 @@ class OrganizationalManager {
       return;
     }
 
+    // Validation: Office must belong to Selected Department & Location
+    if (officeId) {
+      const officeLoc = await db.getById("locations", officeId);
+      if (officeLoc) {
+        if (deptId && officeLoc.department_id && officeLoc.department_id !== deptId) {
+          App.showToast(
+            AppState.lang === "ar"
+              ? "خطأ: المكتب المحدد لا ينتمي إلى القسم المختار."
+              : "Error: Selected office does not belong to the selected department.",
+            "error"
+          );
+          return;
+        }
+        const locId = document.getElementById("formEmpLoc")?.value;
+        if (locId && officeLoc.parentId && officeLoc.parentId !== locId) {
+          App.showToast(
+            AppState.lang === "ar"
+              ? "خطأ: المكتب المحدد لا ينتمي إلى الموقع المختار."
+              : "Error: Selected office does not belong to the selected location.",
+            "error"
+          );
+          return;
+        }
+      }
+    }
+
     const empData = {
       id: id,
       employeeNumber: empNumber,
