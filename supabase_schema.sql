@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS public.assets (
     installed_by TEXT,
     project_id TEXT,
     office TEXT,
+    office_id TEXT REFERENCES public.offices(id) ON DELETE SET NULL,
     branch_id TEXT,
     condition TEXT,
     handover_status TEXT,
@@ -319,32 +320,21 @@ CREATE INDEX IF NOT EXISTS notifications_employee_idx ON public.notifications (e
 CREATE INDEX IF NOT EXISTS notifications_read_idx ON public.notifications (read);
 
 -- ========================================================================
--- MIGRATION: Hierarchical integrity additions: offices & mandatory department<->location relationship
+-- MIGRATION: Hierarchical integrity additions: offices & department<->location relationship
 -- ========================================================================
 
--- Step 1: Ensure at least one location 'loc-main' exists to satisfy default backfill (create it if missing)
-INSERT INTO public.locations (id, code, name_ar, name_en, type, parent_id, created_at)
-SELECT 'loc-main','HQ','المكتب الرئيسي - افتراضي','Main Office - Default','site', NULL, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM public.locations WHERE id = 'loc-main');
-
--- Step 2: Backfill departments.location_id for existing rows to a default 'loc-main' if missing
-UPDATE public.departments SET location_id = 'loc-main' WHERE location_id IS NULL;
-
--- Step 3: Make department.location_id mandatory (non-nullable)
-ALTER TABLE public.departments ALTER COLUMN location_id SET NOT NULL;
-
--- Step 4: Create indexes for the new columns
+-- Step 1: Create indexes for the new columns
 CREATE INDEX IF NOT EXISTS departments_location_idx ON public.departments (location_id);
 CREATE INDEX IF NOT EXISTS employees_office_idx ON public.employees (office_id);
 CREATE INDEX IF NOT EXISTS locations_department_idx ON public.locations (department_id);
 CREATE INDEX IF NOT EXISTS employees_employee_number_idx ON public.employees (employee_number);
 
--- Step 5: Add foreign key constraint from departments.location_id -> locations.id
+-- Step 2: Add foreign key constraint from departments.location_id -> locations.id
 ALTER TABLE public.departments
     ADD CONSTRAINT IF NOT EXISTS departments_location_fk FOREIGN KEY (location_id)
     REFERENCES public.locations(id) ON DELETE RESTRICT;
 
--- Step 6: Add foreign key from employees.office_id -> offices.id (standalone offices table)
+-- Step 3: Add foreign key from employees.office_id -> offices.id (standalone offices table)
 ALTER TABLE public.employees
     ADD CONSTRAINT IF NOT EXISTS employees_office_fk FOREIGN KEY (office_id)
     REFERENCES public.offices(id) ON DELETE SET NULL;
