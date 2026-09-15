@@ -527,7 +527,6 @@ CREATE POLICY "Admin_IT_Insert_Assets" ON public.assets FOR INSERT TO authentica
 WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
 
 DROP POLICY IF EXISTS "Admin_IT_Update_Assets" ON public.assets;
-DROP POLICY IF EXISTS "Admin_IT_Employee_Update_Assets" ON public.assets;
 CREATE POLICY "Admin_IT_Update_Assets" ON public.assets FOR UPDATE TO authenticated 
 USING (public.get_auth_role() IN ('Administrator', 'IT User'));
 
@@ -547,7 +546,6 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions;
-DROP POLICY IF EXISTS "Admin_IT_Employee_Insert_AssetTransactions" ON public.asset_transactions;
 CREATE POLICY "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions FOR INSERT TO authenticated 
 WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
 
