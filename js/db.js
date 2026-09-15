@@ -2800,6 +2800,7 @@ class DBEngine {
    * Used during logout to prevent data leakage between users.
    */
   async clearLocalData() {
+    this.memoryStore = {};
     if (!this.db) return;
     const stores = Array.from(this.db.objectStoreNames);
     const tx = this.db.transaction(stores, "readwrite");

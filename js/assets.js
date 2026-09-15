@@ -581,6 +581,10 @@ class AssetInventoryManager {
 
   async handleSaveAssetInternal(event) {
     event.preventDefault();
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بإضافة أو تعديل الأصول." : "Unauthorized to save or edit assets."), "error");
+      return;
+    }
     const internalId = document.getElementById("formAssetInternalId").value;
     const assetId = document.getElementById("formAssetId").value.trim();
     const assetTypeId = document.getElementById("formAssetType").value;
@@ -935,8 +939,8 @@ class AssetInventoryManager {
   }
 
   async deleteAsset(assetId) {
-    if (AppState.currentUser && AppState.currentUser.role === "Viewer") {
-      App.showToast(I18N[AppState.lang].errViewerNoPermission, "error");
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بحذف الأصول." : "Unauthorized to delete assets."), "error");
       return;
     }
 

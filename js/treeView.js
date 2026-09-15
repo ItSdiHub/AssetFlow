@@ -540,23 +540,288 @@ class TreeViewManager {
   switchView(viewName) {
     this.currentView = viewName;
     const treeView = document.getElementById("locationsTreeViewContainer");
+    const mapView = document.getElementById("locationsMapViewContainer");
     const tableView = document.getElementById("locationsTableViewContainer");
     const btnTree = document.getElementById("btnViewLocTree");
+    const btnMap = document.getElementById("btnViewLocMap");
     const btnTable = document.getElementById("btnViewLocTable");
 
+    if (treeView) treeView.style.display = viewName === "tree" ? "block" : "none";
+    if (mapView) mapView.style.display = viewName === "map" ? "block" : "none";
+    if (tableView) tableView.style.display = viewName === "table" ? "block" : "none";
+
+    if (btnTree) { btnTree.classList.toggle("btn-primary", viewName === "tree"); btnTree.classList.toggle("btn-secondary", viewName !== "tree"); }
+    if (btnMap) { btnMap.classList.toggle("btn-primary", viewName === "map"); btnMap.classList.toggle("btn-secondary", viewName !== "map"); }
+    if (btnTable) { btnTable.classList.toggle("btn-primary", viewName === "table"); btnTable.classList.toggle("btn-secondary", viewName !== "table"); }
+
     if (viewName === "tree") {
-      if (treeView) treeView.style.display = "block";
-      if (tableView) tableView.style.display = "none";
-      if (btnTree) { btnTree.classList.remove("btn-secondary"); btnTree.classList.add("btn-primary"); }
-      if (btnTable) { btnTable.classList.remove("btn-primary"); btnTable.classList.add("btn-secondary"); }
       this.render();
+    } else if (viewName === "map") {
+      this.renderD3Map();
     } else {
-      if (treeView) treeView.style.display = "none";
-      if (tableView) tableView.style.display = "block";
-      if (btnTree) { btnTree.classList.remove("btn-primary"); btnTree.classList.add("btn-secondary"); }
-      if (btnTable) { btnTable.classList.remove("btn-secondary"); btnTable.classList.add("btn-primary"); }
       UserManager.renderLocations();
     }
+  }
+
+  async renderD3Map() {
+    const container = document.getElementById("d3MapContainer");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const locations = await db.getAll("locations");
+    const assets = await db.getAll("assets");
+    const lang = AppState.lang || "ar";
+
+    if (!locations || locations.length === 0) {
+      container.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">${lang === 'ar' ? 'لا توجد مواقع مسجلة في قاعدة البيانات' : 'No locations recorded in database'}</div>`;
+      return;
+    }
+
+    const assetCountMap = {};
+    const locationAssetsMap = {};
+    assets.forEach(a => {
+      if (a.locationId) {
+        assetCountMap[a.locationId] = (assetCountMap[a.locationId] || 0) + 1;
+        if (!locationAssetsMap[a.locationId]) locationAssetsMap[a.locationId] = [];
+        locationAssetsMap[a.locationId].push(a);
+      }
+    });
+
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 500;
+
+    const nodes = locations.map(loc => {
+      const count = assetCountMap[loc.id] || 0;
+      const locAssets = locationAssetsMap[loc.id] || [];
+      return {
+        id: loc.id,
+        name: lang === 'ar' ? (loc.nameAr || loc.nameEn) : (loc.nameEn || loc.nameAr),
+        code: loc.code || loc.id,
+        type: loc.type || 'Location',
+        parentId: loc.parentId || null,
+        assetCount: count,
+        assetsList: locAssets,
+        radius: Math.max(25, Math.min(65, 20 + count * 4))
+      };
+    });
+
+    const links = [];
+    nodes.forEach(node => {
+      if (node.parentId && nodes.some(n => n.id === node.parentId)) {
+        links.push({ source: node.parentId, target: node.id });
+      }
+    });
+
+    const svg = d3.select("#d3MapContainer")
+      .append("svg")
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .attr("viewBox", [0, 0, width, height])
+      .style("cursor", "grab");
+
+    const g = svg.append("g");
+    const zoom = d3.zoom()
+      .scaleExtent([0.5, 4])
+      .on("zoom", (event) => {
+        g.attr("transform", event.transform);
+      });
+    svg.call(zoom);
+
+    let tooltip = d3.select("#d3Tooltip");
+    if (tooltip.empty()) {
+      tooltip = d3.select("body").append("div")
+        .attr("id", "d3Tooltip")
+        .style("position", "absolute")
+        .style("visibility", "hidden")
+        .style("background", "rgba(15, 23, 42, 0.9)")
+        .style("color", "#fff")
+        .style("padding", "8px 12px")
+        .style("border-radius", "6px")
+        .style("font-size", "12px")
+        .style("pointer-events", "none")
+        .style("z-index", "9999")
+        .style("box-shadow", "0 4px 6px -1px rgba(0,0,0,0.1)");
+    }
+
+    const simulation = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+      .force("charge", d3.forceManyBody().strength(-250))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide().radius(d => d.radius + 15));
+
+    const link = g.append("g")
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke", "var(--border-color, #cbd5e1)")
+      .attr("stroke-width", 2)
+      .attr("stroke-opacity", 0.6);
+
+    const node = g.append("g")
+      .selectAll("g")
+      .data(nodes)
+      .join("g")
+      .attr("class", "d3-node-item")
+      .call(d3.drag()
+        .on("start", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        })
+        .on("drag", (event, d) => {
+          d.fx = event.x;
+          d.fy = event.y;
+        })
+        .on("end", (event, d) => {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        })
+      );
+
+    const colorScale = d3.scaleSequential(d3.interpolateBlues)
+      .domain([0, d3.max(nodes, d => d.assetCount) || 10]);
+
+    node.append("circle")
+      .attr("r", d => d.radius)
+      .attr("fill", d => d.assetCount > 0 ? colorScale(d.assetCount) : "var(--bg-surface, #ffffff)")
+      .attr("stroke", "var(--primary, #3b82f6)")
+      .attr("stroke-width", 2.5)
+      .style("transition", "all 0.2s ease")
+      .on("mouseover", (event, d) => {
+        d3.select(event.currentTarget).attr("stroke", "#f59e0b").attr("stroke-width", 3.5);
+        const locAssets = d.assetsList || [];
+        const assetItemsSummary = locAssets.length > 0 
+          ? locAssets.slice(0, 5).map(a => `<div style="font-size: 11px; opacity: 0.9; margin-top: 2px;">• <strong>${a.assetId || a.id}</strong> (${a.brand || ''} ${a.model || ''})</div>`).join('') 
+          : `<div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">${lang === 'ar' ? 'لا توجد أجهزة مسجلة في هذا الموقع' : 'No assets registered here'}</div>`;
+        const moreText = locAssets.length > 5 ? `<div style="font-size: 10px; font-style: italic; opacity: 0.8; margin-top: 3px;">+${locAssets.length - 5} ${lang === 'ar' ? 'أصول أخرى...' : 'more assets...'}</div>` : '';
+
+        tooltip.style("visibility", "visible")
+          .html(`
+            <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 4px; font-size: 13px;">
+              📍 ${d.name} <span style="font-weight: normal; opacity: 0.7; font-size: 11px;">(${d.code})</span>
+            </div>
+            <div style="margin-bottom: 6px;">📦 ${lang === 'ar' ? 'إجمالي الأصول المرتبطة' : 'Associated Assets'}: <strong>${d.assetCount}</strong></div>
+            <div style="max-height: 140px; overflow-y: auto; padding-right: 4px;">${assetItemsSummary} ${moreText}</div>
+          `);
+      })
+      .on("mousemove", (event) => {
+        tooltip.style("top", (event.pageY - 10) + "px").style("left", (event.pageX + 10) + "px");
+      })
+      .on("mouseout", (event) => {
+        d3.select(event.currentTarget).attr("stroke", "var(--primary, #3b82f6)").attr("stroke-width", 2.5);
+        tooltip.style("visibility", "hidden");
+      })
+      .on("click", (event, d) => {
+        event.stopPropagation();
+        this.selectLocation(d.id);
+        this.switchView("tree");
+      });
+
+    node.append("text")
+      .text(d => d.name.length > 14 ? d.name.substring(0, 12) + "..." : d.name)
+      .attr("text-anchor", "middle")
+      .attr("dy", d => -d.radius - 6)
+      .attr("fill", "var(--text-main, #1e293b)")
+      .style("font-size", "11px")
+      .style("font-weight", "600")
+      .style("pointer-events", "none");
+
+    node.append("text")
+      .text(d => d.assetCount)
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .attr("fill", d => d.assetCount > 0 ? "#ffffff" : "var(--text-main, #1e293b)")
+      .style("font-size", "12px")
+      .style("font-weight", "bold")
+      .style("pointer-events", "none");
+
+    simulation.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
+
+      node
+        .attr("transform", d => `translate(${d.x}, ${d.y})`);
+    });
+  }
+
+  handleMapSearch(keyword) {
+    const term = (keyword || "").trim().toLowerCase();
+    const svg = d3.select("#d3MapContainer svg");
+    if (svg.empty()) return;
+
+    svg.selectAll(".d3-node-item").each(function(d) {
+      const el = d3.select(this);
+      const circle = el.select("circle");
+      
+      if (!term) {
+        circle.attr("stroke", "var(--primary, #3b82f6)")
+              .attr("stroke-width", 2.5);
+        el.style("opacity", 1);
+        return;
+      }
+
+      const matchName = (d.name || "").toLowerCase().includes(term) || (d.code || "").toLowerCase().includes(term);
+      const matchAsset = (d.assetsList || []).some(a => 
+        (a.assetId || "").toLowerCase().includes(term) || 
+        (a.brand || "").toLowerCase().includes(term) || 
+        (a.model || "").toLowerCase().includes(term) ||
+        (a.serial || "").toLowerCase().includes(term)
+      );
+
+      if (matchName || matchAsset) {
+        circle.attr("stroke", "#f59e0b")
+              .attr("stroke-width", 4.5);
+        el.style("opacity", 1);
+      } else {
+        circle.attr("stroke", "var(--border-color, #cbd5e1)")
+              .attr("stroke-width", 1.5);
+        el.style("opacity", 0.3);
+      }
+    });
+  }
+
+  resetMapSearch() {
+    const input = document.getElementById("d3MapSearchInput");
+    if (input) input.value = "";
+    this.handleMapSearch("");
+  }
+
+  toggleFullscreen() {
+    const container = document.querySelector("#locationsMapViewContainer .card");
+    const mapContainer = document.getElementById("d3MapContainer");
+    const icon = document.getElementById("d3FullscreenIcon");
+    const btn = document.getElementById("d3FullscreenBtn");
+    if (!container || !mapContainer) return;
+
+    const isFullscreen = container.classList.toggle("fullscreen-mode");
+    if (isFullscreen) {
+      container.style.position = "fixed";
+      container.style.inset = "16px";
+      container.style.zIndex = "99999";
+      container.style.boxShadow = "0 25px 50px -12px rgba(0, 0, 0, 0.25)";
+      mapContainer.style.height = "calc(100vh - 140px)";
+      if (icon) {
+        icon.classList.remove("fa-expand");
+        icon.classList.add("fa-compress");
+      }
+      if (btn) btn.setAttribute("title", "إنهاء ملء الشاشة");
+    } else {
+      container.style.position = "";
+      container.style.inset = "";
+      container.style.zIndex = "";
+      container.style.boxShadow = "";
+      mapContainer.style.height = "500px";
+      if (icon) {
+        icon.classList.remove("fa-compress");
+        icon.classList.add("fa-expand");
+      }
+      if (btn) btn.setAttribute("title", "ملء الشاشة");
+    }
+    this.renderD3Map();
   }
 }
 

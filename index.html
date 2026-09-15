@@ -11,6 +11,9 @@
   <!-- FontAwesome 6 Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
+  <!-- D3.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💻</text></svg>">
   
@@ -758,6 +761,9 @@
                 <button id="btnViewLocTree" class="btn btn-sm btn-primary" onclick="TreeManager.switchView('tree')">
                   <i class="fas fa-sitemap"></i> <span data-i18n="viewTree">شجرة المواقع</span>
                 </button>
+                <button id="btnViewLocMap" class="btn btn-sm btn-secondary" onclick="TreeManager.switchView('map')">
+                  <i class="fas fa-map-marked-alt"></i> <span data-i18n="d3MapBtn">خريطة D3</span>
+                </button>
                 <button id="btnViewLocTable" class="btn btn-sm btn-secondary" onclick="TreeManager.switchView('table')">
                   <i class="fas fa-table"></i> <span data-i18n="viewTable">عرض الجدول</span>
                 </button>
@@ -800,7 +806,33 @@
             </div>
           </div>
 
-          <!-- 2. Table View (Alternate tabular view) -->
+          <!-- 2. Interactive D3.js Locations Asset Map View -->
+          <div id="locationsMapViewContainer" style="display: none;">
+            <div class="card" style="padding: 16px; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                <h3 style="font-size: 16px; font-weight: 600; margin: 0;">
+                  <i class="fas fa-map-marked-alt text-primary"></i> <span data-i18n="d3AssetMapTitle">خريطة توزيع الأصول التفاعلية (D3.js)</span>
+                </h3>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <div style="position: relative;">
+                    <input type="text" id="d3MapSearchInput" placeholder="بحث عن موقع أو أصل (مثال: AST, قاعة...)" oninput="TreeManager.handleMapSearch(this.value)" style="padding: 6px 12px 6px 32px; border-radius: var(--radius-md); border: 1px solid var(--border-color); font-size: 13px; width: 240px; background: var(--bg-surface); color: var(--text-main);" />
+                    <i class="fas fa-search" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 12px;"></i>
+                  </div>
+                  <button class="btn btn-sm btn-secondary" onclick="TreeManager.resetMapSearch()" title="إعادة ضبط البحث">
+                    <i class="fas fa-redo"></i>
+                  </button>
+                  <button class="btn btn-sm btn-secondary" id="d3FullscreenBtn" onclick="TreeManager.toggleFullscreen()" title="ملء الشاشة">
+                    <i class="fas fa-expand" id="d3FullscreenIcon"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="d3MapContainer" style="width: 100%; height: 500px; position: relative; overflow: hidden; background: var(--bg-main, #f8fafc); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+                <!-- D3 SVG rendered here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Table View (Alternate tabular view) -->
           <div id="locationsTableViewContainer" style="display: none;">
             <div class="table-responsive">
               <table class="custom-table">

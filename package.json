@@ -18,5 +18,8 @@
     "bilingual"
   ],
   "author": "Sharjah Driving Institute (SDI) IT Dept",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "d3": "^7.9.0"
+  }
 }

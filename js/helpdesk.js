@@ -664,6 +664,10 @@ class HelpdeskManager {
   // Update Status from Dropdown
   async handleStatusSelectChange(newStatus) {
     if (!this.currentRequestId) return;
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(AppState.lang === "ar" ? "غير مصرح لك بتغيير حالة الطلب." : "Unauthorized to update request status.", "error");
+      return;
+    }
     const req = await db.getById("helpdeskRequests", this.currentRequestId);
     if (!req) return;
 
@@ -714,6 +718,10 @@ class HelpdeskManager {
 
   // Quick Complete Request (REQ-15)
   async quickCompleteRequest(requestId) {
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(AppState.lang === "ar" ? "غير مصرح لك بإغلاق الطلبات." : "Unauthorized to close requests.", "error");
+      return;
+    }
     const req = await db.getById("helpdeskRequests", requestId);
     if (!req) return;
 

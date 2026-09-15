@@ -358,6 +358,10 @@ class OrganizationalManager {
 
   async handleSaveEmployee(event) {
     if (event && event.preventDefault) event.preventDefault();
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بتعديل بيانات الموظفين." : "Unauthorized to edit employee records."), "error");
+      return;
+    }
     const nextSeq = await db.getNextSequentialId("employees");
     const id = document.getElementById("formEmpId")?.value || nextSeq;
     const orgNumVal = (document.getElementById("formEmpOrgNumber")?.value || "").trim();
@@ -443,8 +447,8 @@ class OrganizationalManager {
   }
 
   async deleteEmployee(empId) {
-    if (AppState.currentUser && AppState.currentUser.role === "Viewer") {
-      App.showToast(I18N[AppState.lang].errViewerNoPermission, "error");
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بحذف الموظفين." : "Unauthorized to delete employee records."), "error");
       return;
     }
 
@@ -590,6 +594,10 @@ class OrganizationalManager {
 
   async handleSaveDepartment(event) {
     if (event && event.preventDefault) event.preventDefault();
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بتعديل بيانات الأقسام." : "Unauthorized to edit department records."), "error");
+      return;
+    }
     const nextSeq = await db.getNextSequentialId("departments");
     const id = document.getElementById("formDeptId")?.value || nextSeq;
     const nameAr = (document.getElementById("formDeptNameAr")?.value || "").trim();
@@ -634,8 +642,8 @@ class OrganizationalManager {
   }
 
   async deleteDepartment(deptId) {
-    if (AppState.currentUser && AppState.currentUser.role === "Viewer") {
-      App.showToast(I18N[AppState.lang].errViewerNoPermission, "error");
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بحذف الأقسام." : "Unauthorized to delete department records."), "error");
       return;
     }
 
@@ -766,6 +774,10 @@ class OrganizationalManager {
 
   async handleSaveLocation(event) {
     event.preventDefault();
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بتعديل بيانات المواقع." : "Unauthorized to edit location records."), "error");
+      return;
+    }
     const nextSeq = await db.getNextSequentialId("locations");
     const id = document.getElementById("formLocId").value || nextSeq;
     const nameAr = document.getElementById("formLocNameAr").value.trim();
@@ -796,8 +808,8 @@ class OrganizationalManager {
   }
 
   async deleteLocation(locId) {
-    if (AppState.currentUser && AppState.currentUser.role === "Viewer") {
-      App.showToast(I18N[AppState.lang].errViewerNoPermission, "error");
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك بحذف المواقع." : "Unauthorized to delete location records."), "error");
       return;
     }
 
@@ -910,6 +922,10 @@ class OrganizationalManager {
 
   async handleSaveAssetType(event) {
     event.preventDefault();
+    if (!AppState.currentUser || AppState.currentUser.role !== "Administrator") {
+      App.showToast(AppState.lang === "ar" ? "فقط مدير النظام يمكنه إدارة أنواع الأصول." : "Only system administrator can manage asset types.", "error");
+      return;
+    }
     const nextSeq = await db.getNextSequentialId("assetTypes");
     const id = document.getElementById("formTypeId").value || nextSeq;
     const code = document.getElementById("formTypeCode").value.trim() || id;
@@ -935,6 +951,10 @@ class OrganizationalManager {
   }
 
   async deleteAssetType(typeId) {
+    if (!AppState.currentUser || AppState.currentUser.role !== "Administrator") {
+      App.showToast(AppState.lang === "ar" ? "فقط مدير النظام يمكنه حذف أنواع الأصول." : "Only system administrator can delete asset types.", "error");
+      return;
+    }
     const assets = await db.getAll("assets");
     if (assets.some(a => a.assetTypeId === typeId)) {
       App.showToast(AppState.lang === "ar" ? "لا يمكن حذف نوع أصل مستخدم في أجهزة مسجلة." : "Cannot delete an asset type that is in use by registered assets.", "error");
@@ -1121,6 +1141,10 @@ class OrganizationalManager {
 
   async handleSaveUser(event) {
     event.preventDefault();
+    if (!AppState.currentUser || AppState.currentUser.role !== "Administrator") {
+      App.showToast(AppState.lang === "ar" ? "فقط مدير النظام يمكنه إدارة حسابات المستخدمين." : "Only system administrator can manage user accounts.", "error");
+      return;
+    }
     const id = document.getElementById("formUserId").value;
     const username = document.getElementById("formUsername").value.trim().toLowerCase();
     const email = document.getElementById("formUserEmail").value.trim().toLowerCase();
@@ -1246,6 +1270,10 @@ class OrganizationalManager {
   }
 
   async deleteUser(userId) {
+    if (!AppState.currentUser || AppState.currentUser.role !== "Administrator") {
+      App.showToast(AppState.lang === "ar" ? "فقط مدير النظام يمكنه حذف حسابات المستخدمين." : "Only system administrator can delete user accounts.", "error");
+      return;
+    }
     const u = await db.getById("users", userId);
     if (u && u.username === "admin") {
       App.showToast(AppState.lang === "ar" ? "لا يمكن حذف حساب مدير النظام الرئيسي." : "Cannot delete primary administrator account.", "error");

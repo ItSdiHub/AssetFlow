@@ -53,6 +53,7 @@ class Application {
 
     // 3. SECURE BOOT: Verify Session BEFORE Database Initialization
     AppState.currentUser = null;
+    this.applyUserRolePermissions();
 
     if (!db.supabase) {
       console.error("Supabase client not initialized.");
@@ -80,15 +81,14 @@ class Application {
       if (directUser && !queryError) {
         cloudUser = directUser;
       } else {
-        // Self-healing fallback: match by email or fallback to an active admin/first user and link auth_user_id
+        // Self-healing fallback: match strictly by verified user email
         const { data: allUsers } = await db.supabase
           .from('users')
           .select('*');
         if (allUsers && Array.isArray(allUsers)) {
           const matched = allUsers.find(u => 
-            (u.email && authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase()) ||
-            u.role === "Administrator"
-          ) || allUsers[0];
+            (u.email && authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase())
+          );
 
           if (matched && matched.active !== false) {
             cloudUser = matched;
@@ -273,23 +273,31 @@ class Application {
     }
 
     // REQ-32: Authorization Enforcement
-    const role = AppState.currentUser ? AppState.currentUser.role : "Viewer";
     let targetTab = tabName;
 
     // Diagnostic logging for development
-    console.log("[AUTH DIAGNOSTIC] switchTab requested:", tabName, "| User Role:", role);
+    console.log("[AUTH DIAGNOSTIC] switchTab requested:", tabName, "| User:", AppState.currentUser ? AppState.currentUser.username : "Unauthenticated");
 
-    if (role === "Employee") {
-      // Employee can ONLY access employeePortal or accessDenied
-      if (tabName !== "employeePortal" && tabName !== "accessDenied") {
-        console.warn("[AUTH DIAGNOSTIC] Employee attempted restricted tab:", tabName);
+    if (!AppState.currentUser) {
+      console.warn("[AUTH DIAGNOSTIC] Unauthenticated switchTab attempted:", tabName);
+      if (tabName !== "accessDenied") {
         targetTab = "accessDenied";
+        this.openLoginModal();
       }
-    } else if (String(role).trim() !== "Administrator") {
-      // Non-administrators cannot access settings
-      if (tabName === "settings") {
-        console.warn("[AUTH DIAGNOSTIC] Non-Admin attempted restricted tab:", tabName);
-        targetTab = "accessDenied";
+    } else {
+      const role = AppState.currentUser.role;
+      if (role === "Employee") {
+        // Employee can ONLY access employeePortal or accessDenied
+        if (tabName !== "employeePortal" && tabName !== "accessDenied") {
+          console.warn("[AUTH DIAGNOSTIC] Employee attempted restricted tab:", tabName);
+          targetTab = "accessDenied";
+        }
+      } else if (String(role).trim() !== "Administrator") {
+        // Non-administrators cannot access settings
+        if (tabName === "settings") {
+          console.warn("[AUTH DIAGNOSTIC] Non-Admin attempted restricted tab:", tabName);
+          targetTab = "accessDenied";
+        }
       }
     }
 
@@ -3907,8 +3915,7 @@ class Application {
             if (matchedUsers && Array.isArray(matchedUsers)) {
               const matched = matchedUsers.find(u => 
                 (u.username && u.username.toLowerCase() === cleanInput) ||
-                (u.email && u.email.toLowerCase() === emailToAuth.toLowerCase()) ||
-                u.role === "Administrator"
+                (u.email && u.email.toLowerCase() === emailToAuth.toLowerCase())
               );
               if (matched && matched.active !== false) {
                 cloudUser = matched;

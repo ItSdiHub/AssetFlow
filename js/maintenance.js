@@ -502,6 +502,10 @@ class MaintenanceController {
 
   async handleSaveTicket(event) {
     event.preventDefault();
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(AppState.lang === "ar" ? "غير مصرح لك بإجراء عمليات الصيانة." : "Unauthorized to perform maintenance operations.", "error");
+      return;
+    }
     const id = document.getElementById("formMaintId").value;
     const assetId = document.getElementById("formMaintAssetId").value;
     let empId = document.getElementById("formMaintEmployeeId")?.value || "";
@@ -649,6 +653,10 @@ class MaintenanceController {
 
   // Complete Maintenance Directly
   async openCompleteModal(ticketId) {
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(AppState.lang === "ar" ? "غير مصرح لك بإجراء عمليات الصيانة." : "Unauthorized to perform maintenance operations.", "error");
+      return;
+    }
     const t = await db.getById("maintenance", ticketId);
     if (!t) return;
 
