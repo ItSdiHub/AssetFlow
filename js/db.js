@@ -149,7 +149,8 @@ function toCloudRecord(storeName, item) {
       code: row.code || null,
       name_ar: row.nameAr || row.name_ar || "",
       name_en: row.nameEn || row.name_en || null,
-      manager_name: row.managerName || row.manager_name || null
+      manager_name: row.managerName || row.manager_name || null,
+      location_id: row.locationId || row.location_id || null
     };
   }
   if (storeName === "locations") {
@@ -391,22 +392,34 @@ function fromCloudRecord(storeName, row) {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
     item.managerName = row.manager_name || row.managerName;
+    item.locationId = row.location_id || row.locationId || item.locationId || null;
+    item.location_id = row.location_id || row.locationId || item.location_id || null;
+    item.code = row.code || item.code || null;
   } else if (storeName === "locations") {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
     item.parentId = row.parent_id !== undefined ? row.parent_id : row.parentId;
+    item.code = row.code || item.code || null;
   } else if (storeName === "offices") {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
-    item.locationId = row.location_id || row.locationId;
-    item.departmentId = row.department_id || row.departmentId;
+    item.locationId = row.location_id || row.locationId || item.locationId || null;
+    item.location_id = row.location_id || row.locationId || item.location_id || null;
+    item.departmentId = row.department_id || row.departmentId || item.departmentId || null;
+    item.department_id = row.department_id || row.departmentId || item.department_id || null;
+    item.code = row.code || item.code || null;
+    item.status = row.status || item.status || "Active";
   } else if (storeName === "employees") {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
     item.employeeId = row.employee_id || row.employeeId || row.id;
     item.employeeNumber = row.employee_id || row.employeeNumber || row.id;
-    item.departmentId = row.department_id || row.departmentId;
-    item.officeId = row.office_id || row.officeId;
+    item.departmentId = row.department_id || row.departmentId || item.departmentId || null;
+    item.department_id = row.department_id || row.departmentId || item.department_id || null;
+    item.officeId = row.office_id || row.officeId || item.officeId || null;
+    item.office_id = row.office_id || row.officeId || item.office_id || null;
+    item.locationId = row.location_id || row.locationId || item.locationId || null;
+    item.location_id = row.location_id || row.locationId || item.location_id || null;
     item.jobTitle = row.job_title || row.jobTitle;
   } else if (storeName === "assetTypes") {
     item.nameAr = row.name_ar || row.nameAr;
@@ -2029,14 +2042,23 @@ class DBEngine {
     const deptCount = await this.count("departments");
     if (deptCount === 0) {
       const defaultDepts = [
-        { id: "dept-it", nameAr: "تقنية المعلومات", nameEn: "IT Department", description: "إدارة البنية التحتية والأنظمة والدعم الفني", active: true },
-        { id: "dept-admin", nameAr: "الشؤون الإدارية والموارد البشرية", nameEn: "Administration & HR", description: "الموارد البشرية والشؤون الإدارية", active: true },
-        { id: "dept-cs", nameAr: "خدمة العملاء والتسجيل", nameEn: "Customer Service & Registration", description: "كاونترات واستقبال المتدربين", active: true },
-        { id: "dept-exam", nameAr: "قاعات الفحص النظري والذكي", nameEn: "Examination Labs", description: "قاعات وأنظمة الفحص النظري والذكي", active: true },
-        { id: "dept-fleet", nameAr: "أسطول سيارات الفحص الذكي", nameEn: "Smart Fleet Operations", description: "إدارة مركبات التدريب والفحص الذكي", active: true },
-        { id: "dept-finance", nameAr: "الشؤون المالية والمشتريات", nameEn: "Finance & Procurement", description: "المحاسبة والعقود والمشتريات", active: true }
+        { id: "dept-it", nameAr: "تقنية المعلومات", nameEn: "IT Department", description: "إدارة البنية التحتية والأنظمة والدعم الفني", active: true, locationId: "loc-main", location_id: "loc-main", code: "IT" },
+        { id: "dept-admin", nameAr: "الشؤون الإدارية والموارد البشرية", nameEn: "Administration & HR", description: "الموارد البشرية والشؤون الإدارية", active: true, locationId: "loc-main", location_id: "loc-main", code: "ADM" },
+        { id: "dept-cs", nameAr: "خدمة العملاء والتسجيل", nameEn: "Customer Service & Registration", description: "كاونترات واستقبال المتدربين", active: true, locationId: "loc-main", location_id: "loc-main", code: "CS" },
+        { id: "dept-exam", nameAr: "قاعات الفحص النظري والذكي", nameEn: "Examination Labs", description: "قاعات وأنظمة الفحص النظري والذكي", active: true, locationId: "loc-main", location_id: "loc-main", code: "EXM" },
+        { id: "dept-fleet", nameAr: "أسطول سيارات الفحص الذكي", nameEn: "Smart Fleet Operations", description: "إدارة مركبات التدريب والفحص الذكي", active: true, locationId: "loc-br-dhd", location_id: "loc-br-dhd", code: "FLT" },
+        { id: "dept-finance", nameAr: "الشؤون المالية والمشتريات", nameEn: "Finance & Procurement", description: "المحاسبة والعقود والمشتريات", active: true, locationId: "loc-main", location_id: "loc-main", code: "FIN" }
       ];
       for (const d of defaultDepts) await this.put("departments", d);
+    } else {
+      const existingDepts = await this.getAll("departments");
+      for (const d of existingDepts) {
+        if (!d.locationId && !d.location_id) {
+          d.locationId = d.id === "dept-fleet" ? "loc-br-dhd" : "loc-main";
+          d.location_id = d.locationId;
+          await this.put("departments", d);
+        }
+      }
     }
 
     // 3. Locations (Hierarchical Tree)
@@ -2118,6 +2140,30 @@ class DBEngine {
       }
     }
 
+    // 3b. Offices Table (Master Data: Location -> Department -> Office)
+    const offCount = await this.count("offices");
+    if (offCount === 0) {
+      const defaultOffices = [
+        { id: "off-it-01", code: "OFC-IT-01", nameAr: "مكتب الدعم الفني الرئيسي", nameEn: "Main IT Support Office", location_id: "loc-main", department_id: "dept-it", locationId: "loc-main", departmentId: "dept-it", status: "Active" },
+        { id: "off-it-02", code: "OFC-IT-02", nameAr: "غرفة الخوادم ومركز البيانات", nameEn: "Server Room & Data Center", location_id: "loc-main", department_id: "dept-it", locationId: "loc-main", departmentId: "dept-it", status: "Active" },
+        { id: "off-admin-01", code: "OFC-ADM-01", nameAr: "مكتب الإدارة والموارد البشرية", nameEn: "Administration & HR Office", location_id: "loc-main", department_id: "dept-admin", locationId: "loc-main", departmentId: "dept-admin", status: "Active" },
+        { id: "off-cs-01", code: "OFC-CS-01", nameAr: "كاونتر التسجيل وخدمة العملاء", nameEn: "Customer Service & Registration Counter", location_id: "loc-main", department_id: "dept-cs", locationId: "loc-main", departmentId: "dept-cs", status: "Active" },
+        { id: "off-exam-01", code: "OFC-EXM-01", nameAr: "قاعة الاختبارات الذكية", nameEn: "Smart Exam Hall", location_id: "loc-main", department_id: "dept-exam", locationId: "loc-main", departmentId: "dept-exam", status: "Active" },
+        { id: "off-nas-01", code: "OFC-NAS-01", nameAr: "مكتب تسجيل الناصرية", nameEn: "Nasseriya Registration Office", location_id: "loc-br-nas", department_id: "dept-cs", locationId: "loc-br-nas", departmentId: "dept-cs", status: "Active" },
+        { id: "off-dhd-01", code: "OFC-DHD-01", nameAr: "مكتب عمليات أسطول الذيد", nameEn: "Al Dhaid Fleet Operations Office", location_id: "loc-br-dhd", department_id: "dept-fleet", locationId: "loc-br-dhd", departmentId: "dept-fleet", status: "Active" },
+        { id: "off-khk-01", code: "OFC-KHK-01", nameAr: "كاونتر فرع خورفكان", nameEn: "Khorfakkan Branch Counter", location_id: "loc-br-khk", department_id: "dept-cs", locationId: "loc-br-khk", departmentId: "dept-cs", status: "Active" }
+      ];
+      for (const o of defaultOffices) await this.put("offices", o);
+    } else {
+      const existingOffices = await this.getAll("offices");
+      for (const o of existingOffices) {
+        let changed = false;
+        if (!o.locationId && o.location_id) { o.locationId = o.location_id; changed = true; }
+        if (!o.departmentId && o.department_id) { o.departmentId = o.department_id; changed = true; }
+        if (changed) await this.put("offices", o);
+      }
+    }
+
     // 4. Employees
     const empCount = await this.count("employees");
     if (empCount === 0) {
@@ -2131,6 +2177,11 @@ class DBEngine {
             nameAr: s.fullName || s.name || "موظف",
             nameEn: s.fullNameEn || s.nameEn || "",
             departmentId: s.department === "sub-main-it" ? "dept-it" : "dept-cs",
+            department_id: s.department === "sub-main-it" ? "dept-it" : "dept-cs",
+            officeId: s.department === "sub-main-it" ? "off-it-01" : "off-cs-01",
+            office_id: s.department === "sub-main-it" ? "off-it-01" : "off-cs-01",
+            locationId: "loc-main",
+            location_id: "loc-main",
             phone: s.phone || "",
             email: s.email || "",
             status: "Active",
@@ -2140,14 +2191,47 @@ class DBEngine {
         }
       } else {
         const defaultEmployees = [
-          { id: "emp-101", employeeNumber: "SDI-1021", nameAr: "م. أحمد الشامسي", nameEn: "Eng. Ahmed Al Shamsi", departmentId: "dept-it", phone: "+971 6 538 2000", email: "ahmed.shamsi@sdi.ae", status: "Active", notes: "مسؤول النظم والدعم الفني" },
-          { id: "emp-102", employeeNumber: "SDI-1045", nameAr: "مريم الحمادي", nameEn: "Maryam Al Hammadi", departmentId: "dept-cs", phone: "+971 6 538 2110", email: "maryam.h@sdi.ae", status: "Active", notes: "مشرفة كاونتر التسجيل" },
-          { id: "emp-103", employeeNumber: "SDI-1088", nameAr: "سلطان القاسمي", nameEn: "Sultan Al Qasimi", departmentId: "dept-exam", phone: "+971 6 538 2200", email: "sultan.q@sdi.ae", status: "Active", notes: "مسؤول قاعة الفحص النظري الذكي" },
-          { id: "emp-104", employeeNumber: "SDI-1102", nameAr: "فاطمة الزعابي", nameEn: "Fatima Al Zaabi", departmentId: "dept-admin", phone: "+971 6 538 2300", email: "fatima.z@sdi.ae", status: "Active", notes: "مسؤولة الموارد البشرية والشؤون الإدارية" },
-          { id: "emp-105", employeeNumber: "SDI-1140", nameAr: "عائشة النقبي", nameEn: "Aisha Al Naqbi", departmentId: "dept-cs", phone: "+971 9 238 1111", email: "aisha.n@sdi.ae", status: "Active", notes: "كاونتر التسجيل الرئيسي - خورفكان" },
-          { id: "emp-106", employeeNumber: "SDI-1180", nameAr: "خالد الطنيجي", nameEn: "Khalid Al Tunaiji", departmentId: "dept-fleet", phone: "+971 6 882 3344", email: "khalid.t@sdi.ae", status: "Active", notes: "مشرف فحص سيارات الذيد" }
+          { id: "emp-101", employeeNumber: "SDI-1021", nameAr: "م. أحمد الشامسي", nameEn: "Eng. Ahmed Al Shamsi", departmentId: "dept-it", department_id: "dept-it", officeId: "off-it-01", office_id: "off-it-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤول النظم والدعم الفني", phone: "+971 6 538 2000", email: "ahmed.shamsi@sdi.ae", status: "Active", notes: "مسؤول النظم والدعم الفني" },
+          { id: "emp-102", employeeNumber: "SDI-1045", nameAr: "مريم الحمادي", nameEn: "Maryam Al Hammadi", departmentId: "dept-cs", department_id: "dept-cs", officeId: "off-cs-01", office_id: "off-cs-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مشرفة كاونتر التسجيل", phone: "+971 6 538 2110", email: "maryam.h@sdi.ae", status: "Active", notes: "مشرفة كاونتر التسجيل" },
+          { id: "emp-103", employeeNumber: "SDI-1088", nameAr: "سلطان القاسمي", nameEn: "Sultan Al Qasimi", departmentId: "dept-exam", department_id: "dept-exam", officeId: "off-exam-01", office_id: "off-exam-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤول قاعة الفحص النظري الذكي", phone: "+971 6 538 2200", email: "sultan.q@sdi.ae", status: "Active", notes: "مسؤول قاعة الفحص النظري الذكي" },
+          { id: "emp-104", employeeNumber: "SDI-1102", nameAr: "فاطمة الزعابي", nameEn: "Fatima Al Zaabi", departmentId: "dept-admin", department_id: "dept-admin", officeId: "off-admin-01", office_id: "off-admin-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤولة الموارد البشرية والشؤون الإدارية", phone: "+971 6 538 2300", email: "fatima.z@sdi.ae", status: "Active", notes: "مسؤولة الموارد البشرية والشؤون الإدارية" },
+          { id: "emp-105", employeeNumber: "SDI-1140", nameAr: "عائشة النقبي", nameEn: "Aisha Al Naqbi", departmentId: "dept-cs", department_id: "dept-cs", officeId: "off-khk-01", office_id: "off-khk-01", locationId: "loc-br-khk", location_id: "loc-br-khk", jobTitle: "كاونتر التسجيل الرئيسي - خورفكان", phone: "+971 9 238 1111", email: "aisha.n@sdi.ae", status: "Active", notes: "كاونتر التسجيل الرئيسي - خورفكان" },
+          { id: "emp-106", employeeNumber: "SDI-1180", nameAr: "خالد الطنيجي", nameEn: "Khalid Al Tunaiji", departmentId: "dept-fleet", department_id: "dept-fleet", officeId: "off-dhd-01", office_id: "off-dhd-01", locationId: "loc-br-dhd", location_id: "loc-br-dhd", jobTitle: "مشرف فحص سيارات الذيد", phone: "+971 6 882 3344", email: "khalid.t@sdi.ae", status: "Active", notes: "مشرف فحص سيارات الذيد" }
         ];
         for (const e of defaultEmployees) await this.put("employees", e);
+      }
+    } else {
+      const existingEmployees = await this.getAll("employees");
+      for (const e of existingEmployees) {
+        let changed = false;
+        if (!e.officeId && !e.office_id) {
+          if (e.id === "emp-101" || e.departmentId === "dept-it") {
+            e.officeId = "off-it-01"; e.office_id = "off-it-01";
+            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+            changed = true;
+          } else if (e.id === "emp-102") {
+            e.officeId = "off-cs-01"; e.office_id = "off-cs-01";
+            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+            changed = true;
+          } else if (e.id === "emp-103") {
+            e.officeId = "off-exam-01"; e.office_id = "off-exam-01";
+            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+            changed = true;
+          } else if (e.id === "emp-104") {
+            e.officeId = "off-admin-01"; e.office_id = "off-admin-01";
+            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+            changed = true;
+          } else if (e.id === "emp-105") {
+            e.officeId = "off-khk-01"; e.office_id = "off-khk-01";
+            e.locationId = e.locationId || "loc-br-khk"; e.location_id = e.locationId;
+            changed = true;
+          } else if (e.id === "emp-106") {
+            e.officeId = "off-dhd-01"; e.office_id = "off-dhd-01";
+            e.locationId = e.locationId || "loc-br-dhd"; e.location_id = e.locationId;
+            changed = true;
+          }
+        }
+        if (changed) await this.put("employees", e);
       }
     }
 

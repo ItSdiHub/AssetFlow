@@ -336,48 +336,162 @@ class ProjectManagementController {
     return html;
   }
 
+  refreshSelectCombobox(selectEl) {
+    if (!selectEl) return;
+    if (typeof selectEl._syncComboboxTrigger === "function") {
+      selectEl._syncComboboxTrigger();
+    }
+    if (typeof selectEl._populateComboboxOptions === "function") {
+      selectEl._populateComboboxOptions("");
+    }
+    const wrapper = selectEl.closest(".combobox-wrapper");
+    if (wrapper) {
+      const searchInput = wrapper.querySelector(".combobox-search-input");
+      if (searchInput) searchInput.value = "";
+      const clearBtn = wrapper.querySelector(".combobox-search-clear");
+      if (clearBtn) clearBtn.style.display = "none";
+    }
+  }
+
   async handleLocationChange(locId) {
     const lang = AppState.lang;
-    const [departments, employees] = await Promise.all([
-      db.getAll("departments"),
-      db.getAll("employees")
-    ]);
-
     const deptSelect = document.getElementById("formPrjDepartment");
+    const officeSelect = document.getElementById("formPrjOffice");
+    const empSelect = document.getElementById("formPrjResponsibleEmp");
+
+    // 1. Bidirectional Safety: Clear child selections immediately
+    if (deptSelect) deptSelect.value = "";
+    if (officeSelect) officeSelect.value = "";
+    if (empSelect) empSelect.value = "";
+
+    // 2. Reload Department options strictly filtered by Location (Location -> Department)
     if (deptSelect) {
-      const filteredDepts = locId ? departments.filter(d => d.locationId === locId && d.active !== false) : departments.filter(d => d.active !== false);
-      deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
-        filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+      if (locId) {
+        const departments = await db.getAll("departments");
+        const filteredDepts = departments.filter(d => 
+          (d.locationId === locId || d.location_id === locId) && d.active !== false
+        );
+
+        if (filteredDepts.length > 0) {
+          deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
+            filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)} ${d.code ? `(${d.code})` : ""}</option>`).join("");
+        } else {
+          deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا توجد أقسام مسجلة لهذا الموقع" : "No departments for this location"} --</option>`;
+        }
+      } else {
+        deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع أولاً" : "Select Location First"} --</option>`;
+      }
+      this.refreshSelectCombobox(deptSelect);
     }
 
-    const empSelect = document.getElementById("formPrjResponsibleEmp");
+    // 3. Clear and reset Office options
+    if (officeSelect) {
+      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم أولاً" : "Select Department First"} --</option>`;
+      this.refreshSelectCombobox(officeSelect);
+    }
+
+    // 4. Clear and reset Employee options
     if (empSelect) {
-      const filteredEmps = locId ? employees.filter(e => e.locationId === locId && e.status === "Active") : employees.filter(e => e.status === "Active");
-      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
-        filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}</option>`).join("");
+      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+      this.refreshSelectCombobox(empSelect);
     }
   }
 
   async handleDeptChange(deptId) {
     const lang = AppState.lang;
-    const employees = await db.getAll("employees");
-
+    const locSelect = document.getElementById("formPrjLocation");
+    const deptSelect = document.getElementById("formPrjDepartment");
+    const officeSelect = document.getElementById("formPrjOffice");
     const empSelect = document.getElementById("formPrjResponsibleEmp");
-    if (empSelect && deptId) {
-      const filteredEmps = employees.filter(e => e.departmentId === deptId && e.status === "Active");
-      if (filteredEmps.length > 0) {
-        empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
-          filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}</option>`).join("");
+
+    const locId = locSelect ? locSelect.value : "";
+
+    // 1. Bidirectional Safety: Clear child selections immediately
+    if (officeSelect) officeSelect.value = "";
+    if (empSelect) empSelect.value = "";
+
+    // 2. Reload Office options strictly where:
+    // office.department_id = selectedDepartmentId AND office.location_id = selectedLocationId
+    if (officeSelect) {
+      if (deptId && locId) {
+        const offices = await db.getAll("offices");
+        const filteredOffices = offices.filter(o => {
+          const matchDept = (o.department_id === deptId || o.departmentId === deptId);
+          const matchLoc = (o.location_id === locId || o.locationId === locId);
+          const active = o.status !== "Inactive";
+          return matchDept && matchLoc && active;
+        });
+
+        if (filteredOffices.length > 0) {
+          officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
+            filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
+        } else {
+          officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا توجد مكاتب مسجلة لهذا القسم والموقع" : "No offices for this department & location"} --</option>`;
+        }
+      } else {
+        officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? (locId ? "اختر القسم أولاً" : "اختر الموقع أولاً") : (locId ? "Select Department First" : "Select Location First")} --</option>`;
       }
+      this.refreshSelectCombobox(officeSelect);
+    }
+
+    // 3. Clear and reset Employee options
+    if (empSelect) {
+      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+      this.refreshSelectCombobox(empSelect);
+    }
+  }
+
+  async handleOfficeChange(officeId) {
+    const lang = AppState.lang;
+    const locSelect = document.getElementById("formPrjLocation");
+    const deptSelect = document.getElementById("formPrjDepartment");
+    const empSelect = document.getElementById("formPrjResponsibleEmp");
+
+    const locId = locSelect ? locSelect.value : "";
+    const deptId = deptSelect ? deptSelect.value : "";
+
+    // 1. Bidirectional Safety: Clear child selection immediately
+    if (empSelect) empSelect.value = "";
+
+    // 2. Reload Employee options strictly where:
+    // employees.office_id = selectedOfficeId AND compatible with location & department
+    if (empSelect) {
+      if (officeId) {
+        const employees = await db.getAll("employees");
+        const filteredEmps = employees.filter(e => {
+          if (e.status && e.status !== "Active") return false;
+          // Must belong to selected office
+          const empOffice = e.office_id || e.officeId;
+          if (empOffice !== officeId) return false;
+          // Must be compatible with department if set
+          const empDept = e.department_id || e.departmentId;
+          if (deptId && empDept && empDept !== deptId) return false;
+          // Must be compatible with location if set
+          const empLoc = e.location_id || e.locationId;
+          if (locId && empLoc && empLoc !== locId) return false;
+          return true;
+        });
+
+        if (filteredEmps.length > 0) {
+          empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
+            filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
+        } else {
+          empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا يوجد موظفون مسجلون في هذا المكتب" : "No employees registered in this office"} --</option>`;
+        }
+      } else {
+        empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+      }
+      this.refreshSelectCombobox(empSelect);
     }
   }
 
   async openProjectModal(projectId = null) {
     const lang = AppState.lang;
-    const [contractors, locations, departments, employees] = await Promise.all([
+    const [contractors, locations, departments, offices, employees] = await Promise.all([
       db.getAll("contractors"),
       db.getAll("locations"),
       db.getAll("departments"),
+      db.getAll("offices"),
       db.getAll("employees")
     ]);
 
@@ -389,31 +503,24 @@ class ProjectManagementController {
     }
 
     const locSelect = document.getElementById("formPrjLocation");
+    const deptSelect = document.getElementById("formPrjDepartment");
+    const officeSelect = document.getElementById("formPrjOffice");
+    const empSelect = document.getElementById("formPrjResponsibleEmp");
+
+    // Populate Locations (Root of hierarchy)
+    const activeLocs = locations.filter(l => l.active !== false);
     if (locSelect) {
       locSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع (إلزامي)" : "Select Location (Mandatory)"} --</option>` +
-        locations.filter(l => l.active !== false)
-          .map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)}</option>`).join("");
-    }
-
-    const deptSelect = document.getElementById("formPrjDepartment");
-    if (deptSelect) {
-      deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
-        departments.filter(d => d.active !== false)
-          .map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
-    }
-
-    const empSelect = document.getElementById("formPrjResponsibleEmp");
-    if (empSelect) {
-      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
-        employees.filter(e => e.status === "Active")
-          .map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}</option>`).join("");
+        activeLocs.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} ${l.code ? `(${l.code})` : ""}</option>`).join("");
     }
 
     document.getElementById("formProjectId").value = projectId || "";
 
     if (projectId) {
+      // EDIT MODE
       const p = await db.getById("projects", projectId);
       if (!p) return;
+
       document.getElementById("formPrjNumber").value = p.projectNo || "";
       document.getElementById("formPrjNameAr").value = p.nameAr || "";
       document.getElementById("formPrjNameEn").value = p.nameEn || "";
@@ -421,20 +528,148 @@ class ProjectManagementController {
       document.getElementById("formPrjStartDate").value = p.startDate || "";
       document.getElementById("formPrjPlannedEndDate").value = p.plannedEndDate || "";
       document.getElementById("formPrjActualEndDate").value = p.actualEndDate || "";
-      document.getElementById("formPrjContractor").value = p.contractorId || "";
-      document.getElementById("formPrjLocation").value = p.locationId || "";
-      if (deptSelect) deptSelect.value = p.departmentId || "";
-      const officeSelect = document.getElementById("formPrjOffice");
-      if (officeSelect) officeSelect.value = p.office || p.officeId || "";
-      document.getElementById("formPrjResponsibleEmp").value = p.responsibleEmployeeId || "";
+      if (contractorSelect) contractorSelect.value = p.contractorId || "";
       document.getElementById("formPrjStatus").value = p.status || "In Progress";
       document.getElementById("formPrjRemarks").value = p.remarks || "";
+
+      // Dependency order: Location -> Department -> Office -> Employee
+      const pLocId = p.locationId || "";
+      const pDeptId = p.departmentId || "";
+      const pOfficeId = p.office || p.officeId || "";
+      const pEmpId = p.responsibleEmployeeId || "";
+
+      // 1. Location
+      if (locSelect) {
+        if (pLocId && !activeLocs.some(l => l.id === pLocId)) {
+          const oldLoc = locations.find(l => l.id === pLocId);
+          const locName = oldLoc ? (lang === "ar" ? oldLoc.nameAr : (oldLoc.nameEn || oldLoc.nameAr)) : pLocId;
+          locSelect.insertAdjacentHTML("beforeend", `<option value="${pLocId}">${locName}</option>`);
+        }
+        locSelect.value = pLocId;
+      }
+
+      // 2. Department
+      let validDepts = [];
+      if (pLocId) {
+        validDepts = departments.filter(d => (d.locationId === pLocId || d.location_id === pLocId) && d.active !== false);
+      }
+
+      if (deptSelect) {
+        if (pLocId) {
+          let deptOptionsHtml = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
+            validDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)} ${d.code ? `(${d.code})` : ""}</option>`).join("");
+          
+          const isDeptConsistent = pDeptId && validDepts.some(d => d.id === pDeptId);
+          if (pDeptId && !isDeptConsistent) {
+            // Legacy / invalid relationship: show unresolved/invalid in UI without inventing correction
+            const dObj = departments.find(d => d.id === pDeptId);
+            const dName = dObj ? (lang === "ar" ? dObj.nameAr : (dObj.nameEn || dObj.nameAr)) : pDeptId;
+            deptOptionsHtml += `<option value="${pDeptId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'غير مطابق للموقع' : 'Inconsistent with Location'}] ${dName}</option>`;
+          }
+          deptSelect.innerHTML = deptOptionsHtml;
+          deptSelect.value = pDeptId;
+        } else {
+          if (pDeptId) {
+            const dObj = departments.find(d => d.id === pDeptId);
+            const dName = dObj ? (lang === "ar" ? dObj.nameAr : (dObj.nameEn || dObj.nameAr)) : pDeptId;
+            deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع أولاً" : "Select Location First"} --</option>` +
+              `<option value="${pDeptId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'قسم بدون موقع' : 'Department without Location'}] ${dName}</option>`;
+            deptSelect.value = pDeptId;
+          } else {
+            deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع أولاً" : "Select Location First"} --</option>`;
+            deptSelect.value = "";
+          }
+        }
+      }
+
+      // 3. Office
+      const curDeptId = deptSelect ? deptSelect.value : "";
+      let validOffices = [];
+      if (pLocId && curDeptId) {
+        validOffices = offices.filter(o => 
+          (o.department_id === curDeptId || o.departmentId === curDeptId) &&
+          (o.location_id === pLocId || o.locationId === pLocId) &&
+          o.status !== "Inactive"
+        );
+      }
+
+      if (officeSelect) {
+        if (pLocId && curDeptId) {
+          let offOptionsHtml = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
+            validOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
+          
+          const isOffConsistent = pOfficeId && validOffices.some(o => o.id === pOfficeId);
+          if (pOfficeId && !isOffConsistent) {
+            const oObj = offices.find(o => o.id === pOfficeId);
+            const oName = oObj ? (lang === "ar" ? oObj.nameAr : (oObj.nameEn || oObj.nameAr)) : pOfficeId;
+            offOptionsHtml += `<option value="${pOfficeId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'مكتب غير مطابق' : 'Inconsistent Office'}] ${oName}</option>`;
+          }
+          officeSelect.innerHTML = offOptionsHtml;
+          officeSelect.value = pOfficeId;
+        } else {
+          if (pOfficeId) {
+            const oObj = offices.find(o => o.id === pOfficeId);
+            const oName = oObj ? (lang === "ar" ? oObj.nameAr : (oObj.nameEn || oObj.nameAr)) : pOfficeId;
+            officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم أولاً" : "Select Department First"} --</option>` +
+              `<option value="${pOfficeId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'مكتب غير مطابق' : 'Inconsistent Office'}] ${oName}</option>`;
+            officeSelect.value = pOfficeId;
+          } else {
+            officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم أولاً" : "Select Department First"} --</option>`;
+            officeSelect.value = "";
+          }
+        }
+      }
+
+      // 4. Employee
+      const curOfficeId = officeSelect ? officeSelect.value : "";
+      let validEmps = [];
+      if (curOfficeId) {
+        validEmps = employees.filter(e => {
+          if (e.status && e.status !== "Active") return false;
+          const empOffice = e.office_id || e.officeId;
+          if (empOffice !== curOfficeId) return false;
+          const empDept = e.department_id || e.departmentId;
+          if (curDeptId && empDept && empDept !== curDeptId) return false;
+          const empLoc = e.location_id || e.locationId;
+          if (pLocId && empLoc && empLoc !== pLocId) return false;
+          return true;
+        });
+      }
+
+      if (empSelect) {
+        if (curOfficeId) {
+          let empOptionsHtml = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
+            validEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
+          
+          const isEmpConsistent = pEmpId && validEmps.some(e => e.id === pEmpId);
+          if (pEmpId && !isEmpConsistent) {
+            const eObj = employees.find(e => e.id === pEmpId);
+            const eName = eObj ? (lang === "ar" ? eObj.nameAr : (eObj.nameEn || eObj.nameAr)) : pEmpId;
+            empOptionsHtml += `<option value="${pEmpId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'موظف غير مطابق للمكتب' : 'Inconsistent Employee'}] ${eName}</option>`;
+          }
+          empSelect.innerHTML = empOptionsHtml;
+          empSelect.value = pEmpId;
+        } else {
+          if (pEmpId) {
+            const eObj = employees.find(e => e.id === pEmpId);
+            const eName = eObj ? (lang === "ar" ? eObj.nameAr : (eObj.nameEn || eObj.nameAr)) : pEmpId;
+            empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>` +
+              `<option value="${pEmpId}" class="text-danger" style="color: #ef4444;" selected>⚠️ [${lang === 'ar' ? 'موظف بدون مكتب مطابق' : 'Employee without Office'}] ${eName}</option>`;
+            empSelect.value = pEmpId;
+          } else {
+            empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+            empSelect.value = "";
+          }
+        }
+      }
 
       const allTasks = await db.getAll("projectTasks");
       const projectTasks = allTasks.filter(t => t.projectId === projectId);
       const computedProg = this.calculateProjectProgress(p, projectTasks);
       this.updateProjectModalProgressUI(computedProg, p.status || "In Progress", projectTasks.length);
+
     } else {
+      // NEW PROJECT MODE
       const nextNo = await db.getNextSequentialId("projects");
       document.getElementById("formPrjNumber").value = nextNo;
       document.getElementById("formPrjNameAr").value = "";
@@ -443,18 +678,34 @@ class ProjectManagementController {
       document.getElementById("formPrjStartDate").value = new Date().toISOString().slice(0, 10);
       document.getElementById("formPrjPlannedEndDate").value = "";
       document.getElementById("formPrjActualEndDate").value = "";
-      document.getElementById("formPrjContractor").value = "";
+      if (contractorSelect) contractorSelect.value = "";
       document.getElementById("formPrjLocation").value = "";
-      if (deptSelect) deptSelect.value = "";
-      const officeSelect = document.getElementById("formPrjOffice");
-      if (officeSelect) officeSelect.value = "";
-      document.getElementById("formPrjResponsibleEmp").value = AppState.currentUser?.employeeId || "";
+      
+      if (deptSelect) {
+        deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع أولاً" : "Select Location First"} --</option>`;
+        deptSelect.value = "";
+      }
+      if (officeSelect) {
+        officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم أولاً" : "Select Department First"} --</option>`;
+        officeSelect.value = "";
+      }
+      if (empSelect) {
+        empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+        empSelect.value = "";
+      }
       document.getElementById("formPrjStatus").value = "Planning";
       document.getElementById("formPrjRemarks").value = "";
 
       const initialProg = this.calculateProjectProgress({ status: "Planning" }, []);
       this.updateProjectModalProgressUI(initialProg, "Planning", 0);
     }
+
+    // Refresh searchable combobox UI for all cascading elements
+    this.refreshSelectCombobox(contractorSelect);
+    this.refreshSelectCombobox(locSelect);
+    this.refreshSelectCombobox(deptSelect);
+    this.refreshSelectCombobox(officeSelect);
+    this.refreshSelectCombobox(empSelect);
 
     // Attach real-time status change listener to auto-calculate progress immediately
     const statusSelect = document.getElementById("formPrjStatus");
@@ -577,11 +828,65 @@ class ProjectManagementController {
       return;
     }
 
-    // Relationship Validation: Department -> Location
-    if (departmentId && locationId) {
+    // 1. Mandatory Location Validation (Location is root of hierarchy)
+    if (!locationId) {
+      App.showToast(AppState.lang === "ar" ? "يرجى اختيار موقع المشروع (إلزامي)" : "Please select project location (mandatory)", "error");
+      return;
+    }
+
+    // 2. Authoritative Relationship Validation: Location -> Department
+    if (departmentId) {
       const deptObj = await db.getById("departments", departmentId);
-      if (deptObj && deptObj.locationId && deptObj.locationId !== locationId) {
-        App.showToast(AppState.lang === "ar" ? `خطأ: القسم المحدد غير تابع للموقع المختار للمشروع.` : `Error: Department is not associated with selected location.`, "error");
+      const deptLoc = deptObj ? (deptObj.location_id || deptObj.locationId) : null;
+      if (!deptObj || (deptLoc && deptLoc !== locationId)) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: القسم المحدد غير تابع للموقع المختار للمشروع." : "Error: Selected department does not belong to the selected location.", "error");
+        return;
+      }
+    }
+
+    // 3. Authoritative Relationship Validation: Department -> Office
+    if (office) {
+      if (!departmentId) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: لا يمكن اختيار مكتب دون تحديد القسم والموقع." : "Error: Cannot select an office without specifying department and location.", "error");
+        return;
+      }
+      const offObj = await db.getById("offices", office);
+      if (!offObj) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: المكتب المحدد غير مسجل في قاعدة البيانات." : "Error: Selected office is not registered in the database.", "error");
+        return;
+      }
+      const offLoc = offObj.location_id || offObj.locationId;
+      const offDept = offObj.department_id || offObj.departmentId;
+      if ((offLoc && offLoc !== locationId) || (offDept && offDept !== departmentId)) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: المكتب المحدد غير تابع للقسم والموقع المختارين." : "Error: Selected office does not belong to the selected department and location.", "error");
+        return;
+      }
+    }
+
+    // 4. Authoritative Relationship Validation: Office -> Employee
+    if (responsibleEmployeeId) {
+      if (!office) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: لا يمكن تعيين مسؤول المشروع دون اختيار المكتب التابع له." : "Error: Cannot assign responsible employee without selecting their office.", "error");
+        return;
+      }
+      const empObj = await db.getById("employees", responsibleEmployeeId);
+      if (!empObj) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: الموظف المحدد غير موجود في قاعدة البيانات." : "Error: Selected employee is not in the database.", "error");
+        return;
+      }
+      const empOff = empObj.office_id || empObj.officeId;
+      if (!empOff || empOff !== office) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: الموظف المحدد غير تابع للمكتب المختار." : "Error: Selected employee does not belong to the selected office.", "error");
+        return;
+      }
+      const empDept = empObj.department_id || empObj.departmentId;
+      if (empDept && departmentId && empDept !== departmentId) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: قسم الموظف غير متطابق مع قسم المشروع." : "Error: Employee department does not match project department.", "error");
+        return;
+      }
+      const empLoc = empObj.location_id || empObj.locationId;
+      if (empLoc && locationId && empLoc !== locationId) {
+        App.showToast(AppState.lang === "ar" ? "خطأ: موقع الموظف غير متطابق مع موقع المشروع." : "Error: Employee location does not match project location.", "error");
         return;
       }
     }

@@ -3196,7 +3196,7 @@
 
             <div class="form-group">
               <label data-i18n="office">مكتب المشروع (اختياري)</label>
-              <select id="formPrjOffice" class="form-control">
+              <select id="formPrjOffice" class="form-control" onchange="ProjectManager.handleOfficeChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
