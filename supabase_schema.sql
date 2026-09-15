@@ -455,7 +455,7 @@ DECLARE
     t text;
 BEGIN
     FOR t IN 
-        SELECT unnest(ARRAY['departments', 'locations', 'offices', 'asset_types', 'contractors', 'projects', 'project_tasks', 'licenses']) 
+        SELECT unnest(ARRAY['departments', 'locations', 'asset_types', 'contractors', 'projects', 'project_tasks', 'licenses']) 
     LOOP
         EXECUTE format('DROP POLICY IF EXISTS "Auth_Read_%I" ON public.%I', t, t);
         EXECUTE format('CREATE POLICY "Auth_Read_%I" ON public.%I FOR SELECT TO authenticated USING (true)', t, t);
@@ -470,6 +470,25 @@ BEGIN
         EXECUTE format('CREATE POLICY "Admin_IT_Delete_%I" ON public.%I FOR DELETE TO authenticated USING (public.get_auth_role() IN (''Administrator'', ''IT User''))', t, t);
     END LOOP;
 END $$;
+
+-- Offices: Explicit restricted access
+ALTER TABLE public.offices ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Auth_Read_offices" ON public.offices;
+CREATE POLICY "Auth_Read_offices" ON public.offices FOR SELECT TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer'));
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_offices" ON public.offices;
+CREATE POLICY "Admin_IT_Insert_offices" ON public.offices FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_offices" ON public.offices;
+CREATE POLICY "Admin_IT_Update_offices" ON public.offices FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_offices" ON public.offices;
+CREATE POLICY "Admin_IT_Delete_offices" ON public.offices FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
 
 -- ------------------------------------------------------------------------
 -- 3. public.employees
