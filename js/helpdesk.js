@@ -37,10 +37,13 @@ class HelpdeskManager {
     const requests = await db.getAll("helpdeskRequests");
     const employees = await db.getAll("employees");
     const assets = await db.getAll("assets");
+    const departments = await db.getAll("departments");
     const lang = AppState.lang;
 
     const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+    const empObjMap = Object.fromEntries(employees.map(e => [e.id, e]));
     const assetMap = Object.fromEntries(assets.map(a => [a.id, a]));
+    const deptMap = Object.fromEntries(departments.map(d => [d.id, typeof getEntityName === "function" ? getEntityName(d, lang) : (lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr))]));
 
     // 1. KPI Counters
     const countNew = requests.filter(r => r.status === "New").length;
@@ -89,7 +92,7 @@ class HelpdeskManager {
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="8" class="text-center py-5">
+          <td colspan="9" class="text-center py-5">
             <div class="empty-state">
               <i class="fas fa-headset empty-icon"></i>
               <h4>${lang === "ar" ? "لا توجد طلبات دعم فني مطابقة" : "No matching support requests"}</h4>
@@ -105,6 +108,21 @@ class HelpdeskManager {
       const empName = req.employeeId ? (empMap[req.employeeId] || (lang === "ar" ? "موظف غير معروف" : "Unknown Employee")) : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee");
       const asset = assetMap[req.assetId];
       const assetDisplay = asset ? `${asset.assetId} - ${asset.brand} ${asset.model}` : (lang === "ar" ? "طلب عام / بدون جهاز" : "General / No device");
+
+      // Resolve Department using existing relationships
+      let deptName = "-";
+      if (req.departmentId) {
+        deptName = deptMap[req.departmentId] || req.departmentId;
+      } else if (req.employeeId && empObjMap[req.employeeId] && empObjMap[req.employeeId].departmentId) {
+        const dId = empObjMap[req.employeeId].departmentId;
+        deptName = deptMap[dId] || dId;
+      } else if (req.assetId && asset && asset.departmentId) {
+        const dId = asset.departmentId;
+        deptName = deptMap[dId] || dId;
+      } else if (req.department) {
+        deptName = typeof req.department === "object" ? (typeof getEntityName === "function" ? getEntityName(req.department, lang) : (req.department.nameAr || req.department.nameEn || "-")) : req.department;
+      }
+
       const statusBadge = this.getStatusBadge(req.status);
       const msgCount = (req.messages || []).length;
       const hasMaint = !!req.maintenanceId;
@@ -121,6 +139,9 @@ class HelpdeskManager {
           </td>
           <td>
             <div class="text-xs ${asset ? 'text-primary' : 'text-muted'}">${assetDisplay}</div>
+          </td>
+          <td>
+            <div class="text-sm">${deptName}</div>
           </td>
           <td><span class="badge badge-secondary">${this.formatType(req.requestType)}</span></td>
           <td>

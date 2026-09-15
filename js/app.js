@@ -812,34 +812,32 @@ class Application {
       if (el) {
         if (key === filter) {
           // Highlight active box
-          el.style.background = "var(--surface-color)";
           if (key === "expiring_7d") {
             el.style.borderColor = "var(--accent-red)";
-            el.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.2)";
+            el.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.25)";
           } else if (key === "expiring_30d") {
-            el.style.borderColor = "var(--accent-amber)";
-            el.style.boxShadow = "0 0 0 3px rgba(245, 158, 11, 0.2)";
+            el.style.borderColor = "#f97316";
+            el.style.boxShadow = "0 0 0 3px rgba(249, 115, 22, 0.25)";
           } else if (key === "expired") {
             el.style.borderColor = "var(--text-secondary)";
-            el.style.boxShadow = "0 0 0 3px rgba(148, 163, 184, 0.2)";
+            el.style.boxShadow = "0 0 0 3px rgba(148, 163, 184, 0.25)";
           } else {
-            el.style.borderColor = "var(--accent-green)";
-            el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.2)";
+            el.style.borderColor = "#0284c7";
+            el.style.boxShadow = "0 0 0 3px rgba(14, 165, 233, 0.25)";
           }
         } else {
           // Reset inactive box
-          el.style.background = "var(--surface-color)";
-          el.style.borderColor = "var(--border-color)";
-          el.style.boxShadow = "none";
+          el.style.borderColor = key === "expiring_30d" ? "#fed7aa" : (key === "valid" ? "#bae6fd" : (key === "expiring_7d" ? "#fecaca" : "#e2e8f0"));
+          el.style.boxShadow = "0 2px 6px rgba(14, 165, 233, 0.06)";
         }
       }
     });
 
     if (filteredItems.length === 0) {
       warrantyAlertsBox.innerHTML = `
-        <div class="text-xs text-muted p-3 text-center rounded border" style="background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.2);">
-          <i class="fas fa-check-circle text-success me-1" style="font-size: 15px;"></i>
-          <span class="font-bold text-success">${lang === 'ar' ? 'لا توجد تنبيهات لهذه الفئة' : 'No alerts in this category'}</span>
+        <div class="text-xs p-3 text-center rounded border" style="background: #ffffff; border-color: #bae6fd; box-shadow: 0 2px 6px rgba(14, 165, 233, 0.06);">
+          <i class="fas fa-check-circle me-1" style="font-size: 15px; color: #0284c7;"></i>
+          <span class="font-bold" style="color: #0369a1;">${lang === 'ar' ? 'لا توجد تنبيهات لهذه الفئة' : 'No alerts in this category'}</span>
         </div>
       `;
     } else {
@@ -864,7 +862,7 @@ class Application {
         const isToday = item.isToday;
 
         let badgeText = "";
-        let badgeClass = "badge-warning";
+        let badgeStyle = "";
         let isExpired = diffDays < 0;
 
         if (isExpired) {
@@ -878,10 +876,10 @@ class Application {
           } else {
             badgeText = lang === "ar" ? `منتهي منذ ${absDays} يوم` : `Expired ${absDays} days ago`;
           }
-          badgeClass = "badge-danger";
+          badgeStyle = "background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;";
         } else if (filter === "valid") {
           badgeText = lang === "ar" ? `ساري المفعول (${diffDays} يوم متبقي)` : `Active (${diffDays} days left)`;
-          badgeClass = "badge-success";
+          badgeStyle = "background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;";
         } else {
           if (isToday) {
             badgeText = lang === "ar" ? "ينتهي اليوم!" : "Expires Today!";
@@ -897,16 +895,42 @@ class Application {
           if (isCritical && !isToday) {
             badgeText += lang === "ar" ? " (حرج)" : " (Critical)";
           }
-          badgeClass = isCritical ? "badge-danger" : "badge-warning";
+          badgeStyle = isCritical
+            ? "background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;"
+            : "background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;";
         }
 
         const borderStyle = isExpired
-          ? "background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.25);"
+          ? "background: #ffffff; border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 2px 8px rgba(239, 68, 68, 0.06);"
           : (filter === "valid"
-            ? "background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.25);"
+            ? "background: #ffffff; border-color: #bae6fd; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.08);"
             : (isCritical
-              ? "background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.35);"
-              : "background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.35);"));
+              ? "background: #ffffff; border-color: rgba(239, 68, 68, 0.35); box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);"
+              : "background: #ffffff; border-color: #fed7aa; box-shadow: 0 2px 8px rgba(249, 115, 22, 0.08);"));
+
+        const iconBg = isExpired
+          ? "#fef2f2"
+          : (filter === "valid"
+            ? "#f0f9ff"
+            : (isCritical ? "#fef2f2" : "#fff7ed"));
+
+        const iconBorder = isExpired
+          ? "#fecaca"
+          : (filter === "valid"
+            ? "#bae6fd"
+            : (isCritical ? "#fecaca" : "#fed7aa"));
+
+        const iconColor = isExpired
+          ? "#dc2626"
+          : (filter === "valid"
+            ? "#0284c7"
+            : (isCritical ? "#dc2626" : "#ea580c"));
+
+        const iconClass = isExpired
+          ? "fa-calendar-times"
+          : (filter === "valid"
+            ? "fa-shield-alt"
+            : (isCritical ? "fa-exclamation-triangle" : "fa-hourglass-half"));
 
         const typeName = typeMap[a.assetTypeId] || "";
         const deptName = deptMap[a.departmentId] || "";
@@ -914,27 +938,22 @@ class Application {
         const empName = empMap[a.currentEmployeeId] || "";
 
         wHtml += `
-          <div class="d-flex justify-between items-center p-3 rounded border" style="${borderStyle} flex-wrap: wrap; gap: 12px; transition: all 0.2s ease;">
-            <div class="d-flex items-center gap-3" style="flex: 1; min-width: 260px;">
-              <div style="width: 40px; height: 40px; border-radius: 8px; background: ${isExpired ? 'rgba(239, 68, 68, 0.12)' : (filter === 'valid' ? 'rgba(16, 185, 129, 0.12)' : (isCritical ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'))}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                <i class="fas ${isExpired ? 'fa-calendar-times text-danger' : (filter === 'valid' ? 'fa-shield-alt text-success' : (isCritical ? 'fa-exclamation-triangle text-danger' : 'fa-hourglass-half text-warning'))}" style="font-size: 18px;"></i>
+          <div class="d-flex justify-between items-center p-3 rounded border warranty-alert-item" style="${borderStyle} flex-wrap: wrap; gap: 12px; transition: all 0.2s ease;">
+            <div style="flex: 1; min-width: 260px;">
+              <div class="d-flex items-center gap-2 flex-wrap">
+                <strong class="text-sm font-bold" style="cursor: pointer; color: #0284c7;" onclick="AssetManager.openDetailsModal('${a.id}')" title="${lang === 'ar' ? 'عرض تفاصيل الأصل' : 'View asset details'}">${a.assetId}</strong>
+                <span class="text-xs text-muted">&bull;</span>
+                <span class="text-xs font-bold" style="color: #1e293b;">${a.brand || ""} ${a.model || ""}</span>
+                ${typeName ? `<span class="badge text-xs" style="background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;">${typeName}</span>` : ""}
+                <span class="badge text-xs font-bold" style="${badgeStyle}">${badgeText}</span>
               </div>
-              <div>
-                <div class="d-flex items-center gap-2 flex-wrap">
-                  <strong class="text-sm font-bold" style="cursor: pointer; color: var(--text-primary);" onclick="AssetManager.openDetailsModal('${a.id}')" title="${lang === 'ar' ? 'عرض تفاصيل الأصل' : 'View asset details'}">${a.assetId}</strong>
-                  <span class="text-xs text-muted">&bull;</span>
-                  <span class="text-xs font-bold">${a.brand || ""} ${a.model || ""}</span>
-                  ${typeName ? `<span class="badge badge-secondary text-xs">${typeName}</span>` : ""}
-                  <span class="badge ${badgeClass} text-xs font-bold">${badgeText}</span>
-                </div>
-                <div class="text-xs text-muted d-flex items-center gap-3 flex-wrap mt-1">
-                  <span><i class="far fa-calendar-alt text-warning"></i> <strong>${lang === 'ar' ? 'تاريخ الانتهاء:' : 'Expiry Date:'}</strong> ${a.warrantyExpiry}</span>
-                  ${a.serial ? `<span><i class="fas fa-hashtag"></i> S/N: <code>${a.serial}</code></span>` : ""}
-                  ${locName ? `<span><i class="fas fa-map-marker-alt"></i> ${locName}</span>` : ""}
-                  ${deptName ? `<span><i class="fas fa-building"></i> ${deptName}</span>` : ""}
-                  ${empName ? `<span><i class="fas fa-user"></i> ${empName}</span>` : ""}
-                  ${a.supplier ? `<span><i class="fas fa-truck"></i> ${a.supplier}</span>` : ""}
-                </div>
+              <div class="text-xs text-muted d-flex items-center gap-3 flex-wrap mt-1">
+                <span><i class="far fa-calendar-alt" style="color: #ea580c;"></i> <strong>${lang === 'ar' ? 'تاريخ الانتهاء:' : 'Expiry Date:'}</strong> ${a.warrantyExpiry}</span>
+                ${a.serial ? `<span><i class="fas fa-hashtag"></i> S/N: <code>${a.serial}</code></span>` : ""}
+                ${locName ? `<span><i class="fas fa-map-marker-alt"></i> ${locName}</span>` : ""}
+                ${deptName ? `<span><i class="fas fa-building"></i> ${deptName}</span>` : ""}
+                ${empName ? `<span><i class="fas fa-user"></i> ${empName}</span>` : ""}
+                ${a.supplier ? `<span><i class="fas fa-truck"></i> ${a.supplier}</span>` : ""}
               </div>
             </div>
             <div class="d-flex items-center gap-2" style="flex-shrink: 0;">
@@ -1979,25 +1998,25 @@ class Application {
     };
 
     // -------------------------------------------------------------
-    // 1. Inventory Report (تقرير جرد الأصول - 15 Fields)
+    // 1. Inventory Report (تقرير جرد الأصول - 13 Fields)
     // -------------------------------------------------------------
     if (reportType === "inventory") {
       title = lang === "ar" ? "تقرير جرد الأصول" : "Asset Inventory Report";
       tableHeader = `
         <tr>
-          <th>Asset ID</th>
-          <th>${I18N[lang].assetType || "النوع"}</th>
-          <th>${I18N[lang].brand || "الشركة"}</th>
-          <th class="col-report-model">${I18N[lang].model || "الموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th>${I18N[lang].department || "القسم"}</th>
-          <th>${I18N[lang].location || "الموقع"}</th>
-          <th>${I18N[lang].assignedEmployee || "الموظف / العهدة"}</th>
-          <th>${I18N[lang].purchaseDate || "تاريخ الشراء"}</th>
-          <th>${I18N[lang].warrantyExpiry || "انتهاء الضمان"}</th>
-          <th>${I18N[lang].purchaseCost || "تكلفة الشراء (AED)"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-type">${I18N[lang].assetType || "النوع"}</th>
+          <th class="report-col-compact col-report-brand">${I18N[lang].brand || "الشركة"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "القسم"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].location || "الموقع"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].assignedEmployee || "الموظف / العهدة"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].purchaseDate || "تاريخ الشراء"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].warrantyExpiry || "انتهاء الضمان"}</th>
+          <th class="report-col-compact col-report-cost report-number">${I18N[lang].purchaseCost || "تكلفة الشراء (AED)"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2006,19 +2025,19 @@ class Application {
 
       rowsHtml = filtered.map(a => `
         <tr>
-          <td><strong>${a.assetId}</strong></td>
-          <td>${typeMap[a.assetTypeId] || "-"}</td>
-          <td>${a.brand || "-"}</td>
-          <td class="col-report-model">${a.model || "-"}</td>
-          <td><code>${a.serial || "-"}</code></td>
-          <td><span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span></td>
-          <td>${deptMap[a.departmentId] || "-"}</td>
-          <td>${locMap[a.locationId] || "-"}</td>
-          <td>${empMap[a.currentEmployeeId] || (lang === "ar" ? "غير مسند" : "Unassigned")}</td>
-          <td>${a.purchaseDate || "-"}</td>
-          <td>${a.warrantyExpiry || "-"}</td>
-          <td><strong>${a.purchaseCost ? parseFloat(a.purchaseCost).toLocaleString() : "0"}</strong></td>
-          <td class="col-report-notes">${a.notes || "-"}</td>
+          <td class="report-col-compact col-report-id"><strong>${a.assetId}</strong></td>
+          <td class="report-col-compact col-report-type">${typeMap[a.assetTypeId] || "-"}</td>
+          <td class="report-col-compact col-report-brand">${a.brand || "-"}</td>
+          <td class="report-col-medium col-report-model">${a.model || "-"}</td>
+          <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+          <td class="report-col-compact col-report-status"><span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span></td>
+          <td class="report-col-wide col-report-dept">${deptMap[a.departmentId] || "-"}</td>
+          <td class="report-col-wide col-report-loc">${locMap[a.locationId] || "-"}</td>
+          <td class="report-col-medium col-report-emp">${empMap[a.currentEmployeeId] || (lang === "ar" ? "غير مسند" : "Unassigned")}</td>
+          <td class="report-col-compact col-report-date">${a.purchaseDate || "-"}</td>
+          <td class="report-col-compact col-report-date">${a.warrantyExpiry || "-"}</td>
+          <td class="report-col-compact col-report-cost report-number"><strong>${a.purchaseCost ? parseFloat(a.purchaseCost).toLocaleString() : "0"}</strong></td>
+          <td class="report-col-wide col-report-notes">${a.notes || "-"}</td>
         </tr>
       `).join("");
 
@@ -2036,13 +2055,13 @@ class Application {
       title = lang === "ar" ? "تقرير الأصول وتوزيعها حسب الإدارات والأقسام" : "Assets by Department Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].department || "اسم الإدارة"}</th>
-          <th>${I18N[lang].thDeviceCount || "عدد الأجهزة"}</th>
-          <th>${I18N[lang].deviceTypesBreakdown || "أنواع الأجهزة"}</th>
-          <th>${I18N[lang].thAssignedCount || "الأجهزة المسندة"}</th>
-          <th>${I18N[lang].thAvailableCount || "الأجهزة المتوفرة"}</th>
-          <th>${I18N[lang].thUnderMaintCount || "تحت الصيانة"}</th>
-          <th>${I18N[lang].valuation || "إجمالي القيمة (AED)"}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "اسم الإدارة"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thDeviceCount || "عدد الأجهزة"}</th>
+          <th class="report-col-wide col-report-desc">${I18N[lang].deviceTypesBreakdown || "أنواع الأجهزة"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thAssignedCount || "الأجهزة المسندة"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thAvailableCount || "الأجهزة المتوفرة"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thUnderMaintCount || "تحت الصيانة"}</th>
+          <th class="report-col-medium col-report-cost report-number">${I18N[lang].valuation || "إجمالي القيمة (AED)"}</th>
         </tr>
       `;
 
@@ -2081,13 +2100,13 @@ class Application {
 
         return `
           <tr>
-            <td><strong><i class="fas fa-building text-primary"></i> ${deptName}</strong></td>
-            <td><strong>${count}</strong></td>
-            <td style="font-size: 11px;">${typesStr}</td>
-            <td><span class="badge badge-success">${assigned}</span></td>
-            <td><span class="badge badge-primary">${available}</span></td>
-            <td><span class="badge badge-danger">${maint}</span></td>
-            <td><strong>${value.toLocaleString()}</strong></td>
+            <td class="report-col-wide col-report-dept"><strong><i class="fas fa-building text-primary"></i> ${deptName}</strong></td>
+            <td class="report-col-compact col-report-number report-number"><strong>${count}</strong></td>
+            <td class="report-col-wide col-report-desc" style="font-size: 11px;">${typesStr}</td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-success">${assigned}</span></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-primary">${available}</span></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-danger">${maint}</span></td>
+            <td class="report-col-medium col-report-cost report-number"><strong>${value.toLocaleString()}</strong></td>
           </tr>
         `;
       }).join("");
@@ -2110,16 +2129,16 @@ class Application {
       title = lang === "ar" ? "تقرير الأصول والعهد المسندة حسب الموظف" : "Assets by Employee Custody Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].employee || "اسم الموظف"}</th>
-          <th>${lang === 'ar' ? 'الرقم الوظيفي' : 'Employee Number'}</th>
-          <th>${lang === 'ar' ? 'عدد العهد' : 'Custody Count'}</th>
-          <th>Asset ID</th>
-          <th>${I18N[lang].assetType || "نوع الجهاز"}</th>
-          <th class="col-report-model">${I18N[lang].brand || "الشركة"} & ${I18N[lang].model || "الموديل"}</th>
-          <th>${I18N[lang].serialNumber || "الرقم التسلسلي"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th>${I18N[lang].thCustodyDate || "تاريخ الاستلام"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].employee || "اسم الموظف"}</th>
+          <th class="report-col-compact col-report-id">${lang === 'ar' ? 'الرقم الوظيفي' : 'Employee Number'}</th>
+          <th class="report-col-compact col-report-number report-number">${lang === 'ar' ? 'عدد العهد' : 'Custody Count'}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-type">${I18N[lang].assetType || "نوع الجهاز"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].brand || "الشركة"} & ${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "الرقم التسلسلي"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].thCustodyDate || "تاريخ الاستلام"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2143,16 +2162,16 @@ class Application {
 
         return `
           <tr>
-            <td><strong><i class="fas fa-user-tie text-primary"></i> ${empName}</strong></td>
-            <td><code>${empNumber}</code></td>
-            <td><span class="badge badge-secondary">${totalEmpAssets}</span></td>
-            <td><strong>${a.assetId}</strong></td>
-            <td>${typeMap[a.assetTypeId] || "-"}</td>
-            <td class="col-report-model">${a.brand || ""} ${a.model || ""}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td><span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span></td>
-            <td>${receiptDate}</td>
-            <td class="col-report-notes">${a.notes || "-"}</td>
+            <td class="report-col-medium col-report-emp"><strong><i class="fas fa-user-tie text-primary"></i> ${empName}</strong></td>
+            <td class="report-col-compact col-report-id"><code>${empNumber}</code></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-secondary">${totalEmpAssets}</span></td>
+            <td class="report-col-compact col-report-id"><strong>${a.assetId}</strong></td>
+            <td class="report-col-compact col-report-type">${typeMap[a.assetTypeId] || "-"}</td>
+            <td class="report-col-medium col-report-model">${a.brand || ""} ${a.model || ""}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-compact col-report-status"><span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span></td>
+            <td class="report-col-compact col-report-date">${receiptDate}</td>
+            <td class="report-col-wide col-report-notes">${a.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2171,14 +2190,14 @@ class Application {
       title = lang === "ar" ? "تقرير الأصول وتوزيعها حسب المواقع والفروع" : "Assets by Location Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].location || "الموقع"}</th>
-          <th>${lang === 'ar' ? 'رمز الموقع' : 'Location Code'}</th>
-          <th>${I18N[lang].thDeviceCount || "عدد الأصول"}</th>
-          <th>${I18N[lang].deviceTypesBreakdown || "أنواع الأصول"}</th>
-          <th>${I18N[lang].thAssignedCount || "مسند"}</th>
-          <th>${I18N[lang].thAvailableCount || "متوفر"}</th>
-          <th>${I18N[lang].thUnderMaintCount || "صيانة"}</th>
-          <th>${I18N[lang].thInStoreCount || "مستودع"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].location || "الموقع"}</th>
+          <th class="report-col-compact col-report-id">${lang === 'ar' ? 'رمز الموقع' : 'Location Code'}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thDeviceCount || "عدد الأصول"}</th>
+          <th class="report-col-wide col-report-desc">${I18N[lang].deviceTypesBreakdown || "أنواع الأصول"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thAssignedCount || "مسند"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thAvailableCount || "متوفر"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thUnderMaintCount || "صيانة"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thInStoreCount || "مستودع"}</th>
         </tr>
       `;
 
@@ -2217,14 +2236,14 @@ class Application {
 
         return `
           <tr>
-            <td><strong><i class="fas fa-${loc.icon || 'map-marker-alt'} text-warning"></i> ${locName}</strong></td>
-            <td><code>${loc.code || "-"}</code></td>
-            <td><strong>${count}</strong></td>
-            <td style="font-size: 11px;">${typesStr}</td>
-            <td><span class="badge badge-success">${assigned}</span></td>
-            <td><span class="badge badge-primary">${available}</span></td>
-            <td><span class="badge badge-danger">${maint}</span></td>
-            <td><span class="badge badge-warning">${store}</span></td>
+            <td class="report-col-wide col-report-loc"><strong><i class="fas fa-${loc.icon || 'map-marker-alt'} text-warning"></i> ${locName}</strong></td>
+            <td class="report-col-compact col-report-id"><code>${loc.code || "-"}</code></td>
+            <td class="report-col-compact col-report-number report-number"><strong>${count}</strong></td>
+            <td class="report-col-wide col-report-desc" style="font-size: 11px;">${typesStr}</td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-success">${assigned}</span></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-primary">${available}</span></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-danger">${maint}</span></td>
+            <td class="report-col-compact col-report-number report-number"><span class="badge badge-warning">${store}</span></td>
           </tr>
         `;
       }).join("");
@@ -2247,18 +2266,18 @@ class Application {
       title = lang === "ar" ? "تقرير بطاقات الصيانة والإصلاح الفني" : "Maintenance & Repairs Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].thTicketId || "رقم التذكرة"}</th>
-          <th>Asset ID</th>
-          <th>${I18N[lang].assetType || "نوع الجهاز"}</th>
-          <th class="col-report-model">${I18N[lang].model || "الموديل"}</th>
-          <th class="col-report-notes">${I18N[lang].problem || "المشكلة / العطل"}</th>
-          <th class="col-report-notes">${I18N[lang].actionTaken || "الإجراء المتخذ"}</th>
-          <th>${I18N[lang].technician || "الفني"}</th>
-          <th>${I18N[lang].vendor || "المورد / الجهة"}</th>
-          <th>${I18N[lang].maintDate || "تاريخ الصيانة"}</th>
-          <th>${I18N[lang].lblMaintReturnDate || "تاريخ الإرجاع"}</th>
-          <th>${I18N[lang].cost || "التكلفة (AED)"}</th>
-          <th>${I18N[lang].status || "حالة التذكرة"}</th>
+          <th class="report-col-compact col-report-id">${I18N[lang].thTicketId || "رقم التذكرة"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-type">${I18N[lang].assetType || "نوع الجهاز"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-wide col-report-problem">${I18N[lang].problem || "المشكلة / العطل"}</th>
+          <th class="report-col-wide col-report-resolution">${I18N[lang].actionTaken || "الإجراء المتخذ"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].technician || "الفني"}</th>
+          <th class="report-col-medium col-report-vendor">${I18N[lang].vendor || "المورد / الجهة"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].maintDate || "تاريخ الصيانة"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].lblMaintReturnDate || "تاريخ الإرجاع"}</th>
+          <th class="report-col-compact col-report-cost report-number">${I18N[lang].cost || "التكلفة (AED)"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "حالة التذكرة"}</th>
         </tr>
       `;
 
@@ -2287,18 +2306,18 @@ class Application {
 
         return `
           <tr>
-            <td><strong>${m.id}</strong></td>
-            <td><strong>${assetIdStr}</strong></td>
-            <td>${typeStr}</td>
-            <td class="col-report-model">${modelStr}</td>
-            <td class="col-report-notes">${m.problem || "-"}</td>
-            <td class="col-report-notes">${m.actionTaken || "-"}</td>
-            <td>${m.technician || "-"}</td>
-            <td>${m.vendor || "-"}</td>
-            <td>${m.maintenanceDate || "-"}</td>
-            <td>${m.returnDate || "-"}</td>
-            <td><strong>${m.cost ? parseFloat(m.cost).toLocaleString() : "0"}</strong></td>
-            <td><span class="badge ${statusBadge}">${m.status}</span></td>
+            <td class="report-col-compact col-report-id"><strong>${m.id}</strong></td>
+            <td class="report-col-compact col-report-id"><strong>${assetIdStr}</strong></td>
+            <td class="report-col-compact col-report-type">${typeStr}</td>
+            <td class="report-col-medium col-report-model">${modelStr}</td>
+            <td class="report-col-wide col-report-problem">${m.problem || "-"}</td>
+            <td class="report-col-wide col-report-resolution">${m.actionTaken || "-"}</td>
+            <td class="report-col-medium col-report-emp">${m.technician || "-"}</td>
+            <td class="report-col-medium col-report-vendor">${m.vendor || "-"}</td>
+            <td class="report-col-compact col-report-date">${m.maintenanceDate || "-"}</td>
+            <td class="report-col-compact col-report-date">${m.returnDate || "-"}</td>
+            <td class="report-col-compact col-report-cost report-number"><strong>${m.cost ? parseFloat(m.cost).toLocaleString() : "0"}</strong></td>
+            <td class="report-col-compact col-report-status"><span class="badge ${statusBadge}">${m.status}</span></td>
           </tr>
         `;
       }).join("");
@@ -2318,15 +2337,15 @@ class Application {
       title = lang === "ar" ? "تقرير سجل الحركات والعمليات التاريخية للأصول" : "Asset Transactions & Audit History Report";
       tableHeader = `
         <tr>
-          <th>${lang === 'ar' ? 'التاريخ والوقت' : 'Date & Time'}</th>
-          <th>Asset ID</th>
-          <th class="col-report-model">${I18N[lang].model || "الموديل"}</th>
-          <th>${I18N[lang].thActionType || "نوع العملية"}</th>
-          <th>${lang === 'ar' ? 'الموظف المرتبط' : 'Associated Employee'}</th>
-          <th>${I18N[lang].department || "الإدارة / القسم"}</th>
-          <th>${I18N[lang].location || "الموقع"}</th>
-          <th>${lang === 'ar' ? 'المنفذ' : 'Performed By'}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "الملاحظات والبيان"}</th>
+          <th class="report-col-compact col-report-date">${lang === 'ar' ? 'التاريخ والوقت' : 'Date & Time'}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].thActionType || "نوع العملية"}</th>
+          <th class="report-col-medium col-report-emp">${lang === 'ar' ? 'الموظف المرتبط' : 'Associated Employee'}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "الإدارة / القسم"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].location || "الموقع"}</th>
+          <th class="report-col-compact col-report-emp">${lang === 'ar' ? 'المنفذ' : 'Performed By'}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "الملاحظات والبيان"}</th>
         </tr>
       `;
 
@@ -2349,15 +2368,15 @@ class Application {
         const modelStr = ast ? `${ast.brand || ""} ${ast.model || ""}`.trim() || "-" : "-";
         return `
           <tr>
-            <td>${tx.transactionDate || "-"}</td>
-            <td><strong>${astLabel}</strong></td>
-            <td class="col-report-model">${modelStr}</td>
-            <td><span class="badge badge-primary">${AssetManager.formatTxType(tx.transactionType)}</span></td>
-            <td>${empMap[tx.toEmployeeId] || "-"}</td>
-            <td>${deptMap[tx.toDepartmentId] || "-"}</td>
-            <td>${locMap[tx.toLocationId] || "-"}</td>
-            <td>${tx.performedBy || "System"}</td>
-            <td class="col-report-notes">${tx.notes || "-"}</td>
+            <td class="report-col-compact col-report-date">${tx.transactionDate || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong>${astLabel}</strong></td>
+            <td class="report-col-medium col-report-model">${modelStr}</td>
+            <td class="report-col-compact col-report-status"><span class="badge badge-primary">${AssetManager.formatTxType(tx.transactionType)}</span></td>
+            <td class="report-col-medium col-report-emp">${empMap[tx.toEmployeeId] || "-"}</td>
+            <td class="report-col-wide col-report-dept">${deptMap[tx.toDepartmentId] || "-"}</td>
+            <td class="report-col-wide col-report-loc">${locMap[tx.toLocationId] || "-"}</td>
+            <td class="report-col-compact col-report-emp">${tx.performedBy || "System"}</td>
+            <td class="report-col-wide col-report-notes">${tx.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2375,18 +2394,18 @@ class Application {
       title = lang === "ar" ? "تقرير فترات وضمان الأجهزة والمعدات" : "Warranty Status & Expiry Report";
       tableHeader = `
         <tr>
-          <th>Asset ID</th>
-          <th>${I18N[lang].brand || "الشركة"}</th>
-          <th class="col-report-model">${I18N[lang].model || "الموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].purchaseDate || "تاريخ الشراء"}</th>
-          <th>${I18N[lang].warrantyExpiry || "انتهاء الضمان"}</th>
-          <th>${I18N[lang].thRemainingDays || "الأيام المتبقية"}</th>
-          <th>${I18N[lang].warrantyStatus || "حالة الضمان"}</th>
-          <th>${I18N[lang].department || "القسم"}</th>
-          <th>${I18N[lang].location || "الموقع"}</th>
-          <th>${I18N[lang].employee || "الموظف"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-brand">${I18N[lang].brand || "الشركة"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].purchaseDate || "تاريخ الشراء"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].warrantyExpiry || "انتهاء الضمان"}</th>
+          <th class="report-col-compact col-report-compact report-number">${I18N[lang].thRemainingDays || "الأيام المتبقية"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].warrantyStatus || "حالة الضمان"}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "القسم"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].location || "الموقع"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].employee || "الموظف"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2427,18 +2446,18 @@ class Application {
 
         return `
           <tr>
-            <td><strong>${a.assetId}</strong></td>
-            <td>${a.brand || "-"}</td>
-            <td class="col-report-model">${a.model || "-"}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td>${a.purchaseDate || "-"}</td>
-            <td><strong>${a.warrantyExpiry || "-"}</strong></td>
-            <td>${daysDiff}</td>
-            <td><span class="badge ${badgeClass}">${warrantyStatus}</span></td>
-            <td>${deptMap[a.departmentId] || "-"}</td>
-            <td>${locMap[a.locationId] || "-"}</td>
-            <td>${empMap[a.currentEmployeeId] || "-"}</td>
-            <td class="col-report-notes">${a.notes || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong>${a.assetId}</strong></td>
+            <td class="report-col-compact col-report-brand">${a.brand || "-"}</td>
+            <td class="report-col-medium col-report-model">${a.model || "-"}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-compact col-report-date">${a.purchaseDate || "-"}</td>
+            <td class="report-col-compact col-report-date"><strong>${a.warrantyExpiry || "-"}</strong></td>
+            <td class="report-col-compact col-report-compact report-number">${daysDiff}</td>
+            <td class="report-col-compact col-report-status"><span class="badge ${badgeClass}">${warrantyStatus}</span></td>
+            <td class="report-col-wide col-report-dept">${deptMap[a.departmentId] || "-"}</td>
+            <td class="report-col-wide col-report-loc">${locMap[a.locationId] || "-"}</td>
+            <td class="report-col-medium col-report-emp">${empMap[a.currentEmployeeId] || "-"}</td>
+            <td class="report-col-wide col-report-notes">${a.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2459,12 +2478,12 @@ class Application {
       title = lang === "ar" ? "تقرير توزيع الأصول والمعدات حسب الحالة التشغيلية" : "Assets Distribution by Operational Status Report";
       tableHeader = `
         <tr>
-          <th>#</th>
-          <th>${I18N[lang].status || "الحالة التشغيلية"}</th>
-          <th>${lang === 'ar' ? 'كود الحالة' : 'Status Code'}</th>
-          <th>${I18N[lang].thDeviceCount || "عدد الأجهزة"}</th>
-          <th>${I18N[lang].percentage || "النسبة (%)"}</th>
-          <th>${I18N[lang].valuation || "إجمالي القيمة التقديرية (AED)"}</th>
+          <th class="report-col-compact col-report-id report-number">#</th>
+          <th class="report-col-medium col-report-status">${I18N[lang].status || "الحالة التشغيلية"}</th>
+          <th class="report-col-compact col-report-id">${lang === 'ar' ? 'كود الحالة' : 'Status Code'}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].thDeviceCount || "عدد الأجهزة"}</th>
+          <th class="report-col-compact col-report-compact report-number">${I18N[lang].percentage || "النسبة (%)"}</th>
+          <th class="report-col-wide col-report-cost report-number">${I18N[lang].valuation || "إجمالي القيمة التقديرية (AED)"}</th>
         </tr>
       `;
 
@@ -2490,12 +2509,12 @@ class Application {
         const val = inStatus.reduce((acc, a) => acc + (parseFloat(a.purchaseCost) || 0), 0);
         return `
           <tr>
-            <td>${idx + 1}</td>
-            <td><span class="badge ${AssetManager.getStatusBadgeClass(st)}">${AssetManager.formatStatus(st)}</span></td>
-            <td><code>${st}</code></td>
-            <td><strong>${cnt}</strong></td>
-            <td>${pct}%</td>
-            <td>${val.toLocaleString()} AED</td>
+            <td class="report-col-compact col-report-id report-number">${idx + 1}</td>
+            <td class="report-col-medium col-report-status"><span class="badge ${AssetManager.getStatusBadgeClass(st)}">${AssetManager.formatStatus(st)}</span></td>
+            <td class="report-col-compact col-report-id"><code>${st}</code></td>
+            <td class="report-col-compact col-report-number report-number"><strong>${cnt}</strong></td>
+            <td class="report-col-compact col-report-compact report-number">${pct}%</td>
+            <td class="report-col-wide col-report-cost report-number">${val.toLocaleString()} AED</td>
           </tr>
         `;
       }).join("");
@@ -2514,15 +2533,15 @@ class Application {
       title = lang === "ar" ? "تقرير طلبات وتذاكر الدعم الفني" : "IT Helpdesk & Support Tickets Report";
       tableHeader = `
         <tr>
-          <th>${lang === 'ar' ? 'رقم الطلب' : 'Request #'}</th>
-          <th>${I18N[lang].employee || "الموظف"}</th>
-          <th class="col-report-model">${lang === 'ar' ? 'الجهاز / الأصل' : 'Device / Asset'}</th>
-          <th>${I18N[lang].department || "الإدارة"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th>${lang === 'ar' ? 'نوع الطلب' : 'Request Type'}</th>
-          <th class="col-report-notes">${lang === 'ar' ? 'الموضوع' : 'Subject'}</th>
-          <th>${lang === 'ar' ? 'تاريخ الإنشاء' : 'Created Date'}</th>
-          <th>${lang === 'ar' ? 'سجل الصيانة' : 'Maintenance ID'}</th>
+          <th class="report-col-compact col-report-id">${lang === 'ar' ? 'رقم الطلب' : 'Request #'}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].employee || "الموظف"}</th>
+          <th class="report-col-medium col-report-model">${lang === 'ar' ? 'الجهاز / الأصل' : 'Device / Asset'}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "الإدارة"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-compact col-report-type">${lang === 'ar' ? 'نوع الطلب' : 'Request Type'}</th>
+          <th class="report-col-wide col-report-notes">${lang === 'ar' ? 'الموضوع' : 'Subject'}</th>
+          <th class="report-col-compact col-report-date">${lang === 'ar' ? 'تاريخ الإنشاء' : 'Created Date'}</th>
+          <th class="report-col-compact col-report-id">${lang === 'ar' ? 'سجل الصيانة' : 'Maintenance ID'}</th>
         </tr>
       `;
 
@@ -2561,15 +2580,15 @@ class Application {
 
         return `
           <tr>
-            <td><strong><code>${r.requestNumber}</code></strong></td>
-            <td><strong>${emp}</strong></td>
-            <td class="col-report-model">${astLabel}</td>
-            <td>${dept}</td>
-            <td><span class="badge ${stBadge}">${r.status}</span></td>
-            <td>${r.requestType || "-"}</td>
-            <td class="col-report-notes">${r.subject || "-"}</td>
-            <td>${r.createdDate ? r.createdDate.slice(0, 16).replace("T", " ") : "-"}</td>
-            <td>${r.maintenanceId ? `<code>${r.maintenanceId}</code>` : "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${r.requestNumber}</code></strong></td>
+            <td class="report-col-medium col-report-emp"><strong>${emp}</strong></td>
+            <td class="report-col-medium col-report-model">${astLabel}</td>
+            <td class="report-col-wide col-report-dept">${dept}</td>
+            <td class="report-col-compact col-report-status"><span class="badge ${stBadge}">${r.status}</span></td>
+            <td class="report-col-compact col-report-type">${r.requestType || "-"}</td>
+            <td class="report-col-wide col-report-notes">${r.subject || "-"}</td>
+            <td class="report-col-compact col-report-date">${r.createdDate ? r.createdDate.slice(0, 16).replace("T", " ") : "-"}</td>
+            <td class="report-col-compact col-report-id">${r.maintenanceId ? `<code>${r.maintenanceId}</code>` : "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2591,15 +2610,15 @@ class Application {
       title = lang === "ar" ? "تقرير الأصول الموجودة بالمستودع" : "Assets Currently in Warehouse Report";
       tableHeader = `
         <tr>
-          <th>Asset ID</th>
-          <th>${I18N[lang].assetType || "النوع"}</th>
-          <th>${I18N[lang].brand || "الشركة"}</th>
-          <th class="col-report-model">${I18N[lang].model || "الموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].warehouseLocation || "المستودع"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th>${I18N[lang].purchaseCost || "التكلفة"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-type">${I18N[lang].assetType || "النوع"}</th>
+          <th class="report-col-compact col-report-brand">${I18N[lang].brand || "الشركة"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].model || "الموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].warehouseLocation || "المستودع"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-compact col-report-cost report-number">${I18N[lang].purchaseCost || "التكلفة"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2612,15 +2631,15 @@ class Application {
         totalVal += (Number(a.purchaseCost) || 0);
         return `
           <tr>
-            <td><strong><code>${a.assetId}</code></strong></td>
-            <td>${typeMap[a.assetTypeId] || "-"}</td>
-            <td>${a.brand || "-"}</td>
-            <td class="col-report-model">${a.model || "-"}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td><i class="fas fa-warehouse text-warning"></i> ${locMap[a.locationId] || "-"}</td>
-            <td><span class="badge badge-warning">${AssetManager.formatStatus(a.status)}</span></td>
-            <td>${a.purchaseCost ? a.purchaseCost + " AED" : "-"}</td>
-            <td class="col-report-notes">${a.notes || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${a.assetId}</code></strong></td>
+            <td class="report-col-compact col-report-type">${typeMap[a.assetTypeId] || "-"}</td>
+            <td class="report-col-compact col-report-brand">${a.brand || "-"}</td>
+            <td class="report-col-medium col-report-model">${a.model || "-"}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-wide col-report-loc"><i class="fas fa-warehouse text-warning"></i> ${locMap[a.locationId] || "-"}</td>
+            <td class="report-col-compact col-report-status"><span class="badge badge-warning">${AssetManager.formatStatus(a.status)}</span></td>
+            <td class="report-col-compact col-report-cost report-number">${a.purchaseCost ? a.purchaseCost + " AED" : "-"}</td>
+            <td class="report-col-wide col-report-notes">${a.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2639,15 +2658,15 @@ class Application {
       title = lang === "ar" ? "تقرير الأصول المصروفة لفريق التقنية (بانتظار التركيب)" : "Assets Issued to IT Technicians (Awaiting Installation)";
       tableHeader = `
         <tr>
-          <th>Asset ID</th>
-          <th>${I18N[lang].assetType || "النوع"}</th>
-          <th class="col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].fromWarehouse || "المستودع المصدر"}</th>
-          <th>${I18N[lang].itTechnician || "فني التقنية المستلم"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th>${I18N[lang].issueDate || "تاريخ الصرف"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-compact col-report-type">${I18N[lang].assetType || "النوع"}</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].fromWarehouse || "المستودع المصدر"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].itTechnician || "فني التقنية المستلم"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].issueDate || "تاريخ الصرف"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2662,15 +2681,15 @@ class Application {
         const issue = issueMap[a.id] || {};
         return `
           <tr>
-            <td><strong><code>${a.assetId}</code></strong></td>
-            <td>${typeMap[a.assetTypeId] || "-"}</td>
-            <td class="col-report-model">${a.brand || ""} ${a.model || ""}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td>${locMap[issue.warehouseLocationId || a.locationId] || "-"}</td>
-            <td><i class="fas fa-user-cog text-primary"></i> ${empMap[a.currentEmployeeId || issue.itEmployeeId] || "-"}</td>
-            <td><span class="badge badge-warning">${AssetManager.formatStatus(a.status)}</span></td>
-            <td>${issue.issueDate || a.assignmentDate || "-"}</td>
-            <td class="col-report-notes">${issue.notes || a.notes || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${a.assetId}</code></strong></td>
+            <td class="report-col-compact col-report-type">${typeMap[a.assetTypeId] || "-"}</td>
+            <td class="report-col-medium col-report-model">${a.brand || ""} ${a.model || ""}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-wide col-report-loc">${locMap[issue.warehouseLocationId || a.locationId] || "-"}</td>
+            <td class="report-col-medium col-report-emp"><i class="fas fa-user-cog text-primary"></i> ${empMap[a.currentEmployeeId || issue.itEmployeeId] || "-"}</td>
+            <td class="report-col-compact col-report-status"><span class="badge badge-warning">${AssetManager.formatStatus(a.status)}</span></td>
+            <td class="report-col-compact col-report-date">${issue.issueDate || a.assignmentDate || "-"}</td>
+            <td class="report-col-wide col-report-notes">${issue.notes || a.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2688,15 +2707,15 @@ class Application {
       title = lang === "ar" ? "سجل حركات ونقل الأصول بين المواقع (Excel Format)" : "Asset Location Transfers Report (Excel Format)";
       tableHeader = `
         <tr>
-          <th>SL No.</th>
-          <th>${I18N[lang].transferDate || "تاريخ النقل"}</th>
-          <th>ASSETS CODE</th>
-          <th class="col-report-model">PRODUCTS DETAILS</th>
-          <th>QTY</th>
-          <th>Transfer From</th>
-          <th>Transfer To</th>
-          <th class="col-report-notes">REMARKS</th>
-          <th>STATUS</th>
+          <th class="report-col-compact col-report-id report-number">SL No.</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].transferDate || "تاريخ النقل"}</th>
+          <th class="report-col-compact col-report-id">ASSETS CODE</th>
+          <th class="report-col-medium col-report-model">PRODUCTS DETAILS</th>
+          <th class="report-col-compact col-report-number report-number">QTY</th>
+          <th class="report-col-wide col-report-loc">Transfer From</th>
+          <th class="report-col-wide col-report-loc">Transfer To</th>
+          <th class="report-col-wide col-report-notes">REMARKS</th>
+          <th class="report-col-compact col-report-status">STATUS</th>
         </tr>
       `;
 
@@ -2722,15 +2741,15 @@ class Application {
         const cond = t.condition === "Working" ? (lang === "ar" ? "سليم" : "Working") : (lang === "ar" ? "معطل" : "Not Working");
         return `
           <tr>
-            <td>${idx + 1}</td>
-            <td>${t.transferDate || "-"}</td>
-            <td><strong><code>${a.assetId || "-"}</code></strong></td>
-            <td class="col-report-model">${a.brand || ""} ${a.model || ""} (SN: ${a.serial || "-"})</td>
-            <td>1</td>
-            <td>${locMap[t.fromLocationId] || "-"}</td>
-            <td><strong class="text-primary">${locMap[t.toLocationId] || "-"}</strong></td>
-            <td class="col-report-notes">${t.notes || "-"}</td>
-            <td><span class="badge ${t.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${t.status || 'Completed'}</span> <small>(${cond})</small></td>
+            <td class="report-col-compact col-report-id report-number">${idx + 1}</td>
+            <td class="report-col-compact col-report-date">${t.transferDate || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${a.assetId || "-"}</code></strong></td>
+            <td class="report-col-medium col-report-model">${a.brand || ""} ${a.model || ""} (SN: ${a.serial || "-"})</td>
+            <td class="report-col-compact col-report-number report-number">1</td>
+            <td class="report-col-wide col-report-loc">${locMap[t.fromLocationId] || "-"}</td>
+            <td class="report-col-wide col-report-loc"><strong class="text-primary">${locMap[t.toLocationId] || "-"}</strong></td>
+            <td class="report-col-wide col-report-notes">${t.notes || "-"}</td>
+            <td class="report-col-compact col-report-status"><span class="badge ${t.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${t.status || 'Completed'}</span> <small>(${cond})</small></td>
           </tr>
         `;
       }).join("");
@@ -2748,14 +2767,14 @@ class Application {
       title = lang === "ar" ? "تقرير المشاريع التقنية والمهام ونسب الإنجاز" : "IT Projects, Tasks & Progress Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].projectNo || "رقم المشروع"}</th>
-          <th>${I18N[lang].projectName || "اسم المشروع"}</th>
-          <th>${I18N[lang].contractor || "المقاول"}</th>
-          <th>${I18N[lang].location || "الموقع"}</th>
-          <th>${I18N[lang].startDate || "تاريخ البدء"}</th>
-          <th>${I18N[lang].plannedEndDate || "تاريخ الانتهاء"}</th>
-          <th>${I18N[lang].progressPct || "نسبة الإنجاز"}</th>
-          <th>${I18N[lang].projectStatus || "الحالة"}</th>
+          <th class="report-col-compact col-report-id">${I18N[lang].projectNo || "رقم المشروع"}</th>
+          <th class="report-col-wide col-report-desc">${I18N[lang].projectName || "اسم المشروع"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].contractor || "المقاول"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].location || "الموقع"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].startDate || "تاريخ البدء"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].plannedEndDate || "تاريخ الانتهاء"}</th>
+          <th class="report-col-compact col-report-number report-number">${I18N[lang].progressPct || "نسبة الإنجاز"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].projectStatus || "الحالة"}</th>
         </tr>
       `;
 
@@ -2780,14 +2799,14 @@ class Application {
         const overdue = p.status !== "Completed" && p.status !== "Cancelled" && p.plannedEndDate && p.plannedEndDate < today;
         return `
           <tr>
-            <td><strong><code>${p.projectNo}</code></strong></td>
-            <td><strong>${name}</strong><br><small class="text-muted">${p.projectType || ""}</small></td>
-            <td>${contractorMap[p.contractorId] || "-"}</td>
-            <td>${locMap[p.locationId] || "-"}</td>
-            <td>${p.startDate || "-"}</td>
-            <td>${p.plannedEndDate || "-"}</td>
-            <td>${p.progress || 0}%</td>
-            <td>
+            <td class="report-col-compact col-report-id"><strong><code>${p.projectNo}</code></strong></td>
+            <td class="report-col-wide col-report-desc"><strong>${name}</strong><br><small class="text-muted">${p.projectType || ""}</small></td>
+            <td class="report-col-medium col-report-emp">${contractorMap[p.contractorId] || "-"}</td>
+            <td class="report-col-wide col-report-loc">${locMap[p.locationId] || "-"}</td>
+            <td class="report-col-compact col-report-date">${p.startDate || "-"}</td>
+            <td class="report-col-compact col-report-date">${p.plannedEndDate || "-"}</td>
+            <td class="report-col-compact col-report-number report-number">${p.progress || 0}%</td>
+            <td class="report-col-compact col-report-status">
               <span class="badge ${p.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${p.status}</span>
               ${overdue ? ` <span class="badge badge-danger">${I18N[lang].badgeOverdue || 'متأخر'}</span>` : ''}
             </td>
@@ -2810,15 +2829,15 @@ class Application {
       title = lang === "ar" ? "تقرير سجلات صرف المستودع للفنيين" : "Warehouse Issue Records Report";
       tableHeader = `
         <tr>
-          <th>${I18N[lang].issueNo || "رقم الصرف"}</th>
-          <th>${I18N[lang].issueDate || "تاريخ الصرف"}</th>
-          <th>Asset ID</th>
-          <th class="col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].fromWarehouse || "المستودع المصدر"}</th>
-          <th>${I18N[lang].itTechnician || "فني التقنية المستلم"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">${I18N[lang].issueNo || "رقم الصرف"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].issueDate || "تاريخ الصرف"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].fromWarehouse || "المستودع المصدر"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].itTechnician || "فني التقنية المستلم"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2848,15 +2867,15 @@ class Application {
         const statusText = isInstalled ? (lang === "ar" ? "تم التركيب" : "Installed") : (lang === "ar" ? "قيد النقل / بانتظار التركيب" : "In Transit");
         return `
           <tr>
-            <td><strong><code>${i.issueNo || "-"}</code></strong></td>
-            <td>${i.issueDate || "-"}</td>
-            <td><code>${a.assetId || "-"}</code></td>
-            <td class="col-report-model">${a.brand || ""} ${a.model || ""}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td>${locMap[i.warehouseLocationId] || "-"}</td>
-            <td><i class="fas fa-user-cog text-primary"></i> ${empMap[i.itEmployeeId] || "-"}</td>
-            <td><span class="badge ${statusBadge}">${statusText}</span></td>
-            <td class="col-report-notes">${i.notes || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${i.issueNo || "-"}</code></strong></td>
+            <td class="report-col-compact col-report-date">${i.issueDate || "-"}</td>
+            <td class="report-col-compact col-report-id"><code>${a.assetId || "-"}</code></td>
+            <td class="report-col-medium col-report-model">${a.brand || ""} ${a.model || ""}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-wide col-report-loc">${locMap[i.warehouseLocationId] || "-"}</td>
+            <td class="report-col-medium col-report-emp"><i class="fas fa-user-cog text-primary"></i> ${empMap[i.itEmployeeId] || "-"}</td>
+            <td class="report-col-compact col-report-status"><span class="badge ${statusBadge}">${statusText}</span></td>
+            <td class="report-col-wide col-report-notes">${i.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2876,15 +2895,15 @@ class Application {
       title = lang === "ar" ? "تقرير عمليات التركيب والتثبيت المكتملة للأصول" : "Completed Asset Installations Report";
       tableHeader = `
         <tr>
-          <th>Asset ID</th>
-          <th class="col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
-          <th>${I18N[lang].serialNumber || "السيريال"}</th>
-          <th>${I18N[lang].installLocation || "موقع التركيب"}</th>
-          <th>${I18N[lang].department || "القسم"}</th>
-          <th>${I18N[lang].endUser || "المستخدم النهائي"}</th>
-          <th>${I18N[lang].installDate || "تاريخ التركيب"}</th>
-          <th>${I18N[lang].status || "الحالة"}</th>
-          <th class="col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
+          <th class="report-col-compact col-report-id">Asset ID</th>
+          <th class="report-col-medium col-report-model">${I18N[lang].brand || "الجهاز والموديل"}</th>
+          <th class="report-col-compact col-report-serial">${I18N[lang].serialNumber || "السيريال"}</th>
+          <th class="report-col-wide col-report-loc">${I18N[lang].installLocation || "موقع التركيب"}</th>
+          <th class="report-col-wide col-report-dept">${I18N[lang].department || "القسم"}</th>
+          <th class="report-col-medium col-report-emp">${I18N[lang].endUser || "المستخدم النهائي"}</th>
+          <th class="report-col-compact col-report-date">${I18N[lang].installDate || "تاريخ التركيب"}</th>
+          <th class="report-col-compact col-report-status">${I18N[lang].status || "الحالة"}</th>
+          <th class="report-col-wide col-report-notes">${I18N[lang].thNotes || "ملاحظات"}</th>
         </tr>
       `;
 
@@ -2911,15 +2930,15 @@ class Application {
         const a = assetObjMap[i.assetId] || {};
         return `
           <tr>
-            <td><strong><code>${a.assetId || "-"}</code></strong></td>
-            <td class="col-report-model">${a.brand || ""} ${a.model || ""}</td>
-            <td><code>${a.serial || "-"}</code></td>
-            <td><i class="fas fa-map-marker-alt text-success"></i> ${locMap[i.installedLocationId] || "-"}</td>
-            <td>${deptMap[i.installedDepartmentId] || "-"}</td>
-            <td>${i.endUserId ? `<i class="fas fa-user text-primary"></i> ${empMap[i.endUserId]}` : `<span class="text-muted">${lang === 'ar' ? 'بدون موظف (موقع عام)' : 'Shared / Unassigned'}</span>`}</td>
-            <td>${i.installationDate || "-"}</td>
-            <td><span class="badge badge-success">${lang === 'ar' ? 'مكتمل التركيب' : 'Installed'}</span></td>
-            <td class="col-report-notes">${i.notes || "-"}</td>
+            <td class="report-col-compact col-report-id"><strong><code>${a.assetId || "-"}</code></strong></td>
+            <td class="report-col-medium col-report-model">${a.brand || ""} ${a.model || ""}</td>
+            <td class="report-col-compact col-report-serial"><code>${a.serial || "-"}</code></td>
+            <td class="report-col-wide col-report-loc"><i class="fas fa-map-marker-alt text-success"></i> ${locMap[i.installedLocationId] || "-"}</td>
+            <td class="report-col-wide col-report-dept">${deptMap[i.installedDepartmentId] || "-"}</td>
+            <td class="report-col-medium col-report-emp">${i.endUserId ? `<i class="fas fa-user text-primary"></i> ${empMap[i.endUserId]}` : `<span class="text-muted">${lang === 'ar' ? 'بدون موظف (موقع عام)' : 'Shared / Unassigned'}</span>`}</td>
+            <td class="report-col-compact col-report-date">${i.installationDate || "-"}</td>
+            <td class="report-col-compact col-report-status"><span class="badge badge-success">${lang === 'ar' ? 'مكتمل التركيب' : 'Installed'}</span></td>
+            <td class="report-col-wide col-report-notes">${i.notes || "-"}</td>
           </tr>
         `;
       }).join("");
@@ -2946,8 +2965,10 @@ class Application {
       rowsHtml = `<tr><td colspan="15" class="text-center py-4 text-muted">${I18N[lang].noResultsFound || "لا توجد نتائج مطابقة"}</td></tr>`;
     }
 
-    const dateFormatted = new Date().toLocaleDateString("en-GB", { year: "numeric", month: "2-digit", day: "2-digit" });
-    const timeFormatted = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const pad = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    const dateFormatted = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+    const timeFormatted = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const footerOrgName = settings.orgNameEn || "Sharjah Driving Institute";
     const colCount = (tableHeader.match(/<th\b/gi) || []).length || 12;
 
@@ -2966,19 +2987,33 @@ class Application {
             ${rowsHtml}
             ${totalsHtml ? `<tr class="report-totals-tr"><td colspan="${colCount}" class="report-totals-td">${totalsHtml}</td></tr>` : ''}
           </tbody>
-          <tfoot class="report-print-footer">
-            <tr class="report-print-footer-tr">
-              <td colspan="${colCount}" class="report-print-footer-td">
-                <div class="report-footer-row">
-                  <div class="report-footer-timestamp">${dateFormatted}, ${timeFormatted}</div>
-                  <div class="report-footer-brand">SDI IT Asset Hub - ${footerOrgName}</div>
-                </div>
-              </td>
+          <tfoot class="report-table-print-spacer">
+            <tr class="report-spacer-tr">
+              <td colspan="${colCount}" class="report-spacer-td"></td>
             </tr>
           </tfoot>
         </table>
       </div>
+      <div class="report-print-bottom-footer print-only" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
+        <div class="report-footer-timestamp">${dateFormatted}, ${timeFormatted}</div>
+        <div class="report-footer-brand">SDI IT Asset Hub - ${footerOrgName}</div>
+      </div>
     `;
+
+    // Apply report type class for targeted print column allocation
+    const prevTypeClasses = Array.from(reportArea.classList).filter(c => c.startsWith("report-type-"));
+    prevTypeClasses.forEach(c => reportArea.classList.remove(c));
+    reportArea.classList.add(`report-type-${reportType}`);
+
+    // Apply dynamic report density class based on colCount
+    reportArea.classList.remove("report-density-normal", "report-density-compact", "report-density-dense");
+    if (colCount <= 8) {
+      reportArea.classList.add("report-density-normal");
+    } else if (colCount <= 11) {
+      reportArea.classList.add("report-density-compact");
+    } else {
+      reportArea.classList.add("report-density-dense");
+    }
 
     // Ensure orientation class is applied to printable area
     if (this.currentReportOrientation) {
@@ -3036,27 +3071,27 @@ class Application {
       : "";
 
     return `
-      <div class="unified-report-header">
+      <div class="unified-report-header" dir="ltr">
         <!-- Top-Right Metadata Bar -->
-        <div class="report-header-meta-row">
+        <div class="report-header-meta-row" dir="ltr">
           <span class="report-meta-item">
             <i class="far fa-calendar-alt report-meta-icon" style="color: #f97316;"></i>
-            <span class="report-meta-label">${(window.I18N && window.I18N[lang] && window.I18N[lang].reportDate) || "Report Date"}:</span>
+            <span class="report-meta-label">${(window.I18N && window.I18N[lang] && window.I18N[lang].reportDate) || (lang === 'ar' ? "تاريخ التقرير" : "Report Date")}:</span>
             <strong class="report-meta-value">${dateStr}</strong>
           </span>
           <span class="report-meta-dot">&middot;</span>
           <span class="report-meta-item">
             <i class="far fa-clock report-meta-icon" style="color: #f97316;"></i>
-            <span class="report-meta-label">${(window.I18N && window.I18N[lang] && window.I18N[lang].reportTime) || "Generated Time"}:</span>
+            <span class="report-meta-label">${(window.I18N && window.I18N[lang] && window.I18N[lang].reportTime) || (lang === 'ar' ? "وقت الإصدار" : "Generated Time")}:</span>
             <strong class="report-meta-value">${timeStr}</strong>
           </span>
         </div>
 
         <!-- Main Header Row: Left Brand, Center Boxed Pill, Right Spacer -->
-        <div class="report-header-main-row">
-          <div class="report-header-brand">
+        <div class="report-header-main-row" dir="ltr">
+          <div class="report-header-brand" dir="ltr">
             ${logoHtml}
-            <div class="report-brand-text">
+            <div class="report-brand-text" dir="ltr">
               <div class="report-brand-en">${orgNameEn}</div>
               <div class="report-brand-ar">${orgNameAr}</div>
             </div>
@@ -3109,7 +3144,7 @@ class Application {
       styleEl.id = "dynamicPageOrientationStyle";
       document.head.appendChild(styleEl);
     }
-    styleEl.innerHTML = `@page { size: A4 ${this.currentReportOrientation}; margin: 8mm 10mm; }`;
+    styleEl.innerHTML = `@page { size: A4 ${this.currentReportOrientation}; margin: 8mm 10mm 10mm 10mm; }`;
   }
 
   printCurrentReport() {
@@ -3117,9 +3152,221 @@ class Application {
     window.print();
   }
 
-  exportReportPDF() {
-    this.setReportOrientation(this.currentReportOrientation || "landscape");
-    window.print();
+  async exportReportPDF() {
+    const reportArea = document.getElementById("printableReportArea");
+    if (!reportArea || !reportArea.querySelector("table")) {
+      this.showToast(
+        AppState.lang === "ar" ? "لا توجد بيانات متاحة لتصدير تقرير PDF" : "No report data available to export as PDF",
+        "warning"
+      );
+      return;
+    }
+
+    const reportSelect = document.getElementById("reportSelect");
+    const reportType = reportSelect ? reportSelect.value : "report";
+    const pad = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const filename = `SDI_${reportType}_Report_${dateStr}.pdf`;
+
+    const orientation = this.currentReportOrientation || (['byDept', 'byStatus'].includes(reportType) ? 'portrait' : 'landscape');
+    const isLandscape = orientation === "landscape";
+
+    // Set UI loading state on the button
+    const btnPdf = document.getElementById("btnExportPdfAction") || document.querySelector("button[onclick*='exportReportPDF']");
+    const originalBtnHtml = btnPdf ? btnPdf.innerHTML : null;
+    if (btnPdf) {
+      btnPdf.disabled = true;
+      btnPdf.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${AppState.lang === "ar" ? "جاري تجهيز PDF..." : "Generating PDF..."}</span>`;
+    }
+
+    this.showToast(
+      AppState.lang === "ar" ? "جاري إنشاء ملف PDF وتنزيله مباشرة..." : "Generating and downloading PDF file...",
+      "info"
+    );
+
+    // Ensure html2pdf is available
+    if (typeof html2pdf === "undefined") {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "js/html2pdf.bundle.min.js";
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      } catch (err) {
+        console.warn("Could not load html2pdf dynamically", err);
+      }
+    }
+
+    if (typeof html2pdf === "undefined") {
+      if (btnPdf && originalBtnHtml) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = originalBtnHtml;
+      }
+      this.showToast(
+        AppState.lang === "ar" ? "تعذر تحميل مكتبة PDF. يرجى استخدام زر طباعة التقرير واختيار حفظ بتنسيق PDF." : "PDF engine could not be loaded. Please use Print Report and select Save as PDF.",
+        "warning"
+      );
+      this.printCurrentReport();
+      return;
+    }
+
+    // Target width matching standard A4 printable area at 96 DPI
+    // A4 Landscape: 297mm x 210mm -> content width ~ 1060px
+    // A4 Portrait: 210mm x 297mm -> content width ~ 760px
+    const targetWidth = isLandscape ? 1060 : 760;
+
+    const pdfContainer = document.createElement("div");
+    pdfContainer.id = "pdfExportIsolatedContainer";
+    pdfContainer.style.position = "fixed";
+    pdfContainer.style.left = "-9999px";
+    pdfContainer.style.top = "0";
+    pdfContainer.style.width = `${targetWidth}px`;
+    pdfContainer.style.minWidth = `${targetWidth}px`;
+    pdfContainer.style.maxWidth = `${targetWidth}px`;
+    pdfContainer.style.background = "#ffffff";
+    pdfContainer.style.color = "#0f172a";
+    pdfContainer.style.padding = "14px 18px";
+    pdfContainer.style.boxSizing = "border-box";
+    pdfContainer.style.direction = AppState.lang === "ar" ? "rtl" : "ltr";
+    pdfContainer.style.fontFamily = "'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    pdfContainer.style.zIndex = "-9999";
+
+    // Clone report content into isolated container
+    const clone = reportArea.cloneNode(true);
+    clone.style.width = "100%";
+    clone.style.margin = "0";
+    clone.style.padding = "0";
+    clone.style.background = "#ffffff";
+    clone.style.boxShadow = "none";
+    clone.style.border = "none";
+
+    // Ensure all table wrappers are unclipped
+    const tableWraps = clone.querySelectorAll(".table-responsive, .report-table-wrap");
+    tableWraps.forEach(w => {
+      w.style.overflow = "visible";
+      w.style.width = "100%";
+      w.style.maxWidth = "100%";
+    });
+
+    const table = clone.querySelector("table");
+    if (table) {
+      table.style.width = "100%";
+      table.style.tableLayout = "fixed";
+    }
+
+    // Ensure unified report header has brand and logo pinned to the far left in the PDF
+    const headerInClone = clone.querySelector(".unified-report-header");
+    if (headerInClone) {
+      headerInClone.setAttribute("dir", "ltr");
+      headerInClone.style.direction = "ltr";
+      headerInClone.style.textAlign = "left";
+      headerInClone.style.width = "100%";
+      headerInClone.style.boxSizing = "border-box";
+      const mainRowInClone = headerInClone.querySelector(".report-header-main-row");
+      if (mainRowInClone) {
+        mainRowInClone.setAttribute("dir", "ltr");
+        mainRowInClone.style.direction = "ltr";
+        mainRowInClone.style.display = "grid";
+        mainRowInClone.style.gridTemplateColumns = "1fr auto 1fr";
+        mainRowInClone.style.alignItems = "center";
+        mainRowInClone.style.width = "100%";
+      }
+      const brandInClone = headerInClone.querySelector(".report-header-brand");
+      if (brandInClone) {
+        brandInClone.setAttribute("dir", "ltr");
+        brandInClone.style.direction = "ltr";
+        brandInClone.style.justifySelf = "start";
+        brandInClone.style.marginRight = "auto";
+        brandInClone.style.marginLeft = "0";
+        brandInClone.style.display = "flex";
+        brandInClone.style.alignItems = "center";
+      }
+      const brandTextInClone = headerInClone.querySelector(".report-brand-text");
+      if (brandTextInClone) {
+        brandTextInClone.setAttribute("dir", "ltr");
+        brandTextInClone.style.direction = "ltr";
+        brandTextInClone.style.textAlign = "left";
+      }
+      const metaRowInClone = headerInClone.querySelector(".report-header-meta-row");
+      if (metaRowInClone) {
+        metaRowInClone.setAttribute("dir", "ltr");
+        metaRowInClone.style.direction = "ltr";
+        metaRowInClone.style.justifyContent = "flex-end";
+      }
+    }
+
+    // Format and display the bottom institutional footer in the exported PDF
+    const printFooter = clone.querySelector(".report-print-bottom-footer");
+    if (printFooter) {
+      printFooter.style.display = "flex";
+      printFooter.style.position = "static";
+      printFooter.style.marginTop = "20px";
+      printFooter.style.paddingTop = "8px";
+      printFooter.style.borderTop = "1px solid #cbd5e1";
+      printFooter.style.fontSize = "10px";
+      printFooter.style.color = "#475569";
+      printFooter.style.width = "100%";
+      printFooter.style.boxSizing = "border-box";
+      printFooter.style.justifyContent = "space-between";
+      printFooter.style.alignItems = "center";
+      printFooter.classList.remove("print-only");
+    }
+
+    // Hide print-specific spacer tfoot in HTML-to-PDF export
+    const spacerTfoot = clone.querySelector(".report-table-print-spacer");
+    if (spacerTfoot) {
+      spacerTfoot.style.display = "none";
+    }
+
+    pdfContainer.appendChild(clone);
+    document.body.appendChild(pdfContainer);
+
+    const opt = {
+      margin: isLandscape ? [6, 8, 6, 8] : [8, 8, 8, 8],
+      filename: filename,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        scrollY: 0,
+        scrollX: 0,
+        windowWidth: targetWidth + 40,
+        logging: false
+      },
+      jsPDF: {
+        unit: "mm",
+        format: "a4",
+        orientation: orientation
+      },
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+    };
+
+    try {
+      await html2pdf().set(opt).from(pdfContainer).save();
+      this.showToast(
+        AppState.lang === "ar" ? "تم حفظ وتنزيل تقرير PDF بنجاح" : "PDF report saved and downloaded successfully",
+        "success"
+      );
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      this.showToast(
+        AppState.lang === "ar" ? "تعذر إنشاء ملف PDF تلقائياً، جاري فتح نافذة الطباعة كبديل." : "Automatic PDF creation failed, opening print dialog as fallback.",
+        "warning"
+      );
+      this.printCurrentReport();
+    } finally {
+      if (pdfContainer.parentNode) {
+        pdfContainer.parentNode.removeChild(pdfContainer);
+      }
+      if (btnPdf && originalBtnHtml) {
+        btnPdf.disabled = false;
+        btnPdf.innerHTML = originalBtnHtml;
+      }
+    }
   }
 
   async exportReportCSV() {
