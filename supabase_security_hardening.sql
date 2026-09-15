@@ -24,6 +24,12 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- 2. Revoke anonymous access to ensure secure boundary
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+
+-- Add partial unique index for active auth identities to guarantee uniqueness at database level
+CREATE UNIQUE INDEX IF NOT EXISTS users_active_auth_user_id_uidx
+ON public.users (auth_user_id)
+WHERE active = true
+AND auth_user_id IS NOT NULL;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
 
@@ -273,7 +279,6 @@ DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
 CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
-  OR employee_id = public.get_auth_employee_id()
 );
 
 DROP POLICY IF EXISTS "Auth_Update_notifications" ON public.notifications;

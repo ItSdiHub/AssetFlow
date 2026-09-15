@@ -302,6 +302,11 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS users_active_auth_user_id_uidx
+ON public.users (auth_user_id)
+WHERE active = true
+AND auth_user_id IS NOT NULL;
+
 -- 16. Notifications Table
 CREATE TABLE IF NOT EXISTS public.notifications (
     id TEXT PRIMARY KEY,
@@ -657,7 +662,6 @@ DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
 CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
-  OR employee_id = public.get_auth_employee_id()
 );
 
 DROP POLICY IF EXISTS "Auth_Update_notifications" ON public.notifications;
