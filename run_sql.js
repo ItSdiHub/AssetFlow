@@ -86,8 +86,10 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
-CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
-WITH CHECK (true);
+CREATE POLICY "Admin_IT_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
+WITH CHECK (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+);
 
 DROP POLICY IF EXISTS "Auth_Update_notifications" ON public.notifications;
 CREATE POLICY "Auth_Update_notifications" ON public.notifications FOR UPDATE TO authenticated 

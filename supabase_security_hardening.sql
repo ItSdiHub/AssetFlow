@@ -177,6 +177,7 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions;
+DROP POLICY IF EXISTS "Admin_IT_Employee_Insert_AssetTransactions" ON public.asset_transactions;
 CREATE POLICY "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions FOR INSERT TO authenticated 
 WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
 
@@ -276,7 +277,7 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
-CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
+CREATE POLICY "Admin_IT_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
 );
