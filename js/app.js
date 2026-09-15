@@ -197,6 +197,41 @@ class Application {
           this.handleHeaderSearch(e.target.value.trim());
         }
       });
+      headerSearch.addEventListener("keydown", (e) => {
+        const dropdown = document.getElementById("headerSearchResults");
+        if (!dropdown || dropdown.style.display === "none") return;
+        const items = dropdown.querySelectorAll(".search-item");
+        if (!items.length) return;
+
+        let currentIndex = -1;
+        items.forEach((item, index) => {
+          if (item.classList.contains("active")) currentIndex = index;
+        });
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const nextIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+          items.forEach(it => it.classList.remove("active"));
+          items[nextIndex].classList.add("active");
+          items[nextIndex].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const prevIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+          items.forEach(it => it.classList.remove("active"));
+          items[prevIndex].classList.add("active");
+          items[prevIndex].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+          if (currentIndex >= 0 && items[currentIndex]) {
+            e.preventDefault();
+            items[currentIndex].click();
+          } else if (items.length > 0) {
+            e.preventDefault();
+            items[0].click();
+          }
+        } else if (e.key === "Escape") {
+          dropdown.style.display = "none";
+        }
+      });
       // Close dropdown when clicking outside
       document.addEventListener("click", (e) => {
         const container = document.getElementById("headerSearchContainer");
@@ -1008,31 +1043,120 @@ class Application {
   // =========================================================================
   // 3. TOP SEARCH & FAST LOOKUP
   // =========================================================================
+  getAssetTypeIcon(asset, assetTypes = []) {
+    const typeObj = (assetTypes || []).find(t => t.id === asset.assetTypeId);
+    const typeName = ((typeObj ? (typeObj.nameEn || typeObj.nameAr) : "") + " " + (asset.category || asset.type || "")).toLowerCase();
+    const brandModel = `${asset.brand || ""} ${asset.model || ""}`.toLowerCase();
+
+    if (typeName.includes("laptop") || brandModel.includes("latitude") || brandModel.includes("thinkpad") || brandModel.includes("macbook") || brandModel.includes("elitebook")) {
+      return "fa-laptop";
+    }
+    if (typeName.includes("desktop") || typeName.includes("pc") || typeName.includes("workstation") || brandModel.includes("optiplex") || brandModel.includes("prodesk")) {
+      return "fa-desktop";
+    }
+    if (typeName.includes("server") || brandModel.includes("poweredge") || brandModel.includes("proliant")) {
+      return "fa-server";
+    }
+    if (typeName.includes("printer") || typeName.includes("print") || brandModel.includes("laserjet") || brandModel.includes("epson")) {
+      return "fa-print";
+    }
+    if (typeName.includes("switch") || typeName.includes("router") || typeName.includes("network") || typeName.includes("cisco") || typeName.includes("fortinet") || typeName.includes("firewall")) {
+      return "fa-network-wired";
+    }
+    if (typeName.includes("monitor") || typeName.includes("screen") || typeName.includes("display")) {
+      return "fa-display";
+    }
+    if (typeName.includes("tablet") || typeName.includes("ipad") || typeName.includes("tab")) {
+      return "fa-tablet-screen-button";
+    }
+    if (typeName.includes("phone") || typeName.includes("mobile") || typeName.includes("iphone")) {
+      return "fa-mobile-screen-button";
+    }
+    if (typeName.includes("scanner") || typeName.includes("barcode")) {
+      return "fa-barcode";
+    }
+    if (typeName.includes("camera") || typeName.includes("cctv")) {
+      return "fa-video";
+    }
+    return "fa-laptop";
+  }
+
+  getProjectStatusBadge(status) {
+    const lang = AppState.lang;
+    let badgeClass = "badge-secondary";
+    let text = status || "-";
+    switch (status) {
+      case "Planning":
+        badgeClass = "badge-secondary";
+        text = lang === "ar" ? "تخطيط" : "Planning";
+        break;
+      case "Approved":
+        badgeClass = "badge-primary";
+        text = lang === "ar" ? "معتمد" : "Approved";
+        break;
+      case "In Progress":
+        badgeClass = "badge-warning";
+        text = lang === "ar" ? "قيد التنفيذ" : "In Progress";
+        break;
+      case "On Hold":
+        badgeClass = "badge-danger";
+        text = lang === "ar" ? "معلق" : "On Hold";
+        break;
+      case "Completed":
+        badgeClass = "badge-success";
+        text = lang === "ar" ? "مكتمل" : "Completed";
+        break;
+      case "Cancelled":
+        badgeClass = "badge-danger";
+        text = lang === "ar" ? "ملغى" : "Cancelled";
+        break;
+    }
+    return `<span class="badge ${badgeClass}">${text}</span>`;
+  }
+
   async handleHeaderSearch(query) {
     const dropdown = document.getElementById("headerSearchResults");
     if (!dropdown) return;
 
     if (!query) {
       dropdown.style.display = "none";
+      dropdown.innerHTML = "";
       return;
     }
 
-    const assets = await db.getAll("assets");
-    const employees = await db.getAll("employees");
-    const departments = await db.getAll("departments");
-    const locations = await db.getAll("locations");
-    const lang = AppState.lang;
-
-    const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
-    const deptMap = Object.fromEntries(departments.map(d => [d.id, lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)]));
-    const locMap = Object.fromEntries(locations.map(l => [l.id, lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
-
     const q = query.toLowerCase();
 
-    // Exact match for Asset ID (e.g. AST-000001)
-    const exactAsset = assets.find(a => a.assetId && a.assetId.toLowerCase() === q);
+    const [assets, employees, departments, locations, assetTypes, projects, contractors] = await Promise.all([
+      db.getAll("assets").catch(() => []),
+      db.getAll("employees").catch(() => []),
+      db.getAll("departments").catch(() => []),
+      db.getAll("locations").catch(() => []),
+      db.getAll("assetTypes").catch(() => []),
+      db.getAll("projects").catch(() => []),
+      db.getAll("contractors").catch(() => [])
+    ]);
 
-    const matches = assets.filter(a => {
+    // Check if query has changed in the meantime
+    const currentInput = document.getElementById("headerQuickSearch");
+    if (currentInput && currentInput.value.trim().toLowerCase() !== q) return;
+
+    const lang = AppState.lang;
+
+    // Assigned assets count per employee
+    const assignedMap = {};
+    (assets || []).forEach(a => {
+      if (a.currentEmployeeId) {
+        assignedMap[a.currentEmployeeId] = (assignedMap[a.currentEmployeeId] || 0) + 1;
+      }
+    });
+
+    const empMap = Object.fromEntries((employees || []).map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+    const deptMap = Object.fromEntries((departments || []).map(d => [d.id, lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)]));
+    const locMap = Object.fromEntries((locations || []).map(l => [l.id, lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
+    const contractorMap = Object.fromEntries((contractors || []).map(c => [c.id, lang === "ar" ? (c.companyNameAr || c.companyNameEn) : (c.companyNameEn || c.companyNameAr)]));
+
+    // 1. Match Assets
+    const assetMatches = (assets || []).filter(a => {
       const empName = (empMap[a.currentEmployeeId] || "").toLowerCase();
       const deptName = (deptMap[a.departmentId] || "").toLowerCase();
       const locName = (locMap[a.locationId] || "").toLowerCase();
@@ -1051,36 +1175,198 @@ class Application {
         deptName.includes(q) ||
         locName.includes(q)
       );
-    }).slice(0, 8);
+    }).slice(0, 5);
 
-    if (matches.length === 0) {
-      dropdown.innerHTML = `<div class="search-result-item text-muted text-center py-3">${lang === 'ar' ? 'لا توجد نتائج مطابقة' : 'No matching results'}</div>`;
+    // 2. Match Employees
+    const employeeMatches = (employees || []).filter(e => {
+      const nameAr = (e.nameAr || "").toLowerCase();
+      const nameEn = (e.nameEn || "").toLowerCase();
+      const empNo = (e.employeeNumber || "").toLowerCase();
+      const empId = (e.id || "").toLowerCase();
+      const email = (e.email || "").toLowerCase();
+      const phone = (e.phone || "").toLowerCase();
+      const title = (e.jobTitle || "").toLowerCase();
+      const deptName = (deptMap[e.departmentId] || "").toLowerCase();
+      const locName = (locMap[e.locationId] || "").toLowerCase();
+      return (
+        nameAr.includes(q) ||
+        nameEn.includes(q) ||
+        empNo.includes(q) ||
+        empId.includes(q) ||
+        email.includes(q) ||
+        phone.includes(q) ||
+        title.includes(q) ||
+        deptName.includes(q) ||
+        locName.includes(q)
+      );
+    }).slice(0, 4);
+
+    // 3. Match Projects
+    const projectMatches = (projects || []).filter(p => {
+      const pNo = (p.projectNo || "").toLowerCase();
+      const nameAr = (p.nameAr || "").toLowerCase();
+      const nameEn = (p.nameEn || "").toLowerCase();
+      const pType = (p.projectType || "").toLowerCase();
+      const contractor = (contractorMap[p.contractorId] || "").toLowerCase();
+      const locName = (locMap[p.locationId] || "").toLowerCase();
+      const status = (p.status || "").toLowerCase();
+      const remarks = (p.remarks || "").toLowerCase();
+      return (
+        pNo.includes(q) ||
+        nameAr.includes(q) ||
+        nameEn.includes(q) ||
+        pType.includes(q) ||
+        contractor.includes(q) ||
+        locName.includes(q) ||
+        status.includes(q) ||
+        remarks.includes(q)
+      );
+    }).slice(0, 4);
+
+    const totalMatches = assetMatches.length + employeeMatches.length + projectMatches.length;
+
+    if (totalMatches === 0) {
+      dropdown.innerHTML = `
+        <div class="search-drop-empty">
+          <i class="fas fa-search"></i>
+          <div>${lang === "ar" ? "لا توجد نتائج مطابقة في الأصول أو الموظفين أو المشاريع" : "No matching assets, employees, or projects found"}</div>
+        </div>
+      `;
       dropdown.style.display = "block";
       return;
     }
 
     let html = "";
-    matches.forEach(a => {
-      const empName = empMap[a.currentEmployeeId] || (lang === 'ar' ? 'غير مسند' : 'Unassigned');
-      const deptName = deptMap[a.departmentId] || "";
-      const isBarcodeMatch = a.barcodeValue && a.barcodeValue.toLowerCase().includes(q);
-      const isQrMatch = a.qrCodeValue && a.qrCodeValue.toLowerCase().includes(q);
 
+    // 1. Assets Group
+    if (assetMatches.length > 0) {
       html += `
-        <div class="search-result-item" onclick="App.selectSearchResult('${a.id}')">
-          <div class="d-flex justify-between items-center">
-            <strong>${a.assetId} - ${a.brand || ''} ${a.model || ''}</strong>
-            <span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span>
-          </div>
-          <div class="text-xs text-muted mt-1" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-            <span>${lang === 'ar' ? 'سيريال:' : 'Serial:'} <code>${a.serial || '-'}</code></span>
-            ${a.qrCodeValue && a.qrCodeValue !== a.assetId ? `&bull; <span>QR: <code style="color: var(--sdi-orange);">${a.qrCodeValue}</code></span>` : ''}
-            &bull; <span>${lang === 'ar' ? 'الموظف:' : 'Employee:'} <strong>${empName}</strong></span>
-            &bull; <span>${deptName}</span>
-          </div>
+        <div class="search-group-title">
+          <span class="search-group-label">
+            <i class="fas fa-laptop text-primary"></i>
+            <span>${lang === "ar" ? "الأصول التقنية" : "IT Assets"}</span>
+          </span>
+          <span class="search-group-count">${assetMatches.length}</span>
         </div>
       `;
-    });
+
+      assetMatches.forEach(a => {
+        const empName = empMap[a.currentEmployeeId] || (lang === "ar" ? "غير مسند" : "Unassigned");
+        const deptName = deptMap[a.departmentId] || "";
+        const locName = locMap[a.locationId] || "";
+        const assetIcon = this.getAssetTypeIcon(a, assetTypes);
+
+        html += `
+          <div class="search-item" data-type="asset" data-id="${a.id}" onclick="App.selectSearchResult('${a.id}')">
+            <div class="search-item-icon entity-asset" title="${lang === "ar" ? "أصل تقني" : "IT Asset"}">
+              <i class="fas ${assetIcon}"></i>
+            </div>
+            <div class="search-item-info">
+              <div class="search-item-top">
+                <div class="search-item-title-wrap">
+                  <span class="search-entity-badge badge-asset"><i class="fas ${assetIcon}"></i> ${lang === "ar" ? "أصل" : "Asset"}</span>
+                  <span class="search-item-title">${a.assetId} - ${a.brand || ""} ${a.model || ""}</span>
+                </div>
+                <span class="badge ${AssetManager.getStatusBadgeClass(a.status)}">${AssetManager.formatStatus(a.status)}</span>
+              </div>
+              <div class="search-item-sub">
+                <span>${lang === "ar" ? "سيريال:" : "SN:"} <code>${a.serial || "-"}</code></span>
+                ${a.qrCodeValue && a.qrCodeValue !== a.assetId ? `&bull; <span>QR: <code style="color: var(--sdi-orange);">${a.qrCodeValue}</code></span>` : ""}
+                &bull; <span><i class="fas fa-user text-xs"></i> <strong>${empName}</strong></span>
+                ${deptName ? `&bull; <span>${deptName}</span>` : ""}
+                ${locName ? `&bull; <span><i class="fas fa-map-marker-alt text-xs"></i> ${locName}</span>` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // 2. Employees Group
+    if (employeeMatches.length > 0) {
+      html += `
+        <div class="search-group-title">
+          <span class="search-group-label">
+            <i class="fas fa-user-tie text-success"></i>
+            <span>${lang === "ar" ? "الموظفون" : "Employees"}</span>
+          </span>
+          <span class="search-group-count">${employeeMatches.length}</span>
+        </div>
+      `;
+
+      employeeMatches.forEach(e => {
+        const empName = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
+        const deptName = deptMap[e.departmentId] || "";
+        const locName = locMap[e.locationId] || "";
+        const assignedCount = assignedMap[e.id] || 0;
+
+        html += `
+          <div class="search-item" data-type="employee" data-id="${e.id}" onclick="App.selectEmployeeSearchResult('${e.id}')">
+            <div class="search-item-icon entity-employee" title="${lang === "ar" ? "موظف" : "Employee"}">
+              <i class="fas fa-user-tie"></i>
+            </div>
+            <div class="search-item-info">
+              <div class="search-item-top">
+                <div class="search-item-title-wrap">
+                  <span class="search-entity-badge badge-employee"><i class="fas fa-user"></i> ${lang === "ar" ? "موظف" : "Employee"}</span>
+                  <span class="search-item-title">${empName}</span>
+                  ${e.jobTitle ? `<span class="text-xs text-muted">(${e.jobTitle})</span>` : ""}
+                </div>
+                <span class="badge ${e.status === "Active" ? "badge-success" : "badge-danger"}">${e.status === "Active" ? (lang === "ar" ? "نشط" : "Active") : (lang === "ar" ? "غير نشط" : "Inactive")}</span>
+              </div>
+              <div class="search-item-sub">
+                <span>${lang === "ar" ? "الرقم الوظيفي:" : "ID:"} <code>${e.employeeNumber || e.id}</code></span>
+                ${deptName ? `&bull; <span><i class="fas fa-building text-xs"></i> ${deptName}</span>` : ""}
+                ${locName ? `&bull; <span><i class="fas fa-map-marker-alt text-xs"></i> ${locName}</span>` : ""}
+                &bull; <span class="text-primary font-medium"><i class="fas fa-laptop text-xs"></i> ${assignedCount} ${lang === "ar" ? "عهد مسندة" : "assets"}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // 3. Projects Group
+    if (projectMatches.length > 0) {
+      html += `
+        <div class="search-group-title">
+          <span class="search-group-label">
+            <i class="fas fa-diagram-project text-warning"></i>
+            <span>${lang === "ar" ? "المشاريع" : "Projects"}</span>
+          </span>
+          <span class="search-group-count">${projectMatches.length}</span>
+        </div>
+      `;
+
+      projectMatches.forEach(p => {
+        const projectName = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
+        const contractorName = contractorMap[p.contractorId] || "";
+        const locName = locMap[p.locationId] || "";
+
+        html += `
+          <div class="search-item" data-type="project" data-id="${p.id}" onclick="App.selectProjectSearchResult('${p.id}')">
+            <div class="search-item-icon entity-project" title="${lang === "ar" ? "مشروع" : "Project"}">
+              <i class="fas fa-diagram-project"></i>
+            </div>
+            <div class="search-item-info">
+              <div class="search-item-top">
+                <div class="search-item-title-wrap">
+                  <span class="search-entity-badge badge-project"><i class="fas fa-diagram-project"></i> ${lang === "ar" ? "مشروع" : "Project"}</span>
+                  <span class="search-item-title">${p.projectNo || ""} - ${projectName}</span>
+                </div>
+                ${this.getProjectStatusBadge(p.status)}
+              </div>
+              <div class="search-item-sub">
+                <span><i class="fas fa-tag text-xs"></i> ${p.projectType || "-"}</span>
+                ${contractorName ? `&bull; <span><i class="fas fa-handshake text-xs"></i> ${contractorName}</span>` : ""}
+                ${locName ? `&bull; <span><i class="fas fa-map-marker-alt text-xs"></i> ${locName}</span>` : ""}
+                &bull; <span class="font-medium" style="color: var(--sdi-orange);"><i class="fas fa-chart-line text-xs"></i> ${p.progress || 0}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
 
     dropdown.innerHTML = html;
     dropdown.style.display = "block";
@@ -1091,6 +1377,50 @@ class Application {
     if (dropdown) dropdown.style.display = "none";
     document.getElementById("headerQuickSearch").value = "";
     this.openAssetQuickView(assetId);
+  }
+
+  async selectEmployeeSearchResult(empId) {
+    const dropdown = document.getElementById("headerSearchResults");
+    if (dropdown) dropdown.style.display = "none";
+    document.getElementById("headerQuickSearch").value = "";
+
+    const isEmployee = AppState.currentUser && AppState.currentUser.role === "Employee";
+    if (isEmployee) {
+      const emp = await db.getById("employees", empId);
+      if (emp) {
+        this.showToast(`${AppState.lang === "ar" ? "الموظف:" : "Employee:"} ${emp.nameAr || emp.nameEn}`, "info");
+      }
+      return;
+    }
+
+    await this.switchTab("employees");
+    const emp = await db.getById("employees", empId);
+    const searchInput = document.getElementById("empSearchInput");
+    if (searchInput && emp) {
+      searchInput.value = emp.employeeNumber || emp.nameAr || emp.nameEn || "";
+    }
+    if (window.UserManager && typeof UserManager.renderEmployees === "function") {
+      await UserManager.renderEmployees();
+    }
+  }
+
+  async selectProjectSearchResult(projectId) {
+    const dropdown = document.getElementById("headerSearchResults");
+    if (dropdown) dropdown.style.display = "none";
+    document.getElementById("headerQuickSearch").value = "";
+
+    const isEmployee = AppState.currentUser && AppState.currentUser.role === "Employee";
+    if (isEmployee) {
+      if (window.ProjectManager && typeof ProjectManager.viewProjectDetails === "function") {
+        await ProjectManager.viewProjectDetails(projectId);
+      }
+      return;
+    }
+
+    await this.switchTab("projects");
+    if (window.ProjectManager && typeof ProjectManager.viewProjectDetails === "function") {
+      await ProjectManager.viewProjectDetails(projectId);
+    }
   }
 
   // REQ-19: Asset Quick View Modal

@@ -1067,10 +1067,22 @@ class DBEngine {
           return data.map(r => fromCloudRecord(storeName, r));
         }
         if (error) console.warn(`Supabase getAll(${storeName}) failed:`, error);
+        if (storeName === "offices" || (error && (error.code === '42P01' || (error.message && error.message.includes('does not exist'))))) {
+          console.info(`Falling back to local store for ${storeName} due to pending cloud migration.`);
+          return this.getFallbackStore(storeName);
+        }
       } catch (cloudErr) {
         console.warn(`Supabase getAll(${storeName}) failed:`, cloudErr);
+        if (storeName === "offices") {
+          return this.getFallbackStore(storeName);
+        }
       }
       if (STRICT_CLOUD_ONLY) {
+        if (storeName === "offices") {
+          return this.getFallbackStore(storeName);
+        }
+        const fb = this.getFallbackStore(storeName);
+        if (fb && fb.length > 0) return fb;
         throw new Error(`Cloud read failed for ${storeName}.`);
       }
     }
@@ -1177,10 +1189,22 @@ class DBEngine {
         const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
         if (!error) return data ? fromCloudRecord(storeName, data) : null;
         console.warn(`Supabase getById(${storeName}) failed:`, error);
+        if (storeName === "offices" || (error && (error.code === '42P01' || (error.message && error.message.includes('does not exist'))))) {
+          const fallbackItems = this.getFallbackStore(storeName);
+          return searchInList(fallbackItems);
+        }
       } catch (e) {
         console.warn(`Supabase getById(${storeName}) failed:`, e);
+        if (storeName === "offices") {
+          const fallbackItems = this.getFallbackStore(storeName);
+          return searchInList(fallbackItems);
+        }
       }
       if (STRICT_CLOUD_ONLY) {
+        if (storeName === "offices") {
+          const fallbackItems = this.getFallbackStore(storeName);
+          return searchInList(fallbackItems);
+        }
         throw new Error(`Cloud read failed for ${storeName}.`);
       }
     }
@@ -1392,6 +1416,11 @@ class DBEngine {
           console.warn("systemSettings RLS write skipped for restricted user role.");
           return item;
         }
+        if (storeName === "offices" || (e && (e.code === "42P01" || (e.message && e.message.includes("does not exist"))))) {
+          console.info(`Saved ${storeName} to fallback store due to pending cloud migration.`);
+          this.saveToFallbackStore(storeName, item);
+          return item;
+        }
         throw e;
       }
 
@@ -1439,10 +1468,15 @@ class DBEngine {
         if (error) throw error;
       } catch (e) {
         console.warn(`Supabase delete sync error:`, e);
+        if (storeName === "offices" || (e && (e.code === "42P01" || (e.message && e.message.includes("does not exist"))))) {
+          console.info(`Deleted ${storeName} from fallback store due to pending cloud migration.`);
+          this.deleteFromFallbackStore(storeName, id);
+          return true;
+        }
         throw e;
       }
 
-      if (STRICT_CLOUD_ONLY) return true;
+      if (STRICT_CLOUD_ONLY && storeName !== "offices") return true;
     }
 
     const isFallbackNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;

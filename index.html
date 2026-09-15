@@ -133,7 +133,7 @@
                 type="text" 
                 id="headerQuickSearch" 
                 class="quick-search-input" 
-                placeholder="بحث سريع برقم الأصل (AST-000001)، الباركود، QR، السيريال، الموظف..." data-i18n-placeholder="searchPlaceholder"
+                placeholder="بحث سريع بالأصول، الموظفين، المشاريع، السيريال، الباركود..." data-i18n-placeholder="searchPlaceholder"
                 autocomplete="off"
                 style="padding-inline-end: 45px;"
               >
@@ -1395,7 +1395,7 @@
               <p data-i18n="projectsSubtitle">متابعة مشاريع تقنية المعلومات، المقاولين، المهام، ونسب الإنجاز</p>
             </div>
             <div class="header-btns">
-              <button class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal()">
+              <button id="btnAddNewProject" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal()">
                 <i class="fas fa-plus"></i> <span data-i18n="btnAddProject">إضافة مشروع جديد</span>
               </button>
             </div>
