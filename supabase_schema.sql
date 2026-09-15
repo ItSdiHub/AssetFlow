@@ -404,13 +404,27 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 -- 1. Helper Functions for RLS
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS text AS $$
-  SELECT role FROM public.users WHERE auth_user_id = auth.uid()::text AND active = true LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+SELECT role
+FROM public.users
+WHERE auth_user_id = auth.uid()::text
+AND active = true
+LIMIT 1;
+$$ LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public;
 
 CREATE OR REPLACE FUNCTION public.get_auth_employee_id()
 RETURNS text AS $$
-  SELECT employee_id FROM public.users WHERE auth_user_id = auth.uid()::text AND active = true LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+SELECT employee_id
+FROM public.users
+WHERE auth_user_id = auth.uid()::text
+AND active = true
+LIMIT 1;
+$$ LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public;
 
 -- Revoke anon access to enforce authentication
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
@@ -532,8 +546,13 @@ CREATE POLICY "Admin_IT_Insert_Assets" ON public.assets FOR INSERT TO authentica
 WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
 
 DROP POLICY IF EXISTS "Admin_IT_Update_Assets" ON public.assets;
-CREATE POLICY "Admin_IT_Update_Assets" ON public.assets FOR UPDATE TO authenticated 
-USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+CREATE POLICY "Admin_IT_Update_Assets"
+ON public.assets
+FOR UPDATE TO authenticated
+USING (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+);
 
 DROP POLICY IF EXISTS "Admin_IT_Delete_Assets" ON public.assets;
 CREATE POLICY "Admin_IT_Delete_Assets" ON public.assets FOR DELETE TO authenticated 
@@ -550,9 +569,15 @@ USING (
   OR from_employee_id = public.get_auth_employee_id()
 );
 
-DROP POLICY IF EXISTS "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions;
-CREATE POLICY "Admin_IT_Insert_AssetTransactions" ON public.asset_transactions FOR INSERT TO authenticated 
-WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+DROP POLICY IF EXISTS "Admin_IT_Insert_AssetTransactions"
+ON public.asset_transactions;
+
+CREATE POLICY "Admin_IT_Insert_AssetTransactions"
+ON public.asset_transactions
+FOR INSERT TO authenticated
+WITH CHECK (
+  public.get_auth_role() IN ('Administrator', 'IT User')
+);
 
 DROP POLICY IF EXISTS "Admin_IT_Update_AssetTransactions" ON public.asset_transactions;
 CREATE POLICY "Admin_IT_Update_AssetTransactions" ON public.asset_transactions FOR UPDATE TO authenticated 
@@ -658,8 +683,12 @@ USING (
   OR employee_id = public.get_auth_employee_id()
 );
 
-DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
-CREATE POLICY "Admin_IT_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
+DROP POLICY IF EXISTS "Auth_Insert_notifications"
+ON public.notifications;
+
+CREATE POLICY "Admin_IT_Insert_notifications"
+ON public.notifications
+FOR INSERT TO authenticated
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
 );

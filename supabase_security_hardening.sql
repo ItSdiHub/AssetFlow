@@ -14,13 +14,27 @@ BEGIN;
 -- 1. Hardened Helper Functions
 CREATE OR REPLACE FUNCTION public.get_auth_role()
 RETURNS text AS $$
-  SELECT role FROM public.users WHERE auth_user_id = auth.uid()::text AND active = true LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+SELECT role
+FROM public.users
+WHERE auth_user_id = auth.uid()::text
+AND active = true
+LIMIT 1;
+$$ LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public;
 
 CREATE OR REPLACE FUNCTION public.get_auth_employee_id()
 RETURNS text AS $$
-  SELECT employee_id FROM public.users WHERE auth_user_id = auth.uid()::text AND active = true LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+SELECT employee_id
+FROM public.users
+WHERE auth_user_id = auth.uid()::text
+AND active = true
+LIMIT 1;
+$$ LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public;
 
 -- 2. Revoke anonymous access to ensure secure boundary
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
