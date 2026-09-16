@@ -2198,6 +2198,7 @@ class Application {
 
   async populateReportDropdowns() {
     const lang = AppState.lang;
+    const reportType = document.getElementById("reportSelect")?.value || "inventory";
     const types = await db.getAll("assetTypes");
     const depts = await db.getAll("departments");
     const locs = await db.getAll("locations");
@@ -2212,7 +2213,54 @@ class Application {
       if (curVal) typeSelect.value = curVal;
     }
 
-    // 2. Departments Filter
+    // 2. Status Filter dynamically adapted to report type
+    const statusSelect = document.getElementById("reportFilterStatus");
+    if (statusSelect) {
+      const curVal = statusSelect.value;
+      if (reportType === "projects") {
+        statusSelect.innerHTML = `
+          <option value="">${lang === "ar" ? "جميع الحالات" : "All Statuses"}</option>
+          <option value="Planning">${lang === "ar" ? "تخطيط" : "Planning"}</option>
+          <option value="Approved">${lang === "ar" ? "معتمد" : "Approved"}</option>
+          <option value="In Progress">${lang === "ar" ? "قيد التنفيذ" : "In Progress"}</option>
+          <option value="On Hold">${lang === "ar" ? "معلق" : "On Hold"}</option>
+          <option value="Completed">${lang === "ar" ? "مكتمل" : "Completed"}</option>
+          <option value="Cancelled">${lang === "ar" ? "ملغي" : "Cancelled"}</option>
+        `;
+      } else if (reportType === "helpdesk") {
+        statusSelect.innerHTML = `
+          <option value="">${lang === "ar" ? "جميع الحالات" : "All Statuses"}</option>
+          <option value="New">${lang === "ar" ? "جديد" : "New"}</option>
+          <option value="In Progress">${lang === "ar" ? "قيد المعالجة" : "In Progress"}</option>
+          <option value="Waiting for Employee">${lang === "ar" ? "بانتظار الموظف" : "Waiting for Employee"}</option>
+          <option value="Completed">${lang === "ar" ? "مكتمل" : "Completed"}</option>
+        `;
+      } else if (reportType === "maint") {
+        statusSelect.innerHTML = `
+          <option value="">${lang === "ar" ? "جميع الحالات" : "All Statuses"}</option>
+          <option value="Open">${lang === "ar" ? "مفتوح" : "Open"}</option>
+          <option value="In Progress">${lang === "ar" ? "قيد الإصلاح" : "In Progress"}</option>
+          <option value="Completed">${lang === "ar" ? "تم الإصلاح" : "Completed"}</option>
+        `;
+      } else {
+        statusSelect.innerHTML = `
+          <option value="" data-i18n="filterAllStatuses">${I18N[lang].filterAllStatuses || "جميع الحالات"}</option>
+          <option value="Available" data-i18n="statusAvailable">${I18N[lang].statusAvailable || "متاح"}</option>
+          <option value="Assigned" data-i18n="statusAssigned">${I18N[lang].statusAssigned || "مسند"}</option>
+          <option value="In Store" data-i18n="statusInStore">${I18N[lang].statusInStore || "في المستودع"}</option>
+          <option value="Under Maintenance" data-i18n="statusUnderMaint">${I18N[lang].statusUnderMaint || "تحت الصيانة"}</option>
+          <option value="Damaged" data-i18n="statusDamaged">${I18N[lang].statusDamaged || "تالف"}</option>
+          <option value="Lost" data-i18n="statusLost">${I18N[lang].statusLost || "مفقود"}</option>
+          <option value="Retired" data-i18n="statusRetired">${I18N[lang].statusRetired || "مكهن"}</option>
+          <option value="Disposed" data-i18n="statusDisposed">${I18N[lang].statusDisposed || "تم التخلص منه"}</option>
+        `;
+      }
+      if (curVal && [...statusSelect.options].some(o => o.value === curVal)) {
+        statusSelect.value = curVal;
+      }
+    }
+
+    // 3. Departments Filter
     const deptSelect = document.getElementById("reportFilterDept");
     if (deptSelect) {
       const curVal = deptSelect.value;
@@ -2221,7 +2269,7 @@ class Application {
       if (curVal) deptSelect.value = curVal;
     }
 
-    // 3. Locations Filter
+    // 4. Locations Filter
     const locSelect = document.getElementById("reportFilterLoc");
     if (locSelect) {
       const curVal = locSelect.value;
@@ -2230,7 +2278,7 @@ class Application {
       if (curVal) locSelect.value = curVal;
     }
 
-    // 4. Employees Filter
+    // 5. Employees Filter
     const empSelect = document.getElementById("reportFilterEmp");
     if (empSelect) {
       const curVal = empSelect.value;
@@ -3123,8 +3171,11 @@ class Application {
       let filteredProjects = allProjects.filter(p => {
         if (filterStatus && p.status !== filterStatus) return false;
         if (filterLoc && p.locationId !== filterLoc) return false;
+        if (filterDept && p.departmentId !== filterDept) return false;
+        if (dateFrom && p.startDate && p.startDate < dateFrom) return false;
+        if (dateTo && p.plannedEndDate && p.plannedEndDate > dateTo) return false;
         if (searchVal) {
-          const str = `${p.projectNo || ""} ${p.nameAr || ""} ${p.nameEn || ""} ${contractorMap[p.contractorId] || ""} ${locMap[p.locationId] || ""}`.toLowerCase();
+          const str = `${p.projectNo || ""} ${p.id || ""} ${p.nameAr || ""} ${p.nameEn || ""} ${contractorMap[p.contractorId] || ""} ${locMap[p.locationId] || ""} ${deptMap[p.departmentId] || ""} ${p.projectType || ""}`.toLowerCase();
           if (!str.includes(searchVal)) return false;
         }
         return true;
@@ -3135,9 +3186,10 @@ class Application {
       rowsHtml = filteredProjects.map(p => {
         const name = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
         const overdue = p.status !== "Completed" && p.status !== "Cancelled" && p.plannedEndDate && p.plannedEndDate < today;
+        const prjIdentifier = p.projectNo || p.id || "-";
         return `
           <tr>
-            <td class="report-col-compact col-report-id"><strong><code>${p.projectNo}</code></strong></td>
+            <td class="report-col-compact col-report-id"><strong><code>${prjIdentifier}</code></strong></td>
             <td class="report-col-wide col-report-desc"><strong>${name}</strong><br><small class="text-muted">${p.projectType || ""}</small></td>
             <td class="report-col-medium col-report-emp">${contractorMap[p.contractorId] || "-"}</td>
             <td class="report-col-wide col-report-loc">${locMap[p.locationId] || "-"}</td>

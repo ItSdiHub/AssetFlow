@@ -96,23 +96,35 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "projects") {
+    let notesVal = row.notes || row.remarks || "";
+    if (row.departmentId || row.department_id || row.office || (Array.isArray(row.documents) && row.documents.length > 0)) {
+      try {
+        notesVal = JSON.stringify({
+          _meta: true,
+          text: row.remarks || row.notes || "",
+          departmentId: row.departmentId || row.department_id || null,
+          office: row.office || row.office_id || row.officeId || null,
+          documents: Array.isArray(row.documents) ? row.documents : []
+        });
+      } catch (e) {
+        notesVal = row.notes || row.remarks || "";
+      }
+    }
     return {
       id: row.id,
       project_no: row.projectNo || row.project_no || row.id || "",
       name_ar: row.nameAr || row.name_ar || "",
       name_en: row.nameEn || row.name_en || null,
       project_type: row.projectType || row.project_type || "Infrastructure",
-      start_date: row.startDate || row.start_date || "",
-      planned_end_date: row.plannedEndDate || row.planned_end_date || "",
+      start_date: row.startDate || row.start_date || new Date().toISOString().slice(0, 10),
+      planned_end_date: row.plannedEndDate || row.planned_end_date || row.startDate || new Date().toISOString().slice(0, 10),
       actual_end_date: row.actualEndDate || row.actual_end_date || null,
       contractor_id: row.contractorId || row.contractor_id || null,
       location_id: row.locationId || row.location_id || null,
-      department_id: row.departmentId || row.department_id || null,
-      office: row.office || row.office_id || row.officeId || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Planning",
-      notes: row.notes || row.remarks || null
+      notes: notesVal
     };
   }
   if (storeName === "projectTasks") {
@@ -381,15 +393,36 @@ function fromCloudRecord(storeName, row) {
     item.actualEndDate = row.actual_end_date || row.actualEndDate;
     item.contractorId = row.contractor_id || row.contractorId;
     item.locationId = row.location_id || row.locationId;
-    item.departmentId = row.department_id || row.departmentId;
-    item.office = row.office || row.office_id || row.officeId;
-    item.officeId = row.office_id || row.office || row.officeId;
     item.responsibleEmployeeId = row.responsible_employee_id || row.responsibleEmployeeId;
     item.progress = typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0);
     item.status = row.status || item.status || "Planning";
-    item.remarks = row.notes || row.remarks || item.remarks || "";
-    item.notes = row.notes || row.remarks || item.notes || "";
-    item.documents = Array.isArray(row.documents) ? row.documents : (Array.isArray(item.documents) ? item.documents : []);
+    
+    let rawNotes = row.notes || row.remarks || item.notes || "";
+    if (typeof rawNotes === "string" && rawNotes.startsWith('{"_meta":true')) {
+      try {
+        const parsed = JSON.parse(rawNotes);
+        item.remarks = parsed.text || "";
+        item.notes = parsed.text || "";
+        item.departmentId = parsed.departmentId || row.department_id || item.departmentId || null;
+        item.office = parsed.office || row.office || item.office || null;
+        item.officeId = parsed.office || row.office || item.officeId || null;
+        item.documents = Array.isArray(parsed.documents) ? parsed.documents : [];
+      } catch (e) {
+        item.remarks = rawNotes;
+        item.notes = rawNotes;
+        item.departmentId = row.department_id || item.departmentId || null;
+        item.office = row.office || item.office || null;
+        item.officeId = row.office || item.officeId || null;
+        item.documents = Array.isArray(row.documents) ? row.documents : (Array.isArray(item.documents) ? item.documents : []);
+      }
+    } else {
+      item.remarks = rawNotes;
+      item.notes = rawNotes;
+      item.departmentId = row.department_id || item.departmentId || null;
+      item.office = row.office || item.office || null;
+      item.officeId = row.office || item.officeId || null;
+      item.documents = Array.isArray(row.documents) ? row.documents : (Array.isArray(item.documents) ? item.documents : []);
+    }
   } else if (storeName === "projectTasks") {
     item.projectId = row.project_id || row.projectId;
     item.nameAr = row.task_name_ar || row.name_ar || row.nameAr;
@@ -645,10 +678,9 @@ class DBEngine {
   }
 
   saveToFallbackStore(storeName, item) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !isNodeTest) return;
+    if (!item || !item.id) return;
     if (!this.memoryStore[storeName]) this.memoryStore[storeName] = this.getFallbackStore(storeName);
-    const idx = this.memoryStore[storeName].findIndex(x => x.id === item.id);
+    const idx = this.memoryStore[storeName].findIndex(x => x && x.id === item.id);
     if (idx >= 0) {
       this.memoryStore[storeName][idx] = item;
     } else {
@@ -660,18 +692,15 @@ class DBEngine {
   }
 
   deleteFromFallbackStore(storeName, id) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !isNodeTest) return;
+    if (!id) return;
     if (!this.memoryStore[storeName]) this.memoryStore[storeName] = this.getFallbackStore(storeName);
-    this.memoryStore[storeName] = this.memoryStore[storeName].filter(x => x.id !== id);
+    this.memoryStore[storeName] = this.memoryStore[storeName].filter(x => x && x.id !== id);
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
   }
 
   clearFallbackStore(storeName) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !isNodeTest) return;
     this.memoryStore[storeName] = [];
     try {
       localStorage.removeItem("sdi_fb_" + storeName);
@@ -1146,7 +1175,16 @@ class DBEngine {
         const table = STORE_TABLE_MAP[storeName];
         const { data, error } = await this.supabase.from(table).select('*');
         if (!error && Array.isArray(data)) {
-          return data.map(r => fromCloudRecord(storeName, r));
+          const cloudItems = data.map(r => fromCloudRecord(storeName, r));
+          const fallbackItems = this.getFallbackStore(storeName);
+          if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
+            const cloudIds = new Set(cloudItems.map(x => x && x.id));
+            const extraLocal = fallbackItems.filter(x => x && x.id && !cloudIds.has(x.id));
+            if (extraLocal.length > 0) {
+              return [...cloudItems, ...extraLocal];
+            }
+          }
+          return cloudItems;
         }
         if (error) console.warn(`Supabase getAll(${storeName}) failed:`, error);
         return this.getFallbackStore(storeName);
