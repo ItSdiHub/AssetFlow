@@ -2181,7 +2181,7 @@
             <!-- Department -->
             <div class="form-group">
               <label><span data-i18n="department">القسم التابع له</span>*</label>
-              <select id="formAssetDept" class="form-control" required>
+              <select id="formAssetDept" class="form-control" required onchange="AssetManager.handleAssetDeptChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -2189,7 +2189,7 @@
             <!-- Location -->
             <div class="form-group">
               <label><span data-i18n="location">الموقع التابع له</span>*</label>
-              <select id="formAssetLoc" class="form-control" required>
+              <select id="formAssetLoc" class="form-control" required onchange="AssetManager.handleAssetLocChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -2197,7 +2197,7 @@
             <!-- Current Employee -->
             <div class="form-group">
               <label><span data-i18n="assignedEmployee">الموظف المسؤول</span></label>
-              <select id="formAssetEmp" class="form-control">
+              <select id="formAssetEmp" class="form-control" onchange="AssetManager.handleAssetEmpChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -2467,14 +2467,14 @@
 
             <div class="form-group">
               <label><span data-i18n="department">القسم</span>*</label>
-              <select id="formAssignDept" class="form-control" required>
+              <select id="formAssignDept" class="form-control" required onchange="AssetManager.handleAssignDeptChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
 
             <div class="form-group">
               <label><span data-i18n="location">الموقع</span>*</label>
-              <select id="formAssignLoc" class="form-control" required>
+              <select id="formAssignLoc" class="form-control" required onchange="AssetManager.handleAssignLocChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -2747,28 +2747,28 @@
           <div class="form-grid">
             <div class="form-group full-width">
               <label><span data-i18n="assetId">الأصل المراد صرفه</span>*</label>
-              <select id="formWiAssetId" class="form-control" required>
+              <select id="formWiAssetId" class="form-control" required onchange="OpsManager.handleWarehouseAssetChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
 
             <div class="form-group">
               <label><span data-i18n="warehouseLocation">المستودع المصدر</span>*</label>
-              <select id="formWiWarehouseLoc" class="form-control" required>
+              <select id="formWiWarehouseLoc" class="form-control" required onchange="OpsManager.handleWarehouseLocChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
 
             <div class="form-group">
               <label><span data-i18n="itEmployeeReceiver">فني تقنية المعلومات المستلم</span>*</label>
-              <select id="formWiItEmp" class="form-control" required>
+              <select id="formWiItEmp" class="form-control" required onchange="OpsManager.handleWarehouseItEmpChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
 
             <div class="form-group">
               <label><span data-i18n="issueDate">تاريخ الصرف</span>*</label>
-              <input type="date" id="formWiDate" class="form-control" required>
+              <input type="date" id="formWiDate" class="form-control" required onchange="OpsManager.handleWarehouseDateChange(this.value)">
             </div>
 
             <div class="form-group">
@@ -2966,7 +2966,7 @@
             <div class="form-group">
               <label><span data-i18n="endUser">الموظف المستلم / العهدة (Employee - اختياري)</span></label>
               <div class="combobox-wrapper" id="comboboxWrapInstUser">
-                <select id="formInstUser" class="form-control">
+                <select id="formInstUser" class="form-control" onchange="OpsManager.handleInstallationUserChange(this.value)">
                   <!-- Populated from employees table (Optional) -->
                 </select>
               </div>
@@ -3876,7 +3876,7 @@
             <div class="form-group">
               <label><span data-i18n="officeLocation">المكتب</span></label>
               <div style="display: flex; gap: 8px;">
-                <select id="formEmpOffice" class="form-control" style="flex: 1;" disabled>
+                <select id="formEmpOffice" class="form-control" onchange="UserManager.onEmployeeOfficeChange()" style="flex: 1;" disabled>
                   <option value="" data-i18n="selectOfficeOptional">-- اختر مكتب (اختياري) --</option>
                 </select>
                 <button type="button" class="btn btn-secondary" style="padding: 0 12px;" onclick="UserManager.quickAddOffice()" title="إضافة مكتب جديد" data-i18n-title="btnAddOfficeTitle"><i class="fas fa-plus"></i></button>
@@ -4310,7 +4310,7 @@
 
             <div class="form-group" id="userEmployeeGroup" style="display: none;">
               <label><span data-i18n="linkedEmployee">الموظف المرتبط</span>*</label>
-              <select id="formUserEmployeeId" class="form-control">
+              <select id="formUserEmployeeId" class="form-control" onchange="UserManager.handleUserEmployeeChange()">
                 <!-- Populated via JS -->
               </select>
               <small class="text-muted text-xs" data-i18n="linkedEmployeeDesc">يجب ربط حساب الموظف بموظف مسجل في النظام</small>

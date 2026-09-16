@@ -445,106 +445,167 @@ class ProjectManagementController {
   async handleEmployeeChange(empId) {
     const lang = AppState.lang || "ar";
     const bannerLead = document.getElementById("bannerPrjLead");
-    if (bannerLead) {
-      if (empId) {
-        const emp = await db.getById("employees", empId).catch(() => null);
+    const locSelect = document.getElementById("formPrjLocation");
+    const deptSelect = document.getElementById("formPrjDepartment");
+    const officeSelect = document.getElementById("formPrjOffice");
+
+    if (empId) {
+      const emp = await db.getById("employees", empId).catch(() => null);
+      if (bannerLead) {
         bannerLead.textContent = emp ? (lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr)) : "-";
-      } else {
-        bannerLead.textContent = "-";
       }
+      if (emp) {
+        const empDept = emp.departmentId || emp.department_id;
+        const empOffice = emp.officeId || emp.office_id;
+        let empLoc = emp.locationId || emp.location_id;
+
+        if (!empLoc && empDept) {
+          const dept = await db.getById("departments", empDept).catch(() => null);
+          if (dept) empLoc = dept.locationId || dept.location_id;
+        }
+
+        if (empLoc && locSelect && locSelect.value !== empLoc) {
+          locSelect.value = empLoc;
+          await this.handleLocationChange(empLoc, false);
+        }
+        if (empDept && deptSelect && deptSelect.value !== empDept) {
+          deptSelect.value = empDept;
+          await this.handleDeptChange(empDept, false);
+        }
+        if (empOffice && officeSelect && officeSelect.value !== empOffice) {
+          officeSelect.value = empOffice;
+        }
+      }
+    } else {
+      if (bannerLead) bannerLead.textContent = "-";
     }
   }
 
-  async handleLocationChange(locId) {
+  async handleLocationChange(locId, resetChildren = true) {
     const lang = AppState.lang;
     const deptSelect = document.getElementById("formPrjDepartment");
     const officeSelect = document.getElementById("formPrjOffice");
     const empSelect = document.getElementById("formPrjResponsibleEmp");
 
-    // 1. Bidirectional Safety: Clear child selections immediately
-    if (deptSelect) deptSelect.value = "";
-    if (officeSelect) officeSelect.value = "";
-    if (empSelect) empSelect.value = "";
+    if (resetChildren) {
+      if (deptSelect) deptSelect.value = "";
+      if (officeSelect) officeSelect.value = "";
+      if (empSelect) empSelect.value = "";
+      const bannerLead = document.getElementById("bannerPrjLead");
+      if (bannerLead) bannerLead.textContent = "-";
+    }
 
-    const bannerLead = document.getElementById("bannerPrjLead");
-    if (bannerLead) bannerLead.textContent = "-";
+    const [departments, offices, employees] = await Promise.all([
+      db.getAll("departments").catch(() => []),
+      db.getAll("offices").catch(() => []),
+      db.getAll("employees").catch(() => [])
+    ]);
 
-    // 2. Reload Department options strictly filtered by Location (Location -> Department)
+    const activeDepts = departments.filter(d => d.active !== false);
+    const activeOffices = offices.filter(o => o.status !== "Inactive");
+    const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+
     if (deptSelect) {
+      let filteredDepts = activeDepts;
       if (locId) {
-        const departments = await db.getAll("departments");
-        const filteredDepts = departments.filter(d => 
-          (d.locationId === locId || d.location_id === locId) && d.active !== false
-        );
-
-        if (filteredDepts.length > 0) {
-          deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
-            filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)} ${d.code ? `(${d.code})` : ""}</option>`).join("");
-        } else {
-          deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا توجد أقسام مسجلة لهذا الموقع" : "No departments for this location"} --</option>`;
-        }
-      } else {
-        deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر الموقع أولاً" : "Select Location First"} --</option>`;
+        filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+        if (filteredDepts.length === 0) filteredDepts = activeDepts;
       }
+      const curDept = deptSelect.value;
+      deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
+        filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)} ${d.code ? `(${d.code})` : ""}</option>`).join("");
+      if (curDept && filteredDepts.some(d => d.id === curDept)) deptSelect.value = curDept;
       this.refreshSelectCombobox(deptSelect);
     }
 
-    // 3. Clear and reset Office options
     if (officeSelect) {
-      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? (locId ? "اختر القسم أولاً" : "اختر الموقع أولاً") : (locId ? "Select Department First" : "Select Location First")} --</option>`;
+      let filteredOffices = activeOffices;
+      if (locId) {
+        filteredOffices = activeOffices.filter(o => (o.location_id === locId || o.locationId === locId));
+        if (filteredOffices.length === 0) filteredOffices = activeOffices;
+      }
+      const curOff = officeSelect.value;
+      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
+        filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
+      if (curOff && filteredOffices.some(o => o.id === curOff)) officeSelect.value = curOff;
       this.refreshSelectCombobox(officeSelect);
     }
 
-    // 4. Clear and reset Employee options
     if (empSelect) {
-      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+      let filteredEmps = activeEmps;
+      if (locId) {
+        filteredEmps = activeEmps.filter(e => (e.locationId === locId || e.location_id === locId));
+        if (filteredEmps.length === 0) filteredEmps = activeEmps;
+      }
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
+        filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
+      if (curEmp && filteredEmps.some(e => e.id === curEmp)) empSelect.value = curEmp;
       this.refreshSelectCombobox(empSelect);
     }
   }
 
-  async handleDeptChange(deptId) {
+  async handleDeptChange(deptId, resetChildren = true) {
     const lang = AppState.lang;
     const locSelect = document.getElementById("formPrjLocation");
     const deptSelect = document.getElementById("formPrjDepartment");
     const officeSelect = document.getElementById("formPrjOffice");
     const empSelect = document.getElementById("formPrjResponsibleEmp");
 
-    const locId = locSelect ? locSelect.value : "";
+    if (resetChildren) {
+      if (officeSelect) officeSelect.value = "";
+      if (empSelect) empSelect.value = "";
+      const bannerLead = document.getElementById("bannerPrjLead");
+      if (bannerLead) bannerLead.textContent = "-";
+    }
 
-    // 1. Bidirectional Safety: Clear child selections immediately
-    if (officeSelect) officeSelect.value = "";
-    if (empSelect) empSelect.value = "";
-
-    const bannerLead = document.getElementById("bannerPrjLead");
-    if (bannerLead) bannerLead.textContent = "-";
-
-    // 2. Reload Office options strictly where:
-    // office.department_id = selectedDepartmentId AND office.location_id = selectedLocationId
-    if (officeSelect) {
-      if (deptId && locId) {
-        const offices = await db.getAll("offices");
-        const filteredOffices = offices.filter(o => {
-          const matchDept = (o.department_id === deptId || o.departmentId === deptId);
-          const matchLoc = (o.location_id === locId || o.locationId === locId);
-          const active = o.status !== "Inactive";
-          return matchDept && matchLoc && active;
-        });
-
-        if (filteredOffices.length > 0) {
-          officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
-            filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
-        } else {
-          officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا توجد مكاتب مسجلة لهذا القسم والموقع" : "No offices for this department & location"} --</option>`;
+    if (deptId && locSelect) {
+      const dept = await db.getById("departments", deptId).catch(() => null);
+      if (dept) {
+        const dLoc = dept.locationId || dept.location_id;
+        if (dLoc && locSelect.value !== dLoc) {
+          locSelect.value = dLoc;
         }
-      } else {
-        officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? (locId ? "اختر القسم أولاً" : "اختر الموقع أولاً") : (locId ? "Select Department First" : "Select Location First")} --</option>`;
       }
+    }
+
+    const locId = locSelect ? locSelect.value : "";
+    const [offices, employees] = await Promise.all([
+      db.getAll("offices").catch(() => []),
+      db.getAll("employees").catch(() => [])
+    ]);
+
+    const activeOffices = offices.filter(o => o.status !== "Inactive");
+    const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+
+    if (officeSelect) {
+      let filteredOffices = activeOffices;
+      if (deptId) {
+        filteredOffices = activeOffices.filter(o => (o.department_id === deptId || o.departmentId === deptId));
+        if (locId) {
+          const locAndDeptOffices = filteredOffices.filter(o => (o.location_id === locId || o.locationId === locId));
+          if (locAndDeptOffices.length > 0) filteredOffices = locAndDeptOffices;
+        }
+      } else if (locId) {
+        filteredOffices = activeOffices.filter(o => (o.location_id === locId || o.locationId === locId));
+      }
+      const curOff = officeSelect.value;
+      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
+        filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
+      if (curOff && filteredOffices.some(o => o.id === curOff)) officeSelect.value = curOff;
       this.refreshSelectCombobox(officeSelect);
     }
 
-    // 3. Clear and reset Employee options
     if (empSelect) {
-      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+      let filteredEmps = activeEmps;
+      if (deptId) {
+        filteredEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
+        if (filteredEmps.length === 0) filteredEmps = activeEmps;
+      }
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
+        filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
+      if (curEmp && filteredEmps.some(e => e.id === curEmp)) empSelect.value = curEmp;
       this.refreshSelectCombobox(empSelect);
     }
   }
@@ -555,43 +616,40 @@ class ProjectManagementController {
     const deptSelect = document.getElementById("formPrjDepartment");
     const empSelect = document.getElementById("formPrjResponsibleEmp");
 
+    if (officeId) {
+      const office = await db.getById("offices", officeId).catch(() => null);
+      if (office) {
+        const offLoc = office.location_id || office.locationId;
+        const offDept = office.department_id || office.departmentId;
+        if (offLoc && locSelect && locSelect.value !== offLoc) {
+          locSelect.value = offLoc;
+        }
+        if (offDept && deptSelect && deptSelect.value !== offDept) {
+          deptSelect.value = offDept;
+        }
+      }
+    }
+
     const locId = locSelect ? locSelect.value : "";
     const deptId = deptSelect ? deptSelect.value : "";
 
-    // 1. Bidirectional Safety: Clear child selection immediately
-    if (empSelect) empSelect.value = "";
-
-    const bannerLead = document.getElementById("bannerPrjLead");
-    if (bannerLead) bannerLead.textContent = "-";
-
-    // 2. Reload Employee options strictly where:
-    // employees.office_id = selectedOfficeId AND compatible with location & department
     if (empSelect) {
-      if (officeId) {
-        const employees = await db.getAll("employees");
-        const filteredEmps = employees.filter(e => {
-          if (e.status && e.status !== "Active") return false;
-          // Must belong to selected office
-          const empOffice = e.office_id || e.officeId;
-          if (empOffice !== officeId) return false;
-          // Must be compatible with department if set
-          const empDept = e.department_id || e.departmentId;
-          if (deptId && empDept && empDept !== deptId) return false;
-          // Must be compatible with location if set
-          const empLoc = e.location_id || e.locationId;
-          if (locId && empLoc && empLoc !== locId) return false;
-          return true;
-        });
+      const employees = await db.getAll("employees").catch(() => []);
+      const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+      let filteredEmps = activeEmps;
 
-        if (filteredEmps.length > 0) {
-          empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
-            filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
-        } else {
-          empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "لا يوجد موظفون مسجلون في هذا المكتب" : "No employees registered in this office"} --</option>`;
+      if (officeId) {
+        filteredEmps = activeEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
+        if (filteredEmps.length === 0 && deptId) {
+          filteredEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
         }
-      } else {
-        empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب أولاً" : "Select Office First"} --</option>`;
+        if (filteredEmps.length === 0) filteredEmps = activeEmps;
       }
+
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
+        filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} ${e.jobTitle ? `(${e.jobTitle})` : ""}</option>`).join("");
+      if (curEmp && filteredEmps.some(e => e.id === curEmp)) empSelect.value = curEmp;
       this.refreshSelectCombobox(empSelect);
     }
   }
@@ -2182,13 +2240,31 @@ class AssetOperationsController {
 
   async openWarehouseIssueModal(assetId = null) {
     const lang = AppState.lang;
-    const [assets, locations, employees, projects] = await Promise.all([
-      db.getAll("assets"),
-      db.getAll("locations"),
-      db.getAll("employees"),
-      db.getAll("projects")
+    const [assets, locations, employees, departments, projects, users] = await Promise.all([
+      db.getAll("assets").catch(() => []),
+      db.getAll("locations").catch(() => []),
+      db.getAll("employees").catch(() => []),
+      db.getAll("departments").catch(() => []),
+      db.getAll("projects").catch(() => []),
+      db.getAll("users").catch(() => [])
     ]);
 
+    this._cachedWiAssets = assets;
+    this._cachedWiLocations = locations;
+    this._cachedWiEmployees = employees;
+    this._cachedWiDepartments = departments;
+    this._cachedWiProjects = projects;
+    this._cachedWiUsers = users;
+
+    const voucherNo = `WI-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+    const bannerVoucherEl = document.getElementById("bannerWiVoucher");
+    if (bannerVoucherEl) bannerVoucherEl.textContent = voucherNo;
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const bannerDateEl = document.getElementById("bannerWiDate");
+    if (bannerDateEl) bannerDateEl.textContent = todayDate;
+
+    // Populate Asset Dropdown
     const assetSelect = document.getElementById("formWiAssetId");
     if (assetSelect) {
       const eligible = assets.filter(a => a.status === "Available" || a.status === "In Store" || a.id === assetId);
@@ -2197,25 +2273,112 @@ class AssetOperationsController {
       this.enhanceSelectWithSearch("formWiAssetId", lang === "ar" ? "اختر الأصل *" : "Select Asset *", lang === "ar" ? "ابحث عن الأصل بالكود أو الموديل..." : "Search asset...");
     }
 
-    const locSelect = document.getElementById("formWiWarehouseLoc");
-    if (locSelect) {
-      locSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المستودع المصدر" : "Select Source Warehouse"} --</option>` +
-        locations.filter(l => l.active !== false).map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} (${l.code || ""})</option>`).join("");
-      if (assetId) {
-        const a = assets.find(x => x.id === assetId);
-        if (a && a.locationId) locSelect.value = a.locationId;
-      }
-      this.enhanceSelectWithSearch("formWiWarehouseLoc", lang === "ar" ? "اختر المستودع *" : "Select Warehouse *", lang === "ar" ? "ابحث عن المستودع..." : "Search warehouse...");
+    // Determine initial warehouse location from asset if provided
+    let initialWarehouseId = "";
+    if (assetId) {
+      const a = assets.find(x => x.id === assetId);
+      if (a && a.locationId) initialWarehouseId = a.locationId;
     }
 
-    await db.populateFilteredDropdown(
-      "employees",
-      "departmentId",
-      "dept-it",
-      "formWiItEmp",
-      "اختر فني تقنية المعلومات المستلم *",
-      "Select IT Technician *"
-    );
+    // Populate Warehouse Location Dropdown
+    const locSelect = document.getElementById("formWiWarehouseLoc");
+    if (locSelect) {
+      const activeLocs = locations.filter(l => l.active !== false);
+      locSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المستودع المصدر" : "Select Source Warehouse"} --</option>` +
+        activeLocs.map(l => `<option value="${l.id}" ${l.id === initialWarehouseId ? "selected" : ""}>${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)} (${l.code || ""})</option>`).join("");
+      if (initialWarehouseId) locSelect.value = initialWarehouseId;
+      this.enhanceSelectWithSearch("formWiWarehouseLoc", lang === "ar" ? "اختر المستودع *" : "Select Warehouse *", lang === "ar" ? "ابحث عن المستودع..." : "Search warehouse...");
+      
+      const bannerWarehouseEl = document.getElementById("bannerWiWarehouse");
+      if (bannerWarehouseEl) {
+        const selLoc = locations.find(l => l.id === (initialWarehouseId || locSelect.value));
+        bannerWarehouseEl.textContent = selLoc ? (lang === "ar" ? selLoc.nameAr : (selLoc.nameEn || selLoc.nameAr)) : "-";
+      }
+    }
+
+    // Categorize IT Employees vs Other Employees flexibly
+    const itDeptIds = new Set();
+    departments.forEach(d => {
+      const id = (d.id || "").toLowerCase();
+      const code = (d.code || "").toUpperCase();
+      const nameAr = d.nameAr || "";
+      const nameEn = (d.nameEn || "").toLowerCase();
+      if (
+        id === "dept-it" ||
+        id.includes("it") ||
+        id.includes("tech") ||
+        code === "IT" ||
+        code.includes("IT") ||
+        nameAr.includes("تقنية") ||
+        nameAr.includes("معلومات") ||
+        nameAr.includes("حاسب") ||
+        nameAr.includes("شبكات") ||
+        nameAr.includes("نظم") ||
+        nameEn.includes("it") ||
+        nameEn.includes("tech") ||
+        nameEn.includes("information")
+      ) {
+        itDeptIds.add(d.id);
+      }
+    });
+
+    const itUserEmpIds = new Set();
+    users.forEach(u => {
+      if (u.role === "Administrator" || u.role === "IT User") {
+        if (u.employeeId) itUserEmpIds.add(u.employeeId);
+        if (u.employee_id) itUserEmpIds.add(u.employee_id);
+      }
+    });
+
+    const activeEmployees = employees.filter(e => e.status === "Active" || !e.status);
+    const isItEmp = (e) => {
+      const deptId = e.departmentId || e.department_id;
+      if (deptId && (itDeptIds.has(deptId) || String(deptId).toLowerCase().includes("it"))) return true;
+      if (itUserEmpIds.has(e.id)) return true;
+      const title = ((e.jobTitle || "") + " " + (e.jobTitleEn || "")).toLowerCase();
+      const titleAr = (e.jobTitle || "");
+      return (
+        title.includes("it") ||
+        title.includes("tech") ||
+        title.includes("support") ||
+        title.includes("admin") ||
+        title.includes("network") ||
+        title.includes("developer") ||
+        title.includes("engineer") ||
+        titleAr.includes("تقنية") ||
+        titleAr.includes("فني") ||
+        titleAr.includes("حاسب") ||
+        titleAr.includes("شبكات") ||
+        titleAr.includes("مبرمج") ||
+        titleAr.includes("مهندس") ||
+        titleAr.includes("نظم") ||
+        titleAr.includes("معلومات")
+      );
+    };
+
+    const itEmployees = activeEmployees.filter(isItEmp);
+    const otherEmployees = activeEmployees.filter(e => !isItEmp(e));
+
+    const itSelect = document.getElementById("formWiItEmp");
+    if (itSelect) {
+      let optHtml = `<option value="">-- ${lang === "ar" ? "اختر فني تقنية المعلومات المستلم *" : "Select IT Technician *"} --</option>`;
+      if (itEmployees.length > 0 && otherEmployees.length > 0) {
+        optHtml += `<optgroup label="${lang === "ar" ? "فريق وفنيو تقنية المعلومات (IT Staff)" : "IT Department Technicians & Staff"}">` +
+          itEmployees.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id}) ${e.jobTitle ? `- ${e.jobTitle}` : ""}</option>`).join("") +
+          `</optgroup>`;
+        optHtml += `<optgroup label="${lang === "ar" ? "كافة الموظفين الآخرين" : "All Other Employees"}">` +
+          otherEmployees.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("") +
+          `</optgroup>`;
+      } else {
+        const list = itEmployees.length > 0 ? itEmployees : activeEmployees;
+        optHtml += list.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id}) ${e.jobTitle ? `- ${e.jobTitle}` : ""}</option>`).join("");
+      }
+      itSelect.innerHTML = optHtml;
+      this.enhanceSelectWithSearch("formWiItEmp", lang === "ar" ? "فني تقنية المعلومات المستلم *" : "IT Technician *", lang === "ar" ? "ابحث في موظفي وفنيي IT..." : "Search IT staff...");
+    }
+
+    const bannerTechEl = document.getElementById("bannerWiTech");
+    if (bannerTechEl) bannerTechEl.textContent = "-";
 
     const prjSelect = document.getElementById("formWiProject");
     if (prjSelect) {
@@ -2225,12 +2388,51 @@ class AssetOperationsController {
       this.enhanceSelectWithSearch("formWiProject", lang === "ar" ? "بدون مشروع (اختياري)" : "No Project (Optional)", lang === "ar" ? "ابحث عن المشروع..." : "Search project...");
     }
 
-    document.getElementById("formWiDate").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("formWiDate").value = todayDate;
     document.getElementById("formWiNotes").value = "";
     // Reset delivery destination fields
     const resetIds = ["formWiSiteName", "formWiAdministration", "formWiOfficeName", "formWiDeliveryDate", "formWiReceivingEmployee"];
     resetIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
     App.openModal("warehouseIssueModal");
+  }
+
+  handleWarehouseAssetChange(assetId) {
+    if (!assetId) return;
+    const assets = this._cachedWiAssets || [];
+    const asset = assets.find(a => a.id === assetId);
+    if (asset && asset.locationId) {
+      const locSelect = document.getElementById("formWiWarehouseLoc");
+      if (locSelect) {
+        locSelect.value = asset.locationId;
+        this.enhanceSelectWithSearch("formWiWarehouseLoc", AppState.lang === "ar" ? "اختر المستودع *" : "Select Warehouse *", AppState.lang === "ar" ? "ابحث عن المستودع..." : "Search warehouse...");
+        this.handleWarehouseLocChange(asset.locationId);
+      }
+    }
+  }
+
+  handleWarehouseLocChange(locId) {
+    const locations = this._cachedWiLocations || [];
+    const loc = locations.find(l => l.id === locId);
+    const bannerWarehouseEl = document.getElementById("bannerWiWarehouse");
+    if (bannerWarehouseEl) {
+      bannerWarehouseEl.textContent = loc ? (AppState.lang === "ar" ? loc.nameAr : (loc.nameEn || loc.nameAr)) : "-";
+    }
+  }
+
+  handleWarehouseItEmpChange(empId) {
+    const employees = this._cachedWiEmployees || [];
+    const emp = employees.find(e => e.id === empId);
+    const bannerTechEl = document.getElementById("bannerWiTech");
+    if (bannerTechEl) {
+      bannerTechEl.textContent = emp ? (AppState.lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr)) : "-";
+    }
+  }
+
+  handleWarehouseDateChange(date) {
+    const bannerDateEl = document.getElementById("bannerWiDate");
+    if (bannerDateEl) {
+      bannerDateEl.textContent = date || "-";
+    }
   }
 
   async handleWarehouseIssueSubmit(event) {
@@ -2585,7 +2787,7 @@ class AssetOperationsController {
     const employees = this._cachedEmployees || [];
     let filteredEmps = employees.filter(e => e.status === "Active" || !e.status);
     if (departmentId) {
-      const deptFiltered = filteredEmps.filter(e => e.departmentId === departmentId);
+      const deptFiltered = filteredEmps.filter(e => (e.departmentId === departmentId || e.department_id === departmentId));
       if (deptFiltered.length > 0) filteredEmps = deptFiltered;
     }
 
@@ -2608,6 +2810,10 @@ class AssetOperationsController {
 
   async handleInstallationOfficeChange(officeId) {
     await this.syncInstallationFilters("office", officeId);
+  }
+
+  async handleInstallationUserChange(empId) {
+    await this.syncInstallationFilters("employee", empId);
   }
 
   async syncInstallationFilters(triggerSource, value) {
@@ -2647,22 +2853,23 @@ class AssetOperationsController {
 
     if (triggerSource === "location") {
       if (locId) {
-        if (deptId && deptMap[deptId]?.locationId && deptMap[deptId].locationId !== locId) {
+        if (deptId && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id) && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id) !== locId) {
           deptId = ""; officeId = ""; empId = "";
         }
-        if (officeId && officeMap[officeId]?.location_id !== locId) {
+        if (officeId && (officeMap[officeId]?.location_id || officeMap[officeId]?.locationId) && (officeMap[officeId]?.location_id || officeMap[officeId]?.locationId) !== locId) {
           officeId = ""; empId = "";
         }
       }
     } else if (triggerSource === "department") {
       if (deptId) {
-        if (deptMap[deptId]?.locationId) {
-          locId = deptMap[deptId].locationId;
+        const dLoc = deptMap[deptId]?.locationId || deptMap[deptId]?.location_id;
+        if (dLoc) {
+          locId = dLoc;
         }
-        if (officeId && officeMap[officeId]?.department_id && officeMap[officeId].department_id !== deptId) {
+        if (officeId && (officeMap[officeId]?.department_id || officeMap[officeId]?.departmentId) && (officeMap[officeId]?.department_id || officeMap[officeId]?.departmentId) !== deptId) {
           officeId = ""; empId = "";
         }
-        if (empId && empMap[empId]?.departmentId !== deptId) {
+        if (empId && (empMap[empId]?.departmentId || empMap[empId]?.department_id) && (empMap[empId]?.departmentId || empMap[empId]?.department_id) !== deptId) {
           empId = "";
         }
       } else {
@@ -2672,11 +2879,21 @@ class AssetOperationsController {
       if (officeId) {
         const off = officeMap[officeId];
         if (off) {
-          if (off.location_id) locId = off.location_id;
-          if (off.department_id) deptId = off.department_id;
+          if (off.location_id || off.locationId) locId = off.location_id || off.locationId;
+          if (off.department_id || off.departmentId) deptId = off.department_id || off.departmentId;
         }
-        if (empId && empMap[empId]?.officeId !== officeId) {
+        if (empId && (empMap[empId]?.officeId || empMap[empId]?.office_id) && (empMap[empId]?.officeId || empMap[empId]?.office_id) !== officeId) {
           empId = "";
+        }
+      }
+    } else if (triggerSource === "employee" || triggerSource === "user") {
+      if (empId) {
+        const emp = empMap[empId];
+        if (emp) {
+          if (emp.departmentId || emp.department_id) deptId = emp.departmentId || emp.department_id;
+          if (emp.officeId || emp.office_id) officeId = emp.officeId || emp.office_id;
+          if (emp.locationId || emp.location_id) locId = emp.locationId || emp.location_id;
+          else if (deptId && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id)) locId = deptMap[deptId]?.locationId || deptMap[deptId]?.location_id;
         }
       }
     }
@@ -2687,7 +2904,8 @@ class AssetOperationsController {
     empSelect.value = empId;
 
     let filteredDepts = activeDepts;
-    if (locId) filteredDepts = activeDepts.filter(d => d.locationId === locId);
+    if (locId) filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+    if (filteredDepts.length === 0 && activeDepts.length > 0) filteredDepts = activeDepts;
     
     deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الإدارة / القسم (اختياري)" : "Department (Optional)"} --</option>` +
       filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
@@ -2695,8 +2913,8 @@ class AssetOperationsController {
     else if (!deptId && filteredDepts.length === 1 && locId) { deptId = filteredDepts[0].id; deptSelect.value = deptId; }
 
     let filteredOffices = activeOffices;
-    if (locId) filteredOffices = filteredOffices.filter(o => o.location_id === locId);
-    if (deptId) filteredOffices = filteredOffices.filter(o => o.department_id === deptId);
+    if (locId) filteredOffices = filteredOffices.filter(o => (o.location_id === locId || o.locationId === locId));
+    if (deptId) filteredOffices = filteredOffices.filter(o => (o.department_id === deptId || o.departmentId === deptId));
 
     officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب / القاعة (اختياري)" : "Select Office (Optional)"} --</option>` +
       filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
@@ -2704,8 +2922,10 @@ class AssetOperationsController {
     else officeId = "";
 
     let filteredEmps = activeEmps;
-    if (deptId) filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
-    if (officeId) filteredEmps = filteredEmps.filter(e => e.officeId === officeId);
+    if (deptId) filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
+    if (officeId) filteredEmps = filteredEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
+    if (locId && !deptId) filteredEmps = filteredEmps.filter(e => (e.locationId === locId || e.location_id === locId));
+    if (filteredEmps.length === 0 && activeEmps.length > 0) filteredEmps = activeEmps;
 
     empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف المستلم (اختياري)" : "Employee (Optional)"} --</option>` +
       filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");

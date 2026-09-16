@@ -250,9 +250,10 @@ class MaintenanceController {
 
     // Helper functions for validation
     const getEmpLocation = (emp) => {
-      if (emp.locationId) return emp.locationId;
-      if (emp.departmentId && deptMap[emp.departmentId]) {
-        return deptMap[emp.departmentId].locationId;
+      if (emp.locationId || emp.location_id) return emp.locationId || emp.location_id;
+      const empDept = emp.departmentId || emp.department_id;
+      if (empDept && deptMap[empDept]) {
+        return deptMap[empDept].locationId || deptMap[empDept].location_id;
       }
       return null;
     };
@@ -266,18 +267,18 @@ class MaintenanceController {
           empId = targetAsset.currentEmployeeId || "";
           
           // Department can be derived from the asset, or if not present, from the employee
-          deptId = targetAsset.departmentId || "";
+          deptId = targetAsset.departmentId || targetAsset.department_id || "";
           if (!deptId && empId && empMap[empId]) {
-            deptId = empMap[empId].departmentId || "";
+            deptId = empMap[empId].departmentId || empMap[empId].department_id || "";
           }
 
           // Location can be derived from the asset, or employee, or department
-          locId = targetAsset.locationId || "";
+          locId = targetAsset.locationId || targetAsset.location_id || "";
           if (!locId && empId && empMap[empId]) {
             locId = getEmpLocation(empMap[empId]) || "";
           }
           if (!locId && deptId && deptMap[deptId]) {
-            locId = deptMap[deptId].locationId || "";
+            locId = deptMap[deptId].locationId || deptMap[deptId].location_id || "";
           }
         }
       }
@@ -285,7 +286,7 @@ class MaintenanceController {
       if (empId) {
         const targetEmp = empMap[empId];
         if (targetEmp) {
-          deptId = targetEmp.departmentId || "";
+          deptId = targetEmp.departmentId || targetEmp.department_id || "";
           locId = getEmpLocation(targetEmp) || "";
         }
         // Validate assetId: Is the asset in this employee's custody?
@@ -307,27 +308,28 @@ class MaintenanceController {
     } else if (triggerSource === "department") {
       if (deptId) {
         const targetDept = deptMap[deptId];
-        if (targetDept && targetDept.locationId) {
-          // Respect already set locId if they match, or override if different
-          locId = targetDept.locationId;
+        const dLoc = targetDept ? (targetDept.locationId || targetDept.location_id) : null;
+        if (dLoc) {
+          locId = dLoc;
         }
         // Validate employeeId: Does the employee belong to the new department?
         if (empId) {
           const targetEmp = empMap[empId];
-          if (!targetEmp || targetEmp.departmentId !== deptId) {
+          const eDept = targetEmp ? (targetEmp.departmentId || targetEmp.department_id) : null;
+          if (!targetEmp || (eDept && eDept !== deptId)) {
             empId = "";
-            assetId = ""; // Also clear asset if employee is cleared
+            assetId = "";
           }
         }
         // Validate assetId (when no employee is chosen): Does the asset belong to the department?
         if (assetId && !empId) {
           const targetAsset = assetMap[assetId];
-          if (!targetAsset || targetAsset.departmentId !== deptId) {
+          const aDept = targetAsset ? (targetAsset.departmentId || targetAsset.department_id) : null;
+          if (!targetAsset || (aDept && aDept !== deptId)) {
             assetId = "";
           }
         }
       } else {
-        // If department is cleared: Clear children
         empId = "";
         assetId = "";
       }
@@ -336,16 +338,18 @@ class MaintenanceController {
         // Validate department: Does department belong to the new location?
         if (deptId) {
           const targetDept = deptMap[deptId];
-          if (!targetDept || targetDept.locationId !== locId) {
+          const dLoc = targetDept ? (targetDept.locationId || targetDept.location_id) : null;
+          if (!targetDept || (dLoc && dLoc !== locId)) {
             deptId = "";
-            empId = ""; // Also clear child employee
-            assetId = ""; // Also clear child asset
+            empId = ""; 
+            assetId = "";
           }
         }
         // Validate employee: Does employee belong to the new location?
         if (empId) {
           const targetEmp = empMap[empId];
-          if (!targetEmp || getEmpLocation(targetEmp) !== locId) {
+          const eLoc = targetEmp ? getEmpLocation(targetEmp) : null;
+          if (!targetEmp || (eLoc && eLoc !== locId)) {
             empId = "";
             assetId = "";
           }
@@ -353,7 +357,8 @@ class MaintenanceController {
         // Validate asset: Does asset belong to the new location?
         if (assetId) {
           const targetAsset = assetMap[assetId];
-          if (!targetAsset || targetAsset.locationId !== locId) {
+          const aLoc = targetAsset ? (targetAsset.locationId || targetAsset.location_id) : null;
+          if (!targetAsset || (aLoc && aLoc !== locId)) {
             assetId = "";
           }
         }
@@ -371,7 +376,8 @@ class MaintenanceController {
     // --- REBUILD DEPARTMENTS ---
     let filteredDepts = activeDepts;
     if (locId) {
-      filteredDepts = activeDepts.filter(d => d.locationId === locId);
+      filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+      if (filteredDepts.length === 0) filteredDepts = activeDepts;
     }
     const selectDeptPlaceholder = lang === "ar" ? "-- اختر القسم / الإدارة --" : "-- Select Department --";
     deptSelect.innerHTML = `<option value="">${selectDeptPlaceholder}</option>` +
@@ -380,7 +386,6 @@ class MaintenanceController {
         return `<option value="${d.id}">${name} (${d.code || d.id})</option>`;
       }).join("");
 
-    // Restore selected value, or auto-select if there is exactly 1 department (Location First)
     if (deptId && filteredDepts.some(d => d.id === deptId)) {
       deptSelect.value = deptId;
     } else if (!deptId && filteredDepts.length === 1 && triggerSource === "location") {
@@ -394,11 +399,13 @@ class MaintenanceController {
     // --- REBUILD EMPLOYEES ---
     let filteredEmps = activeEmps;
     if (deptId) {
-      filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
+      filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
     }
-    if (locId) {
+    if (locId && !deptId) {
       filteredEmps = filteredEmps.filter(e => getEmpLocation(e) === locId);
     }
+    if (filteredEmps.length === 0) filteredEmps = activeEmps;
+
     const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
     empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +
       filteredEmps.map(e => {
@@ -420,12 +427,14 @@ class MaintenanceController {
       filteredAssets = assets.filter(a => a.currentEmployeeId === empId);
     } else {
       if (deptId) {
-        filteredAssets = filteredAssets.filter(a => a.departmentId === deptId);
+        filteredAssets = filteredAssets.filter(a => (a.departmentId === deptId || a.department_id === deptId));
       }
-      if (locId) {
-        filteredAssets = filteredAssets.filter(a => a.locationId === locId);
+      if (locId && !deptId) {
+        filteredAssets = filteredAssets.filter(a => (a.locationId === locId || a.location_id === locId));
       }
     }
+    if (filteredAssets.length === 0) filteredAssets = assets;
+
     const selectAssetPlaceholder = lang === "ar" ? "-- اختر الأصل المطلوب صيانته --" : "-- Select Asset for Maintenance --";
     assetSelect.innerHTML = `<option value="">${selectAssetPlaceholder}</option>` +
       filteredAssets.map(a => `<option value="${a.id}">${a.assetId} - ${a.brand} ${a.model} (${AssetManager.formatStatus(a.status)})</option>`).join("");

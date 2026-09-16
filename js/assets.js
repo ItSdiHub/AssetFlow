@@ -389,6 +389,91 @@ class AssetInventoryManager {
     }
   }
 
+  async handleAssetLocChange(locId) {
+    if (!locId) return;
+    const departments = await db.getAll("departments");
+    const employees = await db.getAll("employees");
+    const lang = AppState.lang;
+
+    const deptSelect = document.getElementById("formAssetDept");
+    const empSelect = document.getElementById("formAssetEmp");
+
+    if (deptSelect) {
+      const activeDepts = departments.filter(d => d.active !== false);
+      const locDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+      const listToShow = locDepts.length > 0 ? locDepts : activeDepts;
+      const curDept = deptSelect.value;
+      deptSelect.innerHTML = listToShow.map(d => `<option value="${d.id}">${lang === 'ar' ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+      if (curDept && listToShow.some(d => d.id === curDept)) {
+        deptSelect.value = curDept;
+      }
+    }
+
+    if (empSelect) {
+      const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+      const locEmps = activeEmps.filter(e => (e.locationId === locId || e.location_id === locId));
+      const listToShow = locEmps.length > 0 ? locEmps : activeEmps;
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === 'ar' ? 'بدون موظف (غير مسند)' : 'None (Unassigned)'} --</option>` +
+        listToShow.map(e => `<option value="${e.id}">${lang === 'ar' ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+      if (curEmp && listToShow.some(e => e.id === curEmp)) {
+        empSelect.value = curEmp;
+      }
+    }
+  }
+
+  async handleAssetDeptChange(deptId) {
+    if (!deptId) return;
+    const dept = await db.getById("departments", deptId);
+    const locSelect = document.getElementById("formAssetLoc");
+    const empSelect = document.getElementById("formAssetEmp");
+    const lang = AppState.lang;
+
+    if (dept) {
+      const dLoc = dept.locationId || dept.location_id;
+      if (dLoc && locSelect && locSelect.value !== dLoc) {
+        locSelect.value = dLoc;
+      }
+    }
+
+    if (empSelect) {
+      const employees = await db.getAll("employees");
+      const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+      const deptEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
+      const listToShow = deptEmps.length > 0 ? deptEmps : activeEmps;
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === 'ar' ? 'بدون موظف (غير مسند)' : 'None (Unassigned)'} --</option>` +
+        listToShow.map(e => `<option value="${e.id}">${lang === 'ar' ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+      if (curEmp && listToShow.some(e => e.id === curEmp)) {
+        empSelect.value = curEmp;
+      }
+    }
+  }
+
+  async handleAssetEmpChange(empId) {
+    if (!empId) return;
+    const emp = await db.getById("employees", empId);
+    if (!emp) return;
+
+    const deptSelect = document.getElementById("formAssetDept");
+    const locSelect = document.getElementById("formAssetLoc");
+
+    const empDept = emp.departmentId || emp.department_id;
+    if (empDept && deptSelect && deptSelect.value !== empDept) {
+      deptSelect.value = empDept;
+    }
+
+    let empLoc = emp.locationId || emp.location_id;
+    if (!empLoc && empDept) {
+      const dept = await db.getById("departments", empDept);
+      if (dept) empLoc = dept.locationId || dept.location_id;
+    }
+
+    if (empLoc && locSelect && locSelect.value !== empLoc) {
+      locSelect.value = empLoc;
+    }
+  }
+
   // Toggle Technical Specifications in Add/Edit Modal
   async toggleTechFieldsByType(typeId) {
     const typeObj = await db.getById("assetTypes", typeId);
@@ -1594,8 +1679,85 @@ class AssetInventoryManager {
   async handleAssignEmpChange(empId) {
     if (!empId) return;
     const emp = await db.getById("employees", empId);
-    if (emp && emp.departmentId) {
-      document.getElementById("formAssignDept").value = emp.departmentId;
+    if (!emp) return;
+
+    const deptSelect = document.getElementById("formAssignDept");
+    const locSelect = document.getElementById("formAssignLoc");
+
+    const empDept = emp.departmentId || emp.department_id;
+    if (empDept && deptSelect) {
+      deptSelect.value = empDept;
+    }
+
+    let empLoc = emp.locationId || emp.location_id;
+    if (!empLoc && empDept) {
+      const dept = await db.getById("departments", empDept);
+      if (dept) empLoc = dept.locationId || dept.location_id;
+    }
+
+    if (empLoc && locSelect) {
+      locSelect.value = empLoc;
+    }
+  }
+
+  async handleAssignDeptChange(deptId) {
+    if (!deptId) return;
+    const dept = await db.getById("departments", deptId);
+    const locSelect = document.getElementById("formAssignLoc");
+    const empSelect = document.getElementById("formAssignEmp");
+    const lang = AppState.lang;
+
+    if (dept) {
+      const dLoc = dept.locationId || dept.location_id;
+      if (dLoc && locSelect) {
+        locSelect.value = dLoc;
+      }
+    }
+
+    if (empSelect) {
+      const employees = await db.getAll("employees");
+      const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+      const deptEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
+      const listToShow = deptEmps.length > 0 ? deptEmps : activeEmps;
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === 'ar' ? 'اختر الموظف المستلم' : 'Select Receiving Employee'} --</option>` +
+        listToShow.map(e => `<option value="${e.id}">${lang === 'ar' ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+      if (curEmp && listToShow.some(e => e.id === curEmp)) {
+        empSelect.value = curEmp;
+      }
+    }
+  }
+
+  async handleAssignLocChange(locId) {
+    if (!locId) return;
+    const departments = await db.getAll("departments");
+    const employees = await db.getAll("employees");
+    const lang = AppState.lang;
+
+    const deptSelect = document.getElementById("formAssignDept");
+    const empSelect = document.getElementById("formAssignEmp");
+
+    if (deptSelect) {
+      const activeDepts = departments.filter(d => d.active !== false);
+      const locDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+      const listToShow = locDepts.length > 0 ? locDepts : activeDepts;
+      const curDept = deptSelect.value;
+      deptSelect.innerHTML = listToShow.map(d => `<option value="${d.id}">${lang === 'ar' ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+      if (curDept && listToShow.some(d => d.id === curDept)) {
+        deptSelect.value = curDept;
+      }
+    }
+
+    if (empSelect) {
+      const activeEmps = employees.filter(e => e.status === "Active" || !e.status);
+      const locEmps = activeEmps.filter(e => (e.locationId === locId || e.location_id === locId));
+      const listToShow = locEmps.length > 0 ? locEmps : activeEmps;
+      const curEmp = empSelect.value;
+      empSelect.innerHTML = `<option value="">-- ${lang === 'ar' ? 'اختر الموظف المستلم' : 'Select Receiving Employee'} --</option>` +
+        listToShow.map(e => `<option value="${e.id}">${lang === 'ar' ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+      if (curEmp && listToShow.some(e => e.id === curEmp)) {
+        empSelect.value = curEmp;
+      }
     }
   }
 
@@ -1914,22 +2076,23 @@ class AssetInventoryManager {
 
     if (triggerSource === "location") {
       if (locId) {
-        if (deptId && deptMap[deptId]?.locationId && deptMap[deptId].locationId !== locId) {
+        if (deptId && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id) && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id) !== locId) {
           deptId = ""; officeId = ""; empId = "";
         }
-        if (officeId && officeMap[officeId]?.location_id !== locId) {
+        if (officeId && (officeMap[officeId]?.location_id || officeMap[officeId]?.locationId) && (officeMap[officeId]?.location_id || officeMap[officeId]?.locationId) !== locId) {
           officeId = ""; empId = "";
         }
       }
     } else if (triggerSource === "department") {
       if (deptId) {
-        if (deptMap[deptId]?.locationId) {
-          locId = deptMap[deptId].locationId;
+        const dLoc = deptMap[deptId]?.locationId || deptMap[deptId]?.location_id;
+        if (dLoc) {
+          locId = dLoc;
         }
-        if (officeId && officeMap[officeId]?.department_id && officeMap[officeId].department_id !== deptId) {
+        if (officeId && (officeMap[officeId]?.department_id || officeMap[officeId]?.departmentId) && (officeMap[officeId]?.department_id || officeMap[officeId]?.departmentId) !== deptId) {
           officeId = ""; empId = "";
         }
-        if (empId && empMap[empId]?.departmentId !== deptId) {
+        if (empId && (empMap[empId]?.departmentId || empMap[empId]?.department_id) && (empMap[empId]?.departmentId || empMap[empId]?.department_id) !== deptId) {
           empId = "";
         }
       } else {
@@ -1939,10 +2102,10 @@ class AssetInventoryManager {
       if (officeId) {
         const off = officeMap[officeId];
         if (off) {
-          if (off.location_id) locId = off.location_id;
-          if (off.department_id) deptId = off.department_id;
+          if (off.location_id || off.locationId) locId = off.location_id || off.locationId;
+          if (off.department_id || off.departmentId) deptId = off.department_id || off.departmentId;
         }
-        if (empId && empMap[empId]?.officeId !== officeId) {
+        if (empId && (empMap[empId]?.officeId || empMap[empId]?.office_id) && (empMap[empId]?.officeId || empMap[empId]?.office_id) !== officeId) {
           empId = "";
         }
       }
@@ -1950,9 +2113,10 @@ class AssetInventoryManager {
       if (empId) {
         const emp = empMap[empId];
         if (emp) {
-          if (emp.departmentId) deptId = emp.departmentId;
-          if (emp.officeId) officeId = emp.officeId;
-          if (deptId && deptMap[deptId]?.locationId) locId = deptMap[deptId].locationId;
+          if (emp.departmentId || emp.department_id) deptId = emp.departmentId || emp.department_id;
+          if (emp.officeId || emp.office_id) officeId = emp.officeId || emp.office_id;
+          if (emp.locationId || emp.location_id) locId = emp.locationId || emp.location_id;
+          else if (deptId && (deptMap[deptId]?.locationId || deptMap[deptId]?.location_id)) locId = deptMap[deptId]?.locationId || deptMap[deptId]?.location_id;
         }
       }
     }
@@ -1963,7 +2127,8 @@ class AssetInventoryManager {
     empSelect.value = empId;
 
     let filteredDepts = activeDepts;
-    if (locId) filteredDepts = activeDepts.filter(d => d.locationId === locId);
+    if (locId) filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
+    if (filteredDepts.length === 0 && activeDepts.length > 0) filteredDepts = activeDepts;
     
     deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "القسم (اختياري)" : "Department (Optional)"} --</option>` +
       filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
@@ -1971,8 +2136,8 @@ class AssetInventoryManager {
     else if (!deptId && filteredDepts.length === 1 && locId) { deptId = filteredDepts[0].id; deptSelect.value = deptId; }
 
     let filteredOffices = activeOffices;
-    if (locId) filteredOffices = filteredOffices.filter(o => o.location_id === locId);
-    if (deptId) filteredOffices = filteredOffices.filter(o => o.department_id === deptId);
+    if (locId) filteredOffices = filteredOffices.filter(o => (o.location_id === locId || o.locationId === locId));
+    if (deptId) filteredOffices = filteredOffices.filter(o => (o.department_id === deptId || o.departmentId === deptId));
 
     officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المكتب الجديد (Office)" : "New Office" } --</option>` +
       filteredOffices.map(o => `<option value="${o.id}">${lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)} ${o.code ? `(${o.code})` : ""}</option>`).join("");
@@ -1980,8 +2145,10 @@ class AssetInventoryManager {
     else officeId = "";
 
     let filteredEmps = activeEmps;
-    if (deptId) filteredEmps = filteredEmps.filter(e => e.departmentId === deptId);
-    if (officeId) filteredEmps = filteredEmps.filter(e => e.officeId === officeId);
+    if (deptId) filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
+    if (officeId) filteredEmps = filteredEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
+    if (locId && !deptId) filteredEmps = filteredEmps.filter(e => (e.locationId === locId || e.location_id === locId));
+    if (filteredEmps.length === 0 && activeEmps.length > 0) filteredEmps = activeEmps;
 
     empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف / المستلم الجديد (اختياري)" : "New Employee / Custodian (Optional)"} --</option>` +
       filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");

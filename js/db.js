@@ -1236,7 +1236,8 @@ class DBEngine {
       }
     }
     const all = await this.getAll(storeName);
-    return all.filter(item => item[filterColumn] === filterValue);
+    const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
+    return all.filter(item => item[filterColumn] === filterValue || item[snakeCol] === filterValue);
   }
 
   async populateFilteredDropdown(storeName, filterColumn, filterValue, selectElementId, placeholderAr, placeholderEn) {
@@ -1252,16 +1253,42 @@ class DBEngine {
       selectElement.disabled = true;
       selectElement.innerHTML = `<option value="">-- ${lang === "ar" ? "جاري تحميل البيانات..." : "Loading data..."} --</option>`;
 
-      const data = await this.getFiltered(storeName, filterColumn, filterValue);
+      let data = await this.getFiltered(storeName, filterColumn, filterValue);
+
+      // Fallback: If no direct match and filtering for IT, search flexibly
+      if ((!data || data.length === 0) && storeName === "employees" && (filterValue === "dept-it" || String(filterValue).toLowerCase().includes("it"))) {
+        const allEmployees = await this.getAll("employees");
+        const departments = await this.getAll("departments").catch(() => []);
+        const itDeptIds = new Set(
+          departments.filter(d => 
+            (d.id && d.id.toLowerCase().includes("it")) ||
+            (d.code && d.code.toUpperCase().includes("IT")) ||
+            (d.nameAr && d.nameAr.includes("تقنية")) ||
+            (d.nameEn && d.nameEn.toLowerCase().includes("it"))
+          ).map(d => d.id)
+        );
+        data = allEmployees.filter(e => {
+          const dId = e.departmentId || e.department_id;
+          if (dId && (itDeptIds.has(dId) || String(dId).toLowerCase().includes("it"))) return true;
+          const title = (e.jobTitle || "").toLowerCase();
+          return title.includes("it") || title.includes("tech") || title.includes("تقنية") || title.includes("فني");
+        });
+        if (data.length === 0) {
+          data = allEmployees.filter(e => e.status === "Active" || !e.status);
+        }
+      }
 
       let html = `<option value="">-- ${placeholder} --</option>`;
       if (data && data.length > 0) {
-        const activeData = storeName === "employees" ? data.filter(e => e.status === "Active") : data;
+        const activeData = storeName === "employees" ? data.filter(e => e.status === "Active" || !e.status) : data;
         
         activeData.forEach(item => {
           let name = lang === "ar" ? item.nameAr : (item.nameEn || item.nameAr);
           if (storeName === "employees" && item.employeeNumber) {
             name += ` (${item.employeeNumber})`;
+          }
+          if (storeName === "employees" && item.jobTitle) {
+            name += ` - ${item.jobTitle}`;
           }
           html += `<option value="${item.id}">${name}</option>`;
         });

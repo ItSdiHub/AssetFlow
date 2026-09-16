@@ -5552,8 +5552,90 @@ class Application {
   }
 }
 
+/**
+ * Unified Relational Helper for Dynamic Location -> Department -> Office -> Employee -> Asset Cascading
+ */
+class RelationalCascadeHelper {
+  async getAllHierarchyData() {
+    const [locations, departments, offices, employees, assets] = await Promise.all([
+      db.getAll("locations").catch(() => []),
+      db.getAll("departments").catch(() => []),
+      db.getAll("offices").catch(() => []),
+      db.getAll("employees").catch(() => []),
+      db.getAll("assets").catch(() => [])
+    ]);
+
+    const activeLocs = (locations || []).filter(l => l && l.active !== false);
+    const activeDepts = (departments || []).filter(d => d && d.active !== false);
+    const activeOffices = (offices || []).filter(o => o && o.status !== "Inactive");
+    const activeEmps = (employees || []).filter(e => e && (e.status === "Active" || !e.status));
+    const allAssets = (assets || []);
+
+    const locMap = Object.fromEntries(activeLocs.map(l => [l.id, l]));
+    const deptMap = Object.fromEntries(activeDepts.map(d => [d.id, d]));
+    const officeMap = Object.fromEntries(activeOffices.map(o => [o.id, o]));
+    const empMap = Object.fromEntries(activeEmps.map(e => [e.id, e]));
+    const assetMap = Object.fromEntries(allAssets.map(a => [a.id, a]));
+
+    return {
+      locations: activeLocs,
+      departments: activeDepts,
+      offices: activeOffices,
+      employees: activeEmps,
+      assets: allAssets,
+      locMap,
+      deptMap,
+      officeMap,
+      empMap,
+      assetMap
+    };
+  }
+
+  getDepartmentLocationId(dept) {
+    if (!dept) return null;
+    return dept.locationId || dept.location_id || null;
+  }
+
+  getOfficeLocationId(office) {
+    if (!office) return null;
+    return office.location_id || office.locationId || null;
+  }
+
+  getOfficeDepartmentId(office) {
+    if (!office) return null;
+    return office.department_id || office.departmentId || null;
+  }
+
+  getEmployeeLocationId(emp, deptMap = {}, officeMap = {}) {
+    if (!emp) return null;
+    if (emp.locationId || emp.location_id) return emp.locationId || emp.location_id;
+    if (emp.officeId && officeMap[emp.officeId]) {
+      const offLoc = this.getOfficeLocationId(officeMap[emp.officeId]);
+      if (offLoc) return offLoc;
+    }
+    const deptId = emp.departmentId || emp.department_id;
+    if (deptId && deptMap[deptId]) {
+      return this.getDepartmentLocationId(deptMap[deptId]);
+    }
+    return null;
+  }
+
+  getEmployeeDepartmentId(emp, officeMap = {}) {
+    if (!emp) return null;
+    if (emp.departmentId || emp.department_id) return emp.departmentId || emp.department_id;
+    if (emp.officeId && officeMap[emp.officeId]) {
+      return this.getOfficeDepartmentId(officeMap[emp.officeId]);
+    }
+    return null;
+  }
+}
+
+const RelationalHelper = new RelationalCascadeHelper();
+window.RelationalHelper = RelationalHelper;
+
 // Global Application Singleton
 const App = new Application();
+App.RelationalHelper = RelationalHelper;
 window.App = App;
 
 // Global Searchable Combobox Exports & Event Listeners
