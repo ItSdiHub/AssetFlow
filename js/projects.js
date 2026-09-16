@@ -357,6 +357,104 @@ class ProjectManagementController {
     }
   }
 
+  setupProjectFormEventListeners() {
+    const locSelect = document.getElementById("formPrjLocation");
+    const deptSelect = document.getElementById("formPrjDepartment");
+    const officeSelect = document.getElementById("formPrjOffice");
+    const empSelect = document.getElementById("formPrjResponsibleEmp");
+    const statusSelect = document.getElementById("formPrjStatus");
+    const nameArInput = document.getElementById("formPrjNameAr");
+    const nameEnInput = document.getElementById("formPrjNameEn");
+
+    if (locSelect && !locSelect._unifiedListenerAttached) {
+      locSelect._unifiedListenerAttached = true;
+      locSelect.addEventListener("change", (e) => {
+        this.handleLocationChange(e.target.value);
+      });
+    }
+
+    if (deptSelect && !deptSelect._unifiedListenerAttached) {
+      deptSelect._unifiedListenerAttached = true;
+      deptSelect.addEventListener("change", (e) => {
+        this.handleDeptChange(e.target.value);
+      });
+    }
+
+    if (officeSelect && !officeSelect._unifiedListenerAttached) {
+      officeSelect._unifiedListenerAttached = true;
+      officeSelect.addEventListener("change", (e) => {
+        this.handleOfficeChange(e.target.value);
+      });
+    }
+
+    if (empSelect && !empSelect._unifiedListenerAttached) {
+      empSelect._unifiedListenerAttached = true;
+      empSelect.addEventListener("change", (e) => {
+        this.handleEmployeeChange(e.target.value);
+      });
+    }
+
+    if (statusSelect && !statusSelect._unifiedListenerAttached) {
+      statusSelect._unifiedListenerAttached = true;
+      statusSelect.addEventListener("change", async () => {
+        const curStatus = statusSelect.value;
+        const curId = document.getElementById("formProjectId") ? document.getElementById("formProjectId").value : "";
+        let pTasks = [];
+        if (curId) {
+          const allTasks = await db.getAll("projectTasks").catch(() => []);
+          pTasks = allTasks.filter(t => t.projectId === curId);
+        }
+        const prog = this.calculateProjectProgress({ status: curStatus }, pTasks);
+        this.updateProjectModalProgressUI(prog, curStatus, pTasks.length);
+        const bannerStatus = document.getElementById("bannerPrjStatus");
+        if (bannerStatus) {
+          const isAr = AppState.lang === "ar";
+          const statusMapAr = {
+            Planning: "تخطيط",
+            Approved: "معتمد",
+            "In Progress": "قيد التنفيذ",
+            "On Hold": "معلق",
+            Completed: "مكتمل",
+            Cancelled: "ملغي"
+          };
+          bannerStatus.textContent = isAr ? (statusMapAr[curStatus] || curStatus) : curStatus;
+        }
+      });
+    }
+
+    const updateBannerName = () => {
+      const nameAr = nameArInput ? nameArInput.value.trim() : "";
+      const nameEn = nameEnInput ? nameEnInput.value.trim() : "";
+      const bannerName = document.getElementById("bannerPrjName");
+      if (bannerName) {
+        bannerName.textContent = (AppState.lang === "ar" ? (nameAr || nameEn) : (nameEn || nameAr)) || 
+          (document.getElementById("formProjectId")?.value ? "-" : (AppState.lang === "ar" ? "مشروع تقني جديد" : "New IT Project"));
+      }
+    };
+
+    if (nameArInput && !nameArInput._unifiedListenerAttached) {
+      nameArInput._unifiedListenerAttached = true;
+      nameArInput.addEventListener("input", updateBannerName);
+    }
+    if (nameEnInput && !nameEnInput._unifiedListenerAttached) {
+      nameEnInput._unifiedListenerAttached = true;
+      nameEnInput.addEventListener("input", updateBannerName);
+    }
+  }
+
+  async handleEmployeeChange(empId) {
+    const lang = AppState.lang || "ar";
+    const bannerLead = document.getElementById("bannerPrjLead");
+    if (bannerLead) {
+      if (empId) {
+        const emp = await db.getById("employees", empId).catch(() => null);
+        bannerLead.textContent = emp ? (lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr)) : "-";
+      } else {
+        bannerLead.textContent = "-";
+      }
+    }
+  }
+
   async handleLocationChange(locId) {
     const lang = AppState.lang;
     const deptSelect = document.getElementById("formPrjDepartment");
@@ -367,6 +465,9 @@ class ProjectManagementController {
     if (deptSelect) deptSelect.value = "";
     if (officeSelect) officeSelect.value = "";
     if (empSelect) empSelect.value = "";
+
+    const bannerLead = document.getElementById("bannerPrjLead");
+    if (bannerLead) bannerLead.textContent = "-";
 
     // 2. Reload Department options strictly filtered by Location (Location -> Department)
     if (deptSelect) {
@@ -390,7 +491,7 @@ class ProjectManagementController {
 
     // 3. Clear and reset Office options
     if (officeSelect) {
-      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم أولاً" : "Select Department First"} --</option>`;
+      officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? (locId ? "اختر القسم أولاً" : "اختر الموقع أولاً") : (locId ? "Select Department First" : "Select Location First")} --</option>`;
       this.refreshSelectCombobox(officeSelect);
     }
 
@@ -413,6 +514,9 @@ class ProjectManagementController {
     // 1. Bidirectional Safety: Clear child selections immediately
     if (officeSelect) officeSelect.value = "";
     if (empSelect) empSelect.value = "";
+
+    const bannerLead = document.getElementById("bannerPrjLead");
+    if (bannerLead) bannerLead.textContent = "-";
 
     // 2. Reload Office options strictly where:
     // office.department_id = selectedDepartmentId AND office.location_id = selectedLocationId
@@ -456,6 +560,9 @@ class ProjectManagementController {
 
     // 1. Bidirectional Safety: Clear child selection immediately
     if (empSelect) empSelect.value = "";
+
+    const bannerLead = document.getElementById("bannerPrjLead");
+    if (bannerLead) bannerLead.textContent = "-";
 
     // 2. Reload Employee options strictly where:
     // employees.office_id = selectedOfficeId AND compatible with location & department
@@ -776,22 +883,8 @@ class ProjectManagementController {
       this.refreshSelectCombobox(officeSelect);
       this.refreshSelectCombobox(empSelect);
 
-      // Attach real-time status change listener to auto-calculate progress immediately
-      const statusSelect = document.getElementById("formPrjStatus");
-      if (statusSelect && !statusSelect._autoProgressListenerAttached) {
-        statusSelect._autoProgressListenerAttached = true;
-        statusSelect.addEventListener("change", async () => {
-          const curStatus = statusSelect.value;
-          const curId = document.getElementById("formProjectId") ? document.getElementById("formProjectId").value : "";
-          let pTasks = [];
-          if (curId) {
-            const allTasks = await db.getAll("projectTasks").catch(() => []);
-            pTasks = allTasks.filter(t => t.projectId === curId);
-          }
-          const prog = this.calculateProjectProgress({ status: curStatus }, pTasks);
-          this.updateProjectModalProgressUI(prog, curStatus, pTasks.length);
-        });
-      }
+      // Unify event listeners across all form controls
+      this.setupProjectFormEventListeners();
 
       App.openModal("projectModal");
     } catch (err) {
@@ -2312,39 +2405,40 @@ class AssetOperationsController {
   async handleInstallationSubmit(event) {
     if (event && event.preventDefault) event.preventDefault();
     try {
-    const assetId = document.getElementById("formInstAssetId").value;
-    const instBranchId = document.getElementById("formInstBranch")?.value || null;
-    const instLocId = document.getElementById("formInstLoc").value;
-    const instDeptId = document.getElementById("formInstDept")?.value || null;
-    const instOffice = document.getElementById("formInstOffice")?.value || null;
-    const instUserId = document.getElementById("formInstUser").value || null; // Strictly optional
-    const instDate = document.getElementById("formInstDate").value;
-    const condition = document.getElementById("formInstCondition").value || "Working";
-    const notes = document.getElementById("formInstNotes").value.trim();
+      const assetId = document.getElementById("formInstAssetId")?.value;
+      const instBranchId = document.getElementById("formInstBranch")?.value || null;
+      const instLocId = document.getElementById("formInstLoc")?.value;
+      const instDeptId = document.getElementById("formInstDept")?.value || null;
+      const instDate = document.getElementById("formInstDate")?.value || new Date().toISOString().slice(0, 10);
+      const condition = document.getElementById("formInstCondition")?.value || "Working";
+      const notes = document.getElementById("formInstNotes")?.value?.trim() || "";
 
-    if (!instLocId) {
-      App.showToast(AppState.lang === "ar" ? "يرجى تحديد موقع التركيب" : "Please select installation location", "error");
-      return;
-    }
+      if (!instLocId) {
+        App.showToast(AppState.lang === "ar" ? "يرجى تحديد موقع التركيب" : "Please select installation location", "error");
+        return;
+      }
 
-    const asset = await db.getById("assets", assetId);
-    if (!asset) return;
+      const asset = await db.getById("assets", assetId);
+      if (!asset) return;
 
-    const fromLoc = asset.locationId;
-    const currentUserName = AppState.currentUser
-      ? (AppState.currentUser.fullName || AppState.currentUser.username)
-      : "System";
-    const issueId = document.getElementById("formInstIssueId")?.value || this.currentActiveIssueId || null;
+      const fromLoc = asset.locationId;
+      const currentUserName = AppState.currentUser
+        ? (AppState.currentUser.fullName || AppState.currentUser.username)
+        : "System";
+      const issueId = document.getElementById("formInstIssueId")?.value || this.currentActiveIssueId || null;
 
-    // 1. LOOKUP MATCHING WAREHOUSE ISSUE FIRST (to resolve IT technician & Project)
-    const issues = await db.getAll("warehouseIssues");
-    let matchingIssue = issueId ? await db.getById("warehouseIssues", issueId) : null;
-    if (!matchingIssue) {
-      matchingIssue = issues.find(i => (i.assetId === asset.id || i.assetId === asset.assetId) && i.status === "In Transit");
-    }
-    if (!matchingIssue) {
-      matchingIssue = issues.find(i => i.assetId === asset.id || i.assetId === asset.assetId);
-    }
+      // 1. LOOKUP MATCHING WAREHOUSE ISSUE FIRST (to resolve IT technician & Project)
+      const issues = await db.getAll("warehouseIssues");
+      let matchingIssue = issueId ? await db.getById("warehouseIssues", issueId) : null;
+      if (!matchingIssue) {
+        matchingIssue = issues.find(i => (i.assetId === asset.id || i.assetId === asset.assetId) && i.status === "In Transit");
+      }
+      if (!matchingIssue) {
+        matchingIssue = issues.find(i => i.assetId === asset.id || i.assetId === asset.assetId);
+      }
+
+      const instOffice = document.getElementById("formInstOffice")?.value || (matchingIssue ? (matchingIssue.installedOffice || matchingIssue.officeName) : null) || null;
+      const instUserId = document.getElementById("formInstUser")?.value || (matchingIssue ? (matchingIssue.installedUserId || matchingIssue.endUserId) : null) || null; // Strictly optional
     if (!matchingIssue || !["Issued", "In Transit", "Awaiting Installation"].includes(matchingIssue.status)) {
       App.showToast(
         AppState.lang === "ar"

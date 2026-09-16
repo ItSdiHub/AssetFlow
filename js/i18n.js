@@ -4,18 +4,19 @@
  */
 
 // Initialize Global Application State early so all subsequent modules have access
-window.AppState = window.AppState || {
+const _scope = (typeof window !== "undefined") ? window : global;
+_scope.AppState = _scope.AppState || {
   lang: (() => {
-    try { return localStorage.getItem("sdi_lang") || "ar"; } catch(e) { return "ar"; }
+    try { return (typeof localStorage !== "undefined" && localStorage.getItem("sdi_lang")) || "en"; } catch(e) { return "en"; }
   })(),
   theme: (() => {
-    try { localStorage.setItem("sdi_theme", "light"); return "light"; } catch(e) { return "light"; }
+    try { if (typeof localStorage !== "undefined") localStorage.setItem("sdi_theme", "light"); return "light"; } catch(e) { return "light"; }
   })(),
   currentTab: "dashboard",
   currentSettingsSubTab: "dbTest",
   currentUser: null
 };
-var AppState = window.AppState;
+var AppState = _scope.AppState;
 
 const I18N = {
   ar: {
@@ -150,6 +151,20 @@ const I18N = {
     administrationPlaceholder: "مثال: إدارة الموارد البشرية",
     officeNamePlaceholder: "مثال: مكتب مدير التدريب",
     receivingEmployeePlaceholder: "الاسم الكامل للموظف المستلم",
+    d3MapBtn: "خريطة الأصول",
+    d3AssetMapTitle: "خريطة توزيع الأصول التفاعلية (D3.js)",
+    searchMapPlaceholder: "بحث عن موقع أو أصل (مثال: AST, قاعة...)",
+    resetSearchTitle: "إعادة ضبط البحث",
+    fullscreenTitle: "ملء الشاشة",
+    toOffice: "إلى المكتب",
+    emailAuthHint: "سيتم استخدام هذا البريد لتسجيل الدخول السحابي",
+    passwordHint: "اتركه فارغاً للحفاظ على كلمة المرور الحالية",
+    sendResetLinkTitle: "إرسال رابط استعادة كلمة المرور",
+    diStableBadge: "مستقر (Stable)",
+    diWarningBadge: "تنبيه (Warning)",
+    diCriticalBadge: "حرج (Critical)",
+    diOrphanMissing: "مراجع مفقودة",
+    diZeroOrphans: "0 (روابط سليمة)",
     statusDisposed: "تم التخلص منه",
     btnToggleLang: "English",
     langToggleTitle: "تغيير اللغة",
@@ -2287,7 +2302,25 @@ const I18N = {
     expiryDate: "Expiration Date",
     nsrBannerTitle: "Helpdesk Support Ticket",
     nsrBannerDesc: "Log technical support request and affected hardware for dispatch to support technicians.",
-    requestTitle: "Request Subject"
+    requestTitle: "Request Subject",
+    d3MapBtn: "Asset Map",
+    d3AssetMapTitle: "Interactive Asset Distribution Map (D3.js)",
+    searchMapPlaceholder: "Search location or asset (e.g., AST, Hall...)",
+    resetSearchTitle: "Reset Search",
+    fullscreenTitle: "Fullscreen",
+    toOffice: "To Office",
+    emailAuthHint: "This email will be used for cloud authentication",
+    passwordHint: "Leave blank to keep current password",
+    sendResetLinkTitle: "Send password reset link",
+    diStableBadge: "Stable",
+    diWarningBadge: "Warning",
+    diCriticalBadge: "Critical",
+    diOrphanMissing: "missing references",
+    diZeroOrphans: "0 (Stable references)",
+    diLocationsLabel: "Locations",
+    diDepartmentsLabel: "Departments",
+    diOfficesLabel: "Offices",
+    diAssetsLabel: "Assets & Devices"
   }
 };
 
@@ -2306,19 +2339,64 @@ _root.t = function(key, fallback = "") {
   return fallback || key;
 };
 
+// Known Standard Translations Dictionary for Entities & Names
+const STANDARD_EN_NAMES = {
+  "قسم تقنية المعلومات": "Information Technology Department",
+  "إدارة الموارد البشرية": "Human Resources Department",
+  "المقر الرئيسي": "Main Headquarters",
+  "مبنى الإدارة الرئيسي": "Main Administration Building",
+  "مركز خورفكان": "Khorfakkan Center",
+  "مركز كلباء": "Kalba Center",
+  "مركز الذيد": "Al Dhaid Center",
+  "المستودع الرئيسي": "Central Warehouse",
+  "مستودع تقنية المعلومات": "IT Warehouse",
+  "غرفة السيرفرات": "Server Room",
+  "قاعة 101": "Hall 101",
+  "قاعة 102": "Hall 102",
+  "مكتب 315": "Office 315",
+  "مكتب 101": "Office 101",
+  "مكتب 102": "Office 102",
+  "مكتب 1 (التسجيل)": "Office 1 (Registration)",
+  "مكتب المدير": "Director Office",
+  "الاستقبال": "Reception",
+  "الشؤون المالية": "Financial Affairs Department",
+  "أجهزة حاسوب ومحطات عمل": "Computers & Workstations",
+  "طابعات وماسحات": "Printers & Scanners",
+  "شاشات عرض": "Monitors & Displays",
+  "معدات شبكات": "Network Equipment",
+  "سيرفرات وبنية تحتية": "Servers & Infrastructure",
+  "أجهزة طرفية وملحقات": "Peripherals & Accessories",
+  "تراخيص وبرمجيات": "Software Licenses",
+  "أجهزة لوحية وهواتف": "Tablets & Mobile Devices",
+  "أمن ومراقبة": "Security & CCTV",
+  "مستقر (Stable)": "Stable",
+  "تنبيه (Warning)": "Warning",
+  "حرج (Critical)": "Critical"
+};
+
 // Global Centralized Formatters
 _root.formatStatus = function(status, lang = "ar") {
   const l = (lang === "en") ? "en" : "ar";
   switch (status) {
-    case "Available": return I18N[l].statusAvailable;
-    case "Assigned": return I18N[l].statusAssigned;
-    case "Under Maintenance": return I18N[l].statusUnderMaintenance;
-    case "In Store": return I18N[l].statusInStore;
-    case "In Transit": return I18N[l].statusInTransit;
-    case "Damaged": return I18N[l].statusDamaged;
-    case "Lost": return I18N[l].statusLost;
-    case "Retired": return I18N[l].statusRetired;
-    case "Disposed": return I18N[l].statusDisposed;
+    case "Available": return I18N[l].statusAvailable || (l === "ar" ? "متاح" : "Available");
+    case "Assigned": return I18N[l].statusAssigned || (l === "ar" ? "عهدة موظف" : "Assigned");
+    case "Under Maintenance": return I18N[l].statusUnderMaintenance || (l === "ar" ? "تحت الصيانة" : "Under Maintenance");
+    case "In Store": return I18N[l].statusInStore || (l === "ar" ? "بالمستودع" : "In Store");
+    case "In Transit": return I18N[l].statusInTransit || (l === "ar" ? "في الطريق" : "In Transit");
+    case "Damaged": return I18N[l].statusDamaged || (l === "ar" ? "تالف" : "Damaged");
+    case "Lost": return I18N[l].statusLost || (l === "ar" ? "مفقود" : "Lost");
+    case "Retired": return I18N[l].statusRetired || (l === "ar" ? "مكهن" : "Retired");
+    case "Disposed": return I18N[l].statusDisposed || (l === "ar" ? "تم التخلص منه" : "Disposed");
+    case "Active": return l === "ar" ? "نشط" : "Active";
+    case "Inactive": return l === "ar" ? "غير نشط" : "Inactive";
+    case "Installed": return l === "ar" ? "تم التركيب" : "Installed";
+    case "Draft": return l === "ar" ? "مسودة" : "Draft";
+    case "Pending": return l === "ar" ? "قيد الانتظار" : "Pending";
+    case "Planning": return l === "ar" ? "مخطط" : "Planning";
+    case "In Progress": return l === "ar" ? "قيد التنفيذ" : "In Progress";
+    case "On Hold": return l === "ar" ? "معلق" : "On Hold";
+    case "Completed": return l === "ar" ? "مكتمل" : "Completed";
+    case "Cancelled": return l === "ar" ? "ملغي" : "Cancelled";
     default: return status || "-";
   }
 };
@@ -2366,10 +2444,10 @@ _root.formatCondition = function(condition, lang = "ar") {
     case "Minor Damage": return I18N[l].conditionMinorDamage || (l === "ar" ? "تلف بسيط" : "Minor Damage");
     case "Damaged": return I18N[l].conditionDamaged || (l === "ar" ? "تالف" : "Damaged");
     case "Not Working": return I18N[l].conditionNotWorking || (l === "ar" ? "لا يعمل" : "Not Working");
+    case "Working": return l === "ar" ? "يعمل بحالة ممتازة" : "Working";
     default: return condition || "-";
   }
 };
-
 
 _root.formatHandoverStatus = function(handoverStatus, lang = "ar") {
   const l = (lang === "en") ? "en" : "ar";
@@ -2379,6 +2457,71 @@ _root.formatHandoverStatus = function(handoverStatus, lang = "ar") {
   return l === "ar" ? "قيد الاستلام" : "Pending";
 };
 
+_root.formatCategory = function(category, lang = "ar") {
+  if (!category) return "-";
+  const l = (lang === "en") ? "en" : "ar";
+  if (l === "en") {
+    if (STANDARD_EN_NAMES[category]) return STANDARD_EN_NAMES[category];
+    switch (category) {
+      case "Computers":
+      case "أجهزة حاسوب": return "Computers";
+      case "Printers":
+      case "طابعات": return "Printers";
+      case "Displays":
+      case "شاشات": return "Displays";
+      case "Network":
+      case "شبكات": return "Network";
+      case "Servers":
+      case "سيرفرات": return "Servers";
+      case "Peripherals":
+      case "ملحقات": return "Peripherals";
+      case "Licenses":
+      case "برمجيات": return "Software";
+      default: return category;
+    }
+  }
+  return category;
+};
+
+_root.formatPriority = function(priority, lang = "ar") {
+  const l = (lang === "en") ? "en" : "ar";
+  switch (priority) {
+    case "Low": return l === "ar" ? "منخفضة" : "Low";
+    case "Medium": return l === "ar" ? "متوسطة" : "Medium";
+    case "High": return l === "ar" ? "عالية" : "High";
+    case "Critical": return l === "ar" ? "حرجة" : "Critical";
+    default: return priority || "-";
+  }
+};
+
+_root.formatProjectStatus = function(status, lang = "ar") {
+  return _root.formatStatus(status, lang);
+};
+
+_root.formatTaskStatus = function(status, lang = "ar") {
+  const l = (lang === "en") ? "en" : "ar";
+  switch (status) {
+    case "Pending": return l === "ar" ? "قيد الانتظار" : "Pending";
+    case "In Progress": return l === "ar" ? "قيد التنفيذ" : "In Progress";
+    case "Completed": return l === "ar" ? "مكتمل" : "Completed";
+    case "Blocked": return l === "ar" ? "معطل / متوقف" : "Blocked";
+    case "Cancelled": return l === "ar" ? "ملغي" : "Cancelled";
+    default: return status || "-";
+  }
+};
+
+_root.formatLicenseType = function(type, lang = "ar") {
+  const l = (lang === "en") ? "en" : "ar";
+  switch (type) {
+    case "Subscription": return l === "ar" ? "اشتراك دوري (Subscription)" : "Subscription";
+    case "Perpetual": return l === "ar" ? "دائم (Perpetual)" : "Perpetual";
+    case "OEM": return l === "ar" ? "مرفق مع الجهاز (OEM)" : "OEM";
+    case "Volume": return l === "ar" ? "ترخيص مؤسسي (Volume)" : "Volume License";
+    case "Free": return l === "ar" ? "مجاني / مفتوح المصدر" : "Free / Open Source";
+    default: return type || "-";
+  }
+};
+
 _root.getEntityName = function(entity, lang = "ar") {
   if (!entity) return "-";
   const l = (lang === "en") ? "en" : "ar";
@@ -2386,11 +2529,15 @@ _root.getEntityName = function(entity, lang = "ar") {
     if (entity.nameEn) return entity.nameEn;
     if (entity.fullNameEn) return entity.fullNameEn;
     if (entity.titleEn) return entity.titleEn;
+    if (entity.companyNameEn) return entity.companyNameEn;
+    if (entity.officeNameEn) return entity.officeNameEn;
+    const rawAr = entity.nameAr || entity.fullNameAr || entity.titleAr || entity.companyNameAr || entity.name;
+    if (rawAr && STANDARD_EN_NAMES[rawAr]) return STANDARD_EN_NAMES[rawAr];
     if (entity.name && !/[\u0600-\u06FF]/.test(entity.name)) return entity.name;
     if (entity.code) return entity.code;
     return entity.id || "-";
   } else {
-    return entity.nameAr || entity.fullNameAr || entity.titleAr || entity.name || entity.fullName || entity.nameEn || "-";
+    return entity.nameAr || entity.fullNameAr || entity.titleAr || entity.companyNameAr || entity.name || entity.fullName || entity.nameEn || "-";
   }
 };
 
@@ -2399,10 +2546,12 @@ _root.getUserDisplayName = function(user, lang = "ar") {
   const l = (lang === "en") ? "en" : "ar";
   if (l === "en") {
     if (user.fullNameEn) return user.fullNameEn;
+    if (user.nameEn) return user.nameEn;
     if (user.fullName && !/[\u0600-\u06FF]/.test(user.fullName)) return user.fullName;
-    return user.username || "User";
+    if (user.name && !/[\u0600-\u06FF]/.test(user.name)) return user.name;
+    return user.username || user.employeeNumber || user.id || "User";
   } else {
-    return user.fullNameAr || user.fullName || user.username || "-";
+    return user.fullNameAr || user.nameAr || user.fullName || user.name || user.username || "-";
   }
 };
 
@@ -2418,6 +2567,11 @@ var formatRole = _root.formatRole;
 var formatTxType = _root.formatTxType;
 var formatCondition = _root.formatCondition;
 var formatHandoverStatus = _root.formatHandoverStatus;
+var formatCategory = _root.formatCategory;
+var formatPriority = _root.formatPriority;
+var formatProjectStatus = _root.formatProjectStatus;
+var formatTaskStatus = _root.formatTaskStatus;
+var formatLicenseType = _root.formatLicenseType;
 var formatDate = _root.formatDate;
 var t = _root.t;
 
@@ -2430,6 +2584,11 @@ if (typeof module !== "undefined" && module.exports) {
     formatTxType: _root.formatTxType,
     formatCondition: _root.formatCondition,
     formatHandoverStatus: _root.formatHandoverStatus,
+    formatCategory: _root.formatCategory,
+    formatPriority: _root.formatPriority,
+    formatProjectStatus: _root.formatProjectStatus,
+    formatTaskStatus: _root.formatTaskStatus,
+    formatLicenseType: _root.formatLicenseType,
     getEntityName: _root.getEntityName,
     getUserDisplayName: _root.getUserDisplayName
   };

@@ -5273,11 +5273,15 @@ class Application {
   // =========================================================================
   async toggleLanguage() {
     const newLang = AppState.lang === "ar" ? "en" : "ar";
+    await this.setLanguage(newLang);
+  }
+
+  async setLanguage(newLang) {
     AppState.lang = newLang;
     localStorage.setItem("sdi_lang", newLang);
     this.applyLanguage(newLang);
 
-    // Refresh all rendered views and dropdowns
+    // Refresh all rendered views, dropdowns, and data objects in the new language
     await this.updateDashboard();
     if (window.AssetManager) {
       await AssetManager.populateDropdowns();
@@ -5287,6 +5291,7 @@ class Application {
       await UserManager.renderEmployees();
       await UserManager.renderDepartments();
       await UserManager.renderLocations();
+      await UserManager.renderOffices();
       await UserManager.renderAssetTypes();
       await UserManager.renderUsers();
     }
@@ -5299,10 +5304,25 @@ class Application {
     if (window.Helpdesk) {
       await Helpdesk.render();
     }
+    if (window.ProjectManager) {
+      await ProjectManager.render();
+    }
+    if (window.ContractorManager) {
+      await ContractorManager.render();
+    }
+    if (window.OpsManager) {
+      await OpsManager.render();
+    }
+    if (window.TechTools) {
+      await TechTools.render();
+    }
     await this.populateReportDropdowns();
     await this.generateSelectedReport();
     await this.updateNotificationBadge();
     this.applyUserRolePermissions();
+    if (this.currentTab === "settings" && this.currentSettingsSubTab === "dataIntegrity") {
+      await this.runDataIntegrityCheck();
+    }
   }
 
   applyLanguage(lang) {

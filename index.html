@@ -815,13 +815,13 @@
                 </h3>
                 <div style="display: flex; gap: 8px; align-items: center;">
                   <div style="position: relative;">
-                    <input type="text" id="d3MapSearchInput" placeholder="بحث عن موقع أو أصل (مثال: AST, قاعة...)" oninput="TreeManager.handleMapSearch(this.value)" style="padding: 6px 12px 6px 32px; border-radius: var(--radius-md); border: 1px solid var(--border-color); font-size: 13px; width: 240px; background: var(--bg-surface); color: var(--text-main);" />
+                    <input type="text" id="d3MapSearchInput" placeholder="بحث عن موقع أو أصل (مثال: AST, قاعة...)" data-i18n-placeholder="searchMapPlaceholder" oninput="TreeManager.handleMapSearch(this.value)" style="padding: 6px 12px 6px 32px; border-radius: var(--radius-md); border: 1px solid var(--border-color); font-size: 13px; width: 240px; background: var(--bg-surface); color: var(--text-main);" />
                     <i class="fas fa-search" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 12px;"></i>
                   </div>
-                  <button class="btn btn-sm btn-secondary" onclick="TreeManager.resetMapSearch()" title="إعادة ضبط البحث">
+                  <button class="btn btn-sm btn-secondary" onclick="TreeManager.resetMapSearch()" title="إعادة ضبط البحث" data-i18n-title="resetSearchTitle">
                     <i class="fas fa-redo"></i>
                   </button>
-                  <button class="btn btn-sm btn-secondary" id="d3FullscreenBtn" onclick="TreeManager.toggleFullscreen()" title="ملء الشاشة">
+                  <button class="btn btn-sm btn-secondary" id="d3FullscreenBtn" onclick="TreeManager.toggleFullscreen()" title="ملء الشاشة" data-i18n-title="fullscreenTitle">
                     <i class="fas fa-expand" id="d3FullscreenIcon"></i>
                   </button>
                 </div>
@@ -3203,7 +3203,7 @@
 
             <div class="form-group">
               <label data-i18n="responsibleIT">مسؤول المشروع (IT)</label>
-              <select id="formPrjResponsibleEmp" class="form-control">
+              <select id="formPrjResponsibleEmp" class="form-control" onchange="ProjectManager.handleEmployeeChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -4189,7 +4189,7 @@
                 <input type="password" id="formUserPass" class="form-control" placeholder="******">
                 <button type="button" id="btnSendResetEmail" class="btn btn-outline-primary btn-sm ml-2" 
                         style="display:none;" onclick="UserManager.handleSendResetEmail()" 
-                        title="إرسال رابط استعادة كلمة المرور / Send Reset Link">
+                        title="إرسال رابط استعادة كلمة المرور / Send Reset Link" data-i18n-title="sendResetLinkTitle">
                   <i class="fas fa-paper-plane"></i>
                 </button>
               </div>
