@@ -3450,9 +3450,17 @@
   <div class="modal-container" id="projectDetailsModal">
     <div class="modal-backdrop"></div>
     <div class="modal-content" style="max-width: 800px;">
-      <div class="modal-header">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3 id="projectDetailsTitle"><span data-i18n="projectDetails">تفاصيل المشروع</span></h3>
-        <button class="modal-close-btn" onclick="App.closeModal('projectDetailsModal')">&times;</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="btn btn-sm btn-outline-primary user-write-action" onclick="ProjectManager.openProjectModal(ProjectManager.activeDetailProjectId)" title="تعديل بيانات المشروع">
+            <i class="fas fa-edit"></i> <span data-i18n="btnEditProject">تعديل بيانات المشروع</span>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="ProjectManager.printProjectDetails(ProjectManager.activeDetailProjectId)" title="طباعة">
+            <i class="fas fa-print"></i>
+          </button>
+          <button class="modal-close-btn" onclick="App.closeModal('projectDetailsModal')">&times;</button>
+        </div>
       </div>
       <div class="modal-body">
         <!-- Project Info Card -->
@@ -3550,8 +3558,11 @@
           </table>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
         <button type="button" class="btn btn-secondary btn-sm" onclick="App.closeModal('projectDetailsModal')" data-i18n="btnClose">إغلاق</button>
+        <button type="button" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal(ProjectManager.activeDetailProjectId)">
+          <i class="fas fa-edit"></i> <span data-i18n="btnEditProject">تعديل بيانات المشروع وحفظ التغييرات</span>
+        </button>
       </div>
     </div>
   </div>

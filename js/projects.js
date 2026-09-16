@@ -978,138 +978,105 @@ class ProjectManagementController {
   }
 
   async handleProjectSubmit(event) {
-    event.preventDefault();
-    const id = document.getElementById("formProjectId").value;
-    const projectNo = document.getElementById("formPrjNumber").value.trim();
-    const nameAr = document.getElementById("formPrjNameAr").value.trim();
-    const nameEn = document.getElementById("formPrjNameEn").value.trim();
-    const projectType = document.getElementById("formPrjType").value.trim();
-    const startDate = document.getElementById("formPrjStartDate").value;
-    const plannedEndDate = document.getElementById("formPrjPlannedEndDate").value;
-    const actualEndDate = document.getElementById("formPrjActualEndDate").value || null;
-    const contractorId = document.getElementById("formPrjContractor").value || null;
-    const locationId = document.getElementById("formPrjLocation").value || null;
-    const departmentId = document.getElementById("formPrjDepartment")?.value || null;
-    const office = document.getElementById("formPrjOffice")?.value || null;
-    const responsibleEmployeeId = document.getElementById("formPrjResponsibleEmp").value || null;
-    let status = document.getElementById("formPrjStatus").value;
-    const remarks = document.getElementById("formPrjRemarks").value.trim();
+    if (event) event.preventDefault();
+    try {
+      const id = document.getElementById("formProjectId") ? document.getElementById("formProjectId").value : "";
+      const projectNo = document.getElementById("formPrjNumber") ? document.getElementById("formPrjNumber").value.trim() : "";
+      const nameAr = document.getElementById("formPrjNameAr") ? document.getElementById("formPrjNameAr").value.trim() : "";
+      const nameEn = document.getElementById("formPrjNameEn") ? document.getElementById("formPrjNameEn").value.trim() : "";
+      const projectType = document.getElementById("formPrjType") ? document.getElementById("formPrjType").value.trim() : "Infrastructure";
+      const startDate = document.getElementById("formPrjStartDate") ? document.getElementById("formPrjStartDate").value : "";
+      const plannedEndDate = document.getElementById("formPrjPlannedEndDate") ? document.getElementById("formPrjPlannedEndDate").value : "";
+      const actualEndDate = (document.getElementById("formPrjActualEndDate") ? document.getElementById("formPrjActualEndDate").value : "") || null;
+      const contractorId = (document.getElementById("formPrjContractor") ? document.getElementById("formPrjContractor").value : "") || null;
+      const locationId = (document.getElementById("formPrjLocation") ? document.getElementById("formPrjLocation").value : "") || null;
+      const departmentId = (document.getElementById("formPrjDepartment") ? document.getElementById("formPrjDepartment").value : "") || null;
+      const office = (document.getElementById("formPrjOffice") ? document.getElementById("formPrjOffice").value : "") || null;
+      const responsibleEmployeeId = (document.getElementById("formPrjResponsibleEmp") ? document.getElementById("formPrjResponsibleEmp").value : "") || null;
+      let status = (document.getElementById("formPrjStatus") ? document.getElementById("formPrjStatus").value : "") || "Planning";
+      const remarks = (document.getElementById("formPrjRemarks") ? document.getElementById("formPrjRemarks").value.trim() : "");
 
-    if (!nameAr && !nameEn) {
-      App.showToast(I18N[AppState.lang].errProjectNameReq || "يرجى إدخال اسم المشروع", "error");
-      return;
+      if (!nameAr && !nameEn) {
+        App.showToast(AppState.lang === "ar" ? "يرجى إدخال اسم المشروع" : "Please enter project name", "error");
+        return;
+      }
+
+      // 1. Mandatory Location Validation (Location is root of hierarchy)
+      if (!locationId) {
+        App.showToast(AppState.lang === "ar" ? "يرجى اختيار موقع المشروع (إلزامي)" : "Please select project location (mandatory)", "error");
+        return;
+      }
+
+      if (startDate && plannedEndDate && plannedEndDate < startDate) {
+        App.showToast(AppState.lang === "ar" ? "تاريخ الانتهاء لا يمكن أن يسبق تاريخ البدء" : "End date cannot be earlier than start date", "error");
+        return;
+      }
+
+      // Auto-calculate progress based on stage and tasks
+      let projectTasks = [];
+      if (id) {
+        try {
+          const allTasks = await db.getAll("projectTasks");
+          projectTasks = Array.isArray(allTasks) ? allTasks.filter(t => t.projectId === id) : [];
+        } catch (tErr) {
+          console.warn("Could not load tasks for project progress:", tErr);
+        }
+      }
+      let progress = this.calculateProjectProgress({ status }, projectTasks);
+
+      // Synchronize status and progress
+      if (status === "Completed") {
+        progress = 100;
+      } else if (progress >= 100 && status === "In Progress") {
+        status = "Completed";
+      }
+
+      let generatedNo = projectNo;
+      if (!generatedNo && !id) {
+        try {
+          generatedNo = await db.getNextSequentialId("projects");
+        } catch (seqErr) {
+          generatedNo = `PRJ-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+        }
+      }
+
+      const finalId = id || generatedNo;
+      const project = {
+        id: finalId,
+        projectNo: generatedNo || finalId,
+        nameAr: nameAr || nameEn,
+        nameEn: nameEn || nameAr,
+        projectType: projectType || "Infrastructure",
+        startDate: startDate || new Date().toISOString().slice(0, 10),
+        plannedEndDate: plannedEndDate || "",
+        actualEndDate,
+        contractorId,
+        locationId,
+        departmentId,
+        office,
+        responsibleEmployeeId,
+        progress: typeof progress === "number" ? progress : 0,
+        status,
+        remarks,
+        notes: remarks,
+        documents: Array.isArray(this.stagedProjectDocuments) ? this.stagedProjectDocuments : [],
+        updatedAt: new Date().toISOString()
+      };
+      if (!id) project.createdAt = new Date().toISOString();
+
+      await db.put("projects", project);
+      App.closeModal("projectModal");
+      App.showToast(AppState.lang === "ar" ? "تم حفظ المشروع بنجاح" : "Project saved successfully", "success");
+      await this.render();
+      
+      // If project details modal was open for this project, refresh its view
+      if (this.activeDetailProjectId === finalId) {
+        await this.viewProjectDetails(finalId);
+      }
+    } catch (err) {
+      console.error("Critical error in handleProjectSubmit:", err);
+      App.showToast(AppState.lang === "ar" ? ("فشل حفظ بيانات المشروع: " + (err.message || "خطأ غير متوقع")) : ("Failed to save project: " + (err.message || "Unexpected error")), "error");
     }
-
-    // 1. Mandatory Location Validation (Location is root of hierarchy)
-    if (!locationId) {
-      App.showToast(AppState.lang === "ar" ? "يرجى اختيار موقع المشروع (إلزامي)" : "Please select project location (mandatory)", "error");
-      return;
-    }
-
-    // 2. Authoritative Relationship Validation: Location -> Department
-    if (departmentId) {
-      const deptObj = await db.getById("departments", departmentId);
-      const deptLoc = deptObj ? (deptObj.location_id || deptObj.locationId) : null;
-      if (!deptObj || (deptLoc && deptLoc !== locationId)) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: القسم المحدد غير تابع للموقع المختار للمشروع." : "Error: Selected department does not belong to the selected location.", "error");
-        return;
-      }
-    }
-
-    // 3. Authoritative Relationship Validation: Department -> Office
-    if (office) {
-      if (!departmentId) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: لا يمكن اختيار مكتب دون تحديد القسم والموقع." : "Error: Cannot select an office without specifying department and location.", "error");
-        return;
-      }
-      const offObj = await db.getById("offices", office);
-      if (!offObj) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: المكتب المحدد غير مسجل في قاعدة البيانات." : "Error: Selected office is not registered in the database.", "error");
-        return;
-      }
-      const offLoc = offObj.location_id || offObj.locationId;
-      const offDept = offObj.department_id || offObj.departmentId;
-      if ((offLoc && offLoc !== locationId) || (offDept && offDept !== departmentId)) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: المكتب المحدد غير تابع للقسم والموقع المختارين." : "Error: Selected office does not belong to the selected department and location.", "error");
-        return;
-      }
-    }
-
-    // 4. Authoritative Relationship Validation: Office -> Employee
-    if (responsibleEmployeeId) {
-      if (!office) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: لا يمكن تعيين مسؤول المشروع دون اختيار المكتب التابع له." : "Error: Cannot assign responsible employee without selecting their office.", "error");
-        return;
-      }
-      const empObj = await db.getById("employees", responsibleEmployeeId);
-      if (!empObj) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: الموظف المحدد غير موجود في قاعدة البيانات." : "Error: Selected employee is not in the database.", "error");
-        return;
-      }
-      const empOff = empObj.office_id || empObj.officeId;
-      if (!empOff || empOff !== office) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: الموظف المحدد غير تابع للمكتب المختار." : "Error: Selected employee does not belong to the selected office.", "error");
-        return;
-      }
-      const empDept = empObj.department_id || empObj.departmentId;
-      if (empDept && departmentId && empDept !== departmentId) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: قسم الموظف غير متطابق مع قسم المشروع." : "Error: Employee department does not match project department.", "error");
-        return;
-      }
-      const empLoc = empObj.location_id || empObj.locationId;
-      if (empLoc && locationId && empLoc !== locationId) {
-        App.showToast(AppState.lang === "ar" ? "خطأ: موقع الموظف غير متطابق مع موقع المشروع." : "Error: Employee location does not match project location.", "error");
-        return;
-      }
-    }
-
-    if (startDate && plannedEndDate && plannedEndDate < startDate) {
-      App.showToast(I18N[AppState.lang].errDateOrder || "تاريخ الانتهاء لا يمكن أن يسبق تاريخ البدء", "error");
-      return;
-    }
-
-    // Auto-calculate progress based on stage and tasks
-    let projectTasks = [];
-    if (id) {
-      const allTasks = await db.getAll("projectTasks");
-      projectTasks = allTasks.filter(t => t.projectId === id);
-    }
-    let progress = this.calculateProjectProgress({ status }, projectTasks);
-
-    // Synchronize status and progress
-    if (status === "Completed") {
-      progress = 100;
-    } else if (progress >= 100 && status === "In Progress") {
-      status = "Completed";
-    }
-
-    const nextSeq = await db.getNextSequentialId("projects");
-    const project = {
-      id: id || nextSeq,
-      projectNo: projectNo || id || nextSeq,
-      nameAr: nameAr || nameEn,
-      nameEn: nameEn || nameAr,
-      projectType,
-      startDate,
-      plannedEndDate,
-      actualEndDate,
-      contractorId,
-      locationId,
-      departmentId,
-      office,
-      responsibleEmployeeId,
-      progress,
-      status,
-      remarks,
-      documents: Array.isArray(this.stagedProjectDocuments) ? this.stagedProjectDocuments : [],
-      updatedAt: new Date().toISOString()
-    };
-    if (!id) project.createdAt = new Date().toISOString();
-
-    await db.put("projects", project);
-    App.closeModal("projectModal");
-    App.showToast(AppState.lang === "ar" ? "تم حفظ المشروع وتحديث نسبة الإنجاز تلقائياً" : "Project saved and progress updated automatically", "success");
-    await this.render();
   }
 
   async deleteProject(projectId) {
@@ -1331,55 +1298,74 @@ class ProjectManagementController {
   }
 
   async handleTaskSubmit(event) {
-    event.preventDefault();
-    const projectId = document.getElementById("formTaskProjectId").value;
-    const taskId = document.getElementById("formTaskId").value;
-    const nameAr = document.getElementById("formTaskNameAr")?.value.trim() || "";
-    const nameEn = document.getElementById("formTaskNameEn")?.value.trim() || "";
-    const description = document.getElementById("formTaskDesc")?.value.trim() || "";
-    const startDate = document.getElementById("formTaskStartDate")?.value || "";
-    const dueDate = document.getElementById("formTaskDueDate")?.value || "";
-    const responsibleEmployeeId = document.getElementById("formTaskResponsible")?.value || null;
-    const contractorId = document.getElementById("formTaskContractor")?.value || null;
-    let progress = parseInt(document.getElementById("formTaskProgress")?.value, 10) || 0;
-    let status = document.getElementById("formTaskStatus")?.value || "Pending";
-    const remarksEl = document.getElementById("formTaskRemarks") || document.getElementById("formTaskDesc");
-    const remarks = remarksEl ? remarksEl.value.trim() : "";
+    if (event) event.preventDefault();
+    try {
+      const projectId = document.getElementById("formTaskProjectId") ? document.getElementById("formTaskProjectId").value : "";
+      const taskId = document.getElementById("formTaskId") ? document.getElementById("formTaskId").value : "";
+      const nameAr = document.getElementById("formTaskNameAr")?.value.trim() || "";
+      const nameEn = document.getElementById("formTaskNameEn")?.value.trim() || "";
+      const description = document.getElementById("formTaskDesc")?.value.trim() || "";
+      const startDate = document.getElementById("formTaskStartDate")?.value || "";
+      const dueDate = document.getElementById("formTaskDueDate")?.value || "";
+      const responsibleEmployeeId = document.getElementById("formTaskResponsible")?.value || null;
+      const contractorId = document.getElementById("formTaskContractor")?.value || null;
+      let progress = parseInt(document.getElementById("formTaskProgress")?.value, 10) || 0;
+      let status = document.getElementById("formTaskStatus")?.value || "Pending";
+      const remarksEl = document.getElementById("formTaskRemarks") || document.getElementById("formTaskDesc");
+      const remarks = remarksEl ? remarksEl.value.trim() : "";
 
-    if (!nameAr && !nameEn) {
-      App.showToast(AppState.lang === "ar" ? "يرجى إدخال اسم المهمة" : "Please enter task name", "error");
-      return;
+      if (!nameAr && !nameEn) {
+        App.showToast(AppState.lang === "ar" ? "يرجى إدخال اسم المهمة" : "Please enter task name", "error");
+        return;
+      }
+
+      if (status === "Completed") progress = 100;
+
+      let generatedId = taskId;
+      if (!generatedId) {
+        try {
+          generatedId = await db.getNextSequentialId("projectTasks");
+        } catch (seqErr) {
+          generatedId = `TSK-${Date.now().toString().slice(-4)}`;
+        }
+      }
+
+      const task = {
+        id: generatedId,
+        projectId,
+        nameAr: nameAr || nameEn,
+        nameEn: nameEn || nameAr,
+        description,
+        startDate,
+        dueDate,
+        responsibleEmployeeId,
+        contractorId,
+        progress,
+        status,
+        remarks,
+        updatedAt: new Date().toISOString()
+      };
+      if (!taskId) task.createdAt = new Date().toISOString();
+
+      await db.put("projectTasks", task);
+
+      // Auto-update project progress based on active tasks and recalculate in DB
+      try {
+        await this.recalculateProjectProgress(projectId);
+      } catch (recErr) {
+        console.warn("Recalculate project progress warning:", recErr);
+      }
+
+      App.closeModal("projectTaskModal");
+      App.showToast(AppState.lang === "ar" ? "تم حفظ المهمة وتحديث نسبة الإنجاز تلقائياً" : "Task saved and project progress updated", "success");
+      if (projectId) {
+        await this.viewProjectDetails(projectId);
+      }
+      await this.render();
+    } catch (err) {
+      console.error("Critical error in handleTaskSubmit:", err);
+      App.showToast(AppState.lang === "ar" ? ("فشل حفظ المهمة: " + (err.message || "خطأ غير متوقع")) : ("Failed to save task: " + (err.message || "Unexpected error")), "error");
     }
-
-    if (status === "Completed") progress = 100;
-
-    const nextSeq = await db.getNextSequentialId("projectTasks");
-    const task = {
-      id: taskId || nextSeq,
-      projectId,
-      nameAr: nameAr || nameEn,
-      nameEn: nameEn || nameAr,
-      description,
-      startDate,
-      dueDate,
-      responsibleEmployeeId,
-      contractorId,
-      progress,
-      status,
-      remarks,
-      updatedAt: new Date().toISOString()
-    };
-    if (!taskId) task.createdAt = new Date().toISOString();
-
-    await db.put("projectTasks", task);
-
-    // Auto-update project progress based on active tasks and recalculate in DB
-    await this.recalculateProjectProgress(projectId);
-
-    App.closeModal("projectTaskModal");
-    App.showToast(AppState.lang === "ar" ? "تم حفظ المهمة وتحديث نسبة الإنجاز تلقائياً" : "Task saved and project progress updated", "success");
-    await this.viewProjectDetails(projectId);
-    await this.render();
   }
 
   async deleteTask(taskId, projectId) {

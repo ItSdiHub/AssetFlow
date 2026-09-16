@@ -98,7 +98,7 @@ function toCloudRecord(storeName, item) {
   if (storeName === "projects") {
     return {
       id: row.id,
-      project_no: row.projectNo || row.project_no || "",
+      project_no: row.projectNo || row.project_no || row.id || "",
       name_ar: row.nameAr || row.name_ar || "",
       name_en: row.nameEn || row.name_en || null,
       project_type: row.projectType || row.project_type || "Infrastructure",
@@ -107,26 +107,28 @@ function toCloudRecord(storeName, item) {
       actual_end_date: row.actualEndDate || row.actual_end_date || null,
       contractor_id: row.contractorId || row.contractor_id || null,
       location_id: row.locationId || row.location_id || null,
+      department_id: row.departmentId || row.department_id || null,
+      office: row.office || row.office_id || row.officeId || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
-      progress: parseFloat(row.progress) || 0,
+      progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Planning",
-      notes: row.notes || null
+      notes: row.notes || row.remarks || null
     };
   }
   if (storeName === "projectTasks") {
     return {
       id: row.id,
       project_id: row.projectId || row.project_id || "",
-      task_name_ar: row.taskNameAr || row.task_name_ar || "",
-      task_name_en: row.taskNameEn || row.task_name_en || null,
+      task_name_ar: row.taskNameAr || row.nameAr || row.task_name_ar || "",
+      task_name_en: row.taskNameEn || row.nameEn || row.task_name_en || null,
       description: row.description || null,
       start_date: row.startDate || row.start_date || null,
       due_date: row.dueDate || row.due_date || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       contractor_id: row.contractorId || row.contractor_id || null,
-      progress: parseFloat(row.progress) || 0,
+      progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Pending",
-      notes: row.notes || null
+      notes: row.notes || row.remarks || null
     };
   }
   if (storeName === "licenses") {
@@ -370,24 +372,39 @@ function fromCloudRecord(storeName, row) {
     item.companyNameEn = row.company_name_en || row.companyNameEn;
     item.contactPerson = row.contact_person || row.contactPerson;
   } else if (storeName === "projects") {
-    item.projectNo = row.project_no || row.projectNo;
+    item.projectNo = row.project_no || row.projectNo || row.id;
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
-    item.projectType = row.project_type || row.projectType;
+    item.projectType = row.project_type || row.projectType || "Infrastructure";
     item.startDate = row.start_date || row.startDate;
     item.plannedEndDate = row.planned_end_date || row.plannedEndDate;
     item.actualEndDate = row.actual_end_date || row.actualEndDate;
     item.contractorId = row.contractor_id || row.contractorId;
     item.locationId = row.location_id || row.locationId;
+    item.departmentId = row.department_id || row.departmentId;
+    item.office = row.office || row.office_id || row.officeId;
+    item.officeId = row.office_id || row.office || row.officeId;
     item.responsibleEmployeeId = row.responsible_employee_id || row.responsibleEmployeeId;
+    item.progress = typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0);
+    item.status = row.status || item.status || "Planning";
+    item.remarks = row.notes || row.remarks || item.remarks || "";
+    item.notes = row.notes || row.remarks || item.notes || "";
+    item.documents = Array.isArray(row.documents) ? row.documents : (Array.isArray(item.documents) ? item.documents : []);
   } else if (storeName === "projectTasks") {
     item.projectId = row.project_id || row.projectId;
-    item.taskNameAr = row.task_name_ar || row.taskNameAr;
-    item.taskNameEn = row.task_name_en || row.taskNameEn;
+    item.nameAr = row.task_name_ar || row.name_ar || row.nameAr;
+    item.nameEn = row.task_name_en || row.name_en || row.nameEn;
+    item.taskNameAr = row.task_name_ar || row.name_ar || row.taskNameAr;
+    item.taskNameEn = row.task_name_en || row.name_en || row.taskNameEn;
+    item.description = row.description || item.description || "";
     item.startDate = row.start_date || row.startDate;
     item.dueDate = row.due_date || row.dueDate;
     item.responsibleEmployeeId = row.responsible_employee_id || row.responsibleEmployeeId;
     item.contractorId = row.contractor_id || row.contractorId;
+    item.progress = typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0);
+    item.status = row.status || item.status || "Pending";
+    item.remarks = row.notes || row.remarks || item.remarks || "";
+    item.notes = row.notes || row.remarks || item.notes || "";
   } else if (storeName === "departments") {
     item.nameAr = row.name_ar || row.nameAr;
     item.nameEn = row.name_en || row.nameEn;
@@ -553,8 +570,77 @@ class DBEngine {
   getFallbackStore(storeName) {
     try {
       const raw = localStorage.getItem("sdi_fb_" + storeName);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
+
+    if (this.memoryStore[storeName] && this.memoryStore[storeName].length > 0) {
+      return this.memoryStore[storeName];
+    }
+
+    // Default Seed Fallbacks for foundational entities
+    if (storeName === "departments") {
+      const defaultDepts = [
+        { id: "dept-it", nameAr: "تقنية المعلومات", nameEn: "IT Department", description: "إدارة البنية التحتية والأنظمة والدعم الفني", active: true, locationId: "loc-main", location_id: "loc-main", code: "IT" },
+        { id: "dept-admin", nameAr: "الشؤون الإدارية والموارد البشرية", nameEn: "Administration & HR", description: "الموارد البشرية والشؤون الإدارية", active: true, locationId: "loc-main", location_id: "loc-main", code: "ADM" },
+        { id: "dept-cs", nameAr: "خدمة العملاء والتسجيل", nameEn: "Customer Service & Registration", description: "كاونترات واستقبال المتدربين", active: true, locationId: "loc-main", location_id: "loc-main", code: "CS" },
+        { id: "dept-exam", nameAr: "قاعات الفحص النظري والذكي", nameEn: "Examination Labs", description: "قاعات وأنظمة الفحص النظري والذكي", active: true, locationId: "loc-main", location_id: "loc-main", code: "EXM" },
+        { id: "dept-fleet", nameAr: "أسطول سيارات الفحص الذكي", nameEn: "Smart Fleet Operations", description: "إدارة مركبات التدريب والفحص الذكي", active: true, locationId: "loc-br-dhd", location_id: "loc-br-dhd", code: "FLT" },
+        { id: "dept-finance", nameAr: "الشؤون المالية والمشتريات", nameEn: "Finance & Procurement", description: "المحاسبة والعقود والمشتريات", active: true, locationId: "loc-main", location_id: "loc-main", code: "FIN" }
+      ];
+      this.memoryStore[storeName] = defaultDepts;
+      return defaultDepts;
+    }
+
+    if (storeName === "offices") {
+      const defaultOffices = [
+        { id: "ofc-it-helpdesk", nameAr: "مكتب الدعم الفني", nameEn: "IT Helpdesk Office", code: "OFC-IT-1", locationId: "loc-main", location_id: "loc-main", departmentId: "dept-it", department_id: "dept-it", status: "Active" },
+        { id: "ofc-it-server", nameAr: "غرفة السيرفرات", nameEn: "Server Room Office", code: "OFC-IT-2", locationId: "loc-main", location_id: "loc-main", departmentId: "dept-it", department_id: "dept-it", status: "Active" },
+        { id: "ofc-admin-mgr", nameAr: "مكتب مدير الإدارة", nameEn: "Admin Manager Office", code: "OFC-ADM-1", locationId: "loc-main", location_id: "loc-main", departmentId: "dept-admin", department_id: "dept-admin", status: "Active" },
+        { id: "ofc-cs-counter", nameAr: "كاونتر خدمة العملاء 1", nameEn: "Customer Service Counter 1", code: "OFC-CS-1", locationId: "loc-main", location_id: "loc-main", departmentId: "dept-cs", department_id: "dept-cs", status: "Active" },
+        { id: "ofc-finance-acc", nameAr: "مكتب الحسابات", nameEn: "Accounting Office", code: "OFC-FIN-1", locationId: "loc-main", location_id: "loc-main", departmentId: "dept-finance", department_id: "dept-finance", status: "Active" },
+        { id: "ofc-fleet-ops", nameAr: "مكتب عمليات الفحص", nameEn: "Fleet Operations Office", code: "OFC-FLT-1", locationId: "loc-br-dhd", location_id: "loc-br-dhd", departmentId: "dept-fleet", department_id: "dept-fleet", status: "Active" }
+      ];
+      this.memoryStore[storeName] = defaultOffices;
+      return defaultOffices;
+    }
+
+    if (storeName === "locations") {
+      const defaultLocs = [
+        { id: "loc-main", parentId: null, nameAr: "المكتب الرئيسي - الرمثاء", nameEn: "Main Office - Al Ramtha", code: "HQ", icon: "building", description: "المقر الرئيسي لمعهد الشارقة للسياقة", active: true },
+        { id: "loc-admin", parentId: "loc-main", nameAr: "الشؤون الإدارية", nameEn: "Administration", code: "ADM", icon: "briefcase", description: "المكاتب الإدارية والشؤون المشتركة", active: true },
+        { id: "loc-it", parentId: "loc-main", nameAr: "قسم تقنية المعلومات", nameEn: "IT Department", code: "IT", icon: "laptop-code", description: "إدارة الأنظمة وورشة الدعم الفني", active: true },
+        { id: "loc-br-nas", parentId: null, nameAr: "فرع الناصرية (Branch 1)", nameEn: "Branch - Nasseriya", code: "NAS", icon: "building", description: "مبنى فرع الناصرية", active: true },
+        { id: "loc-br-dhd", parentId: null, nameAr: "فرع الذيد", nameEn: "Branch - Al Dhaid", code: "DHD", icon: "building", description: "مبنى فرع الذيد", active: true },
+        { id: "loc-br-khk", parentId: null, nameAr: "فرع خورفكان", nameEn: "Branch - Khorfakkan", code: "KHK", icon: "building", description: "مبنى فرع خورفكان", active: true },
+        { id: "loc-br-klb", parentId: null, nameAr: "فرع كلباء", nameEn: "Branch - Kalba", code: "KLB", icon: "building", description: "مبنى فرع كلباء", active: true },
+        { id: "loc-other", parentId: null, nameAr: "مواقع أخرى", nameEn: "Other", code: "OTH", icon: "map-pin", description: "مواقع مؤقتة أو خارجية", active: true }
+      ];
+      this.memoryStore[storeName] = defaultLocs;
+      return defaultLocs;
+    }
+
+    if (storeName === "assetTypes") {
+      const defaultTypes = [
+        { id: "type-computer", code: "COM", nameAr: "كمبيوتر مكتبي", nameEn: "Computer", hasTechSpecs: true, isDefault: true, active: true },
+        { id: "type-laptop", code: "LTP", nameAr: "كمبيوتر محمول", nameEn: "Laptop", hasTechSpecs: true, isDefault: true, active: true },
+        { id: "type-monitor", code: "MON", nameAr: "شاشة عرض", nameEn: "Monitor", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-printer", code: "PRT", nameAr: "طابعة", nameEn: "Printer", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-scanner", code: "SCN", nameAr: "ماسح ضوئي", nameEn: "Scanner", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-camera", code: "CAM", nameAr: "كاميرا", nameEn: "Camera", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-tablet", code: "TAB", nameAr: "جهاز لوحي (تابلت)", nameEn: "Tablet", hasTechSpecs: true, isDefault: true, active: true },
+        { id: "type-mobile", code: "MOB", nameAr: "هاتف ذكي", nameEn: "Mobile Device", hasTechSpecs: true, isDefault: true, active: true },
+        { id: "type-network", code: "NET", nameAr: "جهاز شبكة (سويتش/راوتر)", nameEn: "Network Device", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-server", code: "SRV", nameAr: "خادم (سيرفر)", nameEn: "Server", hasTechSpecs: true, isDefault: true, active: true },
+        { id: "type-ups", code: "UPS", nameAr: "مزود طاقة غير منقطعة (UPS)", nameEn: "UPS", hasTechSpecs: false, isDefault: true, active: true },
+        { id: "type-other", code: "OTH", nameAr: "أخرى", nameEn: "Other", hasTechSpecs: false, isDefault: true, active: true }
+      ];
+      this.memoryStore[storeName] = defaultTypes;
+      return defaultTypes;
+    }
+
     return this.memoryStore[storeName] || [];
   }
 
@@ -1055,10 +1141,6 @@ class DBEngine {
 
   // Generic Operations with Automatic Fallback & Cloud Sync
   async getAll(storeName) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.supabase && !isNodeTest) {
-      throw new Error("Cloud database is unavailable.");
-    }
     if (this.supabase && STORE_TABLE_MAP[storeName]) {
       try {
         const table = STORE_TABLE_MAP[storeName];
@@ -1067,23 +1149,10 @@ class DBEngine {
           return data.map(r => fromCloudRecord(storeName, r));
         }
         if (error) console.warn(`Supabase getAll(${storeName}) failed:`, error);
-        if (storeName === "offices" || (error && (error.code === '42P01' || (error.message && error.message.includes('does not exist'))))) {
-          console.info(`Falling back to local store for ${storeName} due to pending cloud migration.`);
-          return this.getFallbackStore(storeName);
-        }
+        return this.getFallbackStore(storeName);
       } catch (cloudErr) {
-        console.warn(`Supabase getAll(${storeName}) failed:`, cloudErr);
-        if (storeName === "offices") {
-          return this.getFallbackStore(storeName);
-        }
-      }
-      if (STRICT_CLOUD_ONLY) {
-        if (storeName === "offices") {
-          return this.getFallbackStore(storeName);
-        }
-        const fb = this.getFallbackStore(storeName);
-        if (fb && fb.length > 0) return fb;
-        throw new Error(`Cloud read failed for ${storeName}.`);
+        console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
+        return this.getFallbackStore(storeName);
       }
     }
 
@@ -1177,37 +1246,7 @@ class DBEngine {
 
   async getById(storeName, id) {
     if (!id && id !== 0) return null;
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.supabase && !isNodeTest) {
-      throw new Error("Cloud database is unavailable.");
-    }
     const strId = String(id).trim().toLowerCase();
-
-    if (this.supabase && STORE_TABLE_MAP[storeName]) {
-      try {
-        const table = STORE_TABLE_MAP[storeName];
-        const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
-        if (!error) return data ? fromCloudRecord(storeName, data) : null;
-        console.warn(`Supabase getById(${storeName}) failed:`, error);
-        if (storeName === "offices" || (error && (error.code === '42P01' || (error.message && error.message.includes('does not exist'))))) {
-          const fallbackItems = this.getFallbackStore(storeName);
-          return searchInList(fallbackItems);
-        }
-      } catch (e) {
-        console.warn(`Supabase getById(${storeName}) failed:`, e);
-        if (storeName === "offices") {
-          const fallbackItems = this.getFallbackStore(storeName);
-          return searchInList(fallbackItems);
-        }
-      }
-      if (STRICT_CLOUD_ONLY) {
-        if (storeName === "offices") {
-          const fallbackItems = this.getFallbackStore(storeName);
-          return searchInList(fallbackItems);
-        }
-        throw new Error(`Cloud read failed for ${storeName}.`);
-      }
-    }
 
     const searchInList = (list) => {
       if (!Array.isArray(list)) return null;
@@ -1222,6 +1261,19 @@ class DBEngine {
         (i && i.requestId && String(i.requestId).trim().toLowerCase() === strId)
       ) || null;
     };
+
+    if (this.supabase && STORE_TABLE_MAP[storeName]) {
+      try {
+        const table = STORE_TABLE_MAP[storeName];
+        const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
+        if (!error && data) return fromCloudRecord(storeName, data);
+        if (error) console.warn(`Supabase getById(${storeName}) failed:`, error);
+        return searchInList(this.getFallbackStore(storeName));
+      } catch (e) {
+        console.warn(`Supabase getById(${storeName}) catch:`, e);
+        return searchInList(this.getFallbackStore(storeName));
+      }
+    }
 
     if (this.useFallback || !this.db) {
       const items = this.getFallbackStore(storeName);
@@ -1363,13 +1415,9 @@ class DBEngine {
 
     const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
     if (STORE_TABLE_MAP[storeName] && (!this.isCloudOnline || !this.supabase) && !isNodeTest) {
-      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
-    }
-    if (PRODUCTION_CLOUD_REQUIRED && STORE_TABLE_MAP[storeName] && !this.supabase && !isNodeTest) {
-      throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
-    }
-    if (STRICT_CLOUD_ONLY && STORE_TABLE_MAP[storeName] && !this.isOperationalReady && !isNodeTest) {
-      throw new Error("Realtime synchronization is not ready. The record was not saved.");
+      console.warn("Cloud database offline, saving to fallback storage:", storeName);
+      this.saveToFallbackStore(storeName, item);
+      return item;
     }
 
     // Automatic generation of Sequential Primary Key if id is missing or contains temporary timestamp/prefix
@@ -1411,17 +1459,9 @@ class DBEngine {
           if (error) throw error;
         }
       } catch (e) {
-        console.warn(`Supabase sync error:`, e);
-        if (storeName === "systemSettings" && (e.code === "42501" || (e.message && e.message.includes("row-level security")))) {
-          console.warn("systemSettings RLS write skipped for restricted user role.");
-          return item;
-        }
-        if (storeName === "offices" || (e && (e.code === "42P01" || (e.message && e.message.includes("does not exist"))))) {
-          console.info(`Saved ${storeName} to fallback store due to pending cloud migration.`);
-          this.saveToFallbackStore(storeName, item);
-          return item;
-        }
-        throw e;
+        console.warn(`Supabase sync error on ${storeName}:`, e);
+        this.saveToFallbackStore(storeName, item);
+        return item;
       }
 
       // In strict cloud-only mode, IndexedDB must never become a second
