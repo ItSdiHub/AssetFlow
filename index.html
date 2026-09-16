@@ -1398,6 +1398,9 @@
               <button id="btnAddNewProject" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal()">
                 <i class="fas fa-plus"></i> <span data-i18n="btnAddProject">إضافة مشروع جديد</span>
               </button>
+              <button id="btnAddNewProjectTask" class="btn btn-secondary btn-sm user-write-action" onclick="ProjectManager.openTaskModal(ProjectManager.activeDetailProjectId || '')">
+                <i class="fas fa-tasks"></i> <span data-i18n="btnAddTask">إضافة مهمة للمشروع</span>
+              </button>
             </div>
           </div>
 
@@ -3377,14 +3380,21 @@
           <input type="hidden" id="formTaskProjectId">
 
           <div class="form-grid">
+            <div class="form-group full-width">
+              <label><span data-i18n="project">المشروع المرتبط</span>*</label>
+              <select id="formTaskProjectIdSelect" class="form-control" required onchange="ProjectManager.handleTaskProjectChange(this.value)">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+
             <div class="form-group">
               <label><span data-i18n="taskNameAr">اسم المهمة (عربي)</span>*</label>
-              <input type="text" id="formTaskNameAr" class="form-control" required>
+              <input type="text" id="formTaskNameAr" class="form-control" required oninput="ProjectManager.handleTaskNameChange(this.value)">
             </div>
 
             <div class="form-group">
               <label data-i18n="taskNameEn">اسم المهمة (إنجليزي)</label>
-              <input type="text" id="formTaskNameEn" class="form-control">
+              <input type="text" id="formTaskNameEn" class="form-control" oninput="ProjectManager.handleTaskNameChange(this.value)">
             </div>
 
             <div class="form-group">
@@ -3394,12 +3404,12 @@
 
             <div class="form-group">
               <label data-i18n="taskDueDate">تاريخ الاستحقاق</label>
-              <input type="date" id="formTaskDueDate" class="form-control">
+              <input type="date" id="formTaskDueDate" class="form-control" onchange="ProjectManager.handleTaskDueDateChange(this.value)">
             </div>
 
             <div class="form-group">
               <label data-i18n="responsiblePerson">المسؤول</label>
-              <select id="formTaskResponsible" class="form-control">
+              <select id="formTaskResponsible" class="form-control" onchange="ProjectManager.handleTaskAssigneeChange(this.value)">
                 <!-- Populated via JS -->
               </select>
             </div>
@@ -3412,13 +3422,23 @@
             </div>
 
             <div class="form-group">
-              <label><span data-i18n="taskProgress">نسبة الإنجاز (%)</span></label>
-              <input type="number" id="formTaskProgress" class="form-control" min="0" max="100" value="0">
+              <label><span data-i18n="priority">درجة الأولوية</span>*</label>
+              <select id="formTaskPriority" class="form-control" onchange="ProjectManager.handleTaskPriorityChange(this.value)">
+                <option value="Medium" data-i18n="priorityMedium" selected>متوسطة (Medium)</option>
+                <option value="Low" data-i18n="priorityLow">منخفضة (Low)</option>
+                <option value="High" data-i18n="priorityHigh">عالية (High)</option>
+                <option value="Urgent" data-i18n="priorityUrgent">حرجة / عاجلة (Urgent)</option>
+              </select>
             </div>
 
             <div class="form-group">
+              <label><span data-i18n="taskProgress">نسبة الإنجاز (%)</span></label>
+              <input type="number" id="formTaskProgress" class="form-control" min="0" max="100" value="0" oninput="ProjectManager.handleTaskProgressChange(this.value)">
+            </div>
+
+            <div class="form-group full-width">
               <label><span data-i18n="taskStatus">حالة المهمة</span>*</label>
-              <select id="formTaskStatus" class="form-control" required>
+              <select id="formTaskStatus" class="form-control" required onchange="ProjectManager.handleTaskStatusChange(this.value)">
                 <option value="Pending" data-i18n="statusPending">قيد الانتظار</option>
                 <option value="In Progress" data-i18n="statusInProgress">قيد التنفيذ</option>
                 <option value="Completed" data-i18n="statusCompleted">مكتمل</option>

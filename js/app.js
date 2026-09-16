@@ -4878,13 +4878,25 @@ class Application {
         const tp = document.getElementById("bannerTaskPriority");
         const td = document.getElementById("bannerTaskDueDate");
         const pr = document.getElementById("bannerTaskProgress");
-        if (tn) tn.textContent = getText(document.getElementById("formTaskName"));
-        if (ta) ta.textContent = getText(document.getElementById("formTaskAssignee"));
-        if (tp) tp.textContent = getText(document.getElementById("formTaskPriority"));
-        if (td) td.textContent = getText(document.getElementById("formTaskDueDate"));
+        if (tn) {
+          const val = getText(document.getElementById("formTaskNameAr")) || getText(document.getElementById("formTaskNameEn")) || getText(document.getElementById("formTaskName"));
+          tn.textContent = val !== "-" ? val : "-";
+        }
+        if (ta) {
+          const val = getText(document.getElementById("formTaskResponsible")) || getText(document.getElementById("formTaskAssignee"));
+          ta.textContent = val !== "-" ? val : "-";
+        }
+        if (tp) {
+          const val = getText(document.getElementById("formTaskPriority"));
+          tp.textContent = val !== "-" ? val : "-";
+        }
+        if (td) {
+          const val = getText(document.getElementById("formTaskDueDate"));
+          td.textContent = val !== "-" ? val : "-";
+        }
         if (pr) {
           const val = getText(document.getElementById("formTaskProgress"));
-          pr.textContent = val !== "-" ? `${val}%` : "-";
+          pr.textContent = val !== "-" ? `${val}%` : "0%";
         }
       },
       contractorModal: () => {

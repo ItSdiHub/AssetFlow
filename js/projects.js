@@ -187,25 +187,25 @@ class ProjectManagementController {
 
     // Populate Filters
     const contractorFilter = document.getElementById("projectFilterContractor");
-    if (contractorFilter && contractorFilter.options.length <= 1) {
+    if (contractorFilter && (!contractorFilter.options || contractorFilter.options.length <= 1)) {
       contractorFilter.innerHTML = `<option value="">${lang === "ar" ? "جميع المقاولين" : "All Contractors"}</option>` +
         contractors.map(c => `<option value="${c.id}">${lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr)}</option>`).join("");
     }
 
     const locFilter = document.getElementById("projectFilterLoc");
-    if (locFilter && locFilter.options.length <= 1) {
+    if (locFilter && (!locFilter.options || locFilter.options.length <= 1)) {
       locFilter.innerHTML = `<option value="">${lang === "ar" ? "جميع المواقع" : "All Locations"}</option>` +
         locations.filter(l => l.active !== false).map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)}</option>`).join("");
     }
 
     const deptFilter = document.getElementById("projectFilterDept");
-    if (deptFilter && deptFilter.options.length <= 1) {
+    if (deptFilter && (!deptFilter.options || deptFilter.options.length <= 1)) {
       deptFilter.innerHTML = `<option value="">${lang === "ar" ? "جميع الأقسام" : "All Departments"}</option>` +
         departments.filter(d => d.active !== false).map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
     }
 
     const empFilter = document.getElementById("projectFilterEmp");
-    if (empFilter && empFilter.options.length <= 1) {
+    if (empFilter && (!empFilter.options || empFilter.options.length <= 1)) {
       empFilter.innerHTML = `<option value="">${lang === "ar" ? "جميع المسؤولين" : "All Employees"}</option>` +
         employees.filter(e => e.status === "Active").map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}</option>`).join("");
     }
@@ -1302,63 +1302,247 @@ class ProjectManagementController {
     App.openModal("projectDetailsModal");
   }
 
-  async openTaskModal(projectId, taskId = null) {
-    const lang = AppState.lang;
-    const [employees, contractors] = await Promise.all([
-      db.getAll("employees"),
-      db.getAll("contractors")
-    ]);
+  async openTaskModal(projectId = null, taskId = null) {
+    try {
+      const lang = (window.AppState && window.AppState.lang) || "ar";
+      let projects = [], employees = [], contractors = [];
+      try {
+        [projects, employees, contractors] = await Promise.all([
+          db.getAll("projects").catch(() => []),
+          db.getAll("employees").catch(() => []),
+          db.getAll("contractors").catch(() => [])
+        ]);
+      } catch (e) {
+        console.warn("Error loading task dependencies:", e);
+      }
 
-    document.getElementById("formTaskProjectId").value = projectId;
-    document.getElementById("formTaskId").value = taskId || "";
+      projects = Array.isArray(projects) ? projects : [];
+      employees = Array.isArray(employees) ? employees : [];
+      contractors = Array.isArray(contractors) ? contractors : [];
 
-    const respSelect = document.getElementById("formTaskResponsible");
-    if (respSelect) {
-      respSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المسؤول (اختياري)" : "Responsible Person"} --</option>` +
-        employees.filter(e => e.status === "Active")
-          .map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}</option>`).join("");
+      this._cachedTaskProjects = projects;
+      this._cachedTaskEmployees = employees;
+      this._cachedTaskContractors = contractors;
+
+      let targetProjectId = (projectId && projectId !== "undefined" && projectId !== "null") ? projectId : (this.activeDetailProjectId || "");
+      if (taskId) {
+        const existingTask = await db.getById("projectTasks", taskId);
+        if (existingTask && existingTask.projectId) {
+          targetProjectId = existingTask.projectId;
+        }
+      }
+      if (!targetProjectId && projects.length > 0) {
+        targetProjectId = projects[0].id;
+      }
+
+      const prjSelect = document.getElementById("formTaskProjectIdSelect");
+      if (prjSelect) {
+        let optHtml = `<option value="">-- ${lang === "ar" ? "اختر المشروع المرتبط *" : "Select Linked Project *"} --</option>`;
+        optHtml += projects.map(p => {
+          const pName = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
+          const isSel = p.id === targetProjectId ? "selected" : "";
+          return `<option value="${p.id}" ${isSel}>${p.projectNo ? `[${p.projectNo}] ` : ""}${pName}</option>`;
+        }).join("");
+        prjSelect.innerHTML = optHtml;
+        if (targetProjectId) prjSelect.value = targetProjectId;
+        if (typeof this.enhanceSelectWithSearch === "function") {
+          try {
+            this.enhanceSelectWithSearch("formTaskProjectIdSelect", lang === "ar" ? "اختر المشروع *" : "Select Project *", lang === "ar" ? "ابحث عن المشروع..." : "Search project...");
+          } catch (err) {}
+        }
+      }
+
+      const hiddenProj = document.getElementById("formTaskProjectId");
+      if (hiddenProj) hiddenProj.value = targetProjectId || "";
+
+      const hiddenTask = document.getElementById("formTaskId");
+      if (hiddenTask) hiddenTask.value = taskId || "";
+
+      const respSelect = document.getElementById("formTaskResponsible");
+      if (respSelect) {
+        respSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المسؤول (اختياري)" : "Responsible Person (Optional)"} --</option>` +
+          employees.filter(e => e.status === "Active" || !e.status)
+            .map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");
+        if (typeof this.enhanceSelectWithSearch === "function") {
+          try {
+            this.enhanceSelectWithSearch("formTaskResponsible", lang === "ar" ? "المسؤول" : "Responsible", lang === "ar" ? "ابحث عن الموظف..." : "Search employee...");
+          } catch (err) {}
+        }
+      }
+
+      const contractorSelect = document.getElementById("formTaskContractor");
+      if (contractorSelect) {
+        contractorSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المقاول المنفذ (اختياري)" : "Contractor (Optional)"} --</option>` +
+          contractors.filter(c => c.active !== false)
+            .map(c => `<option value="${c.id}">${lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr)}</option>`).join("");
+        if (typeof this.enhanceSelectWithSearch === "function") {
+          try {
+            this.enhanceSelectWithSearch("formTaskContractor", lang === "ar" ? "المقاول المنفذ" : "Contractor", lang === "ar" ? "ابحث عن المقاول..." : "Search contractor...");
+          } catch (err) {}
+        }
+      }
+
+      if (taskId) {
+        const t = await db.getById("projectTasks", taskId);
+        if (t) {
+          if (document.getElementById("formTaskNameAr")) document.getElementById("formTaskNameAr").value = t.nameAr || t.taskNameAr || "";
+          if (document.getElementById("formTaskNameEn")) document.getElementById("formTaskNameEn").value = t.nameEn || t.taskNameEn || "";
+          if (document.getElementById("formTaskDesc")) document.getElementById("formTaskDesc").value = t.description || "";
+          if (document.getElementById("formTaskStartDate")) document.getElementById("formTaskStartDate").value = t.startDate || "";
+          if (document.getElementById("formTaskDueDate")) document.getElementById("formTaskDueDate").value = t.dueDate || "";
+          if (document.getElementById("formTaskResponsible")) document.getElementById("formTaskResponsible").value = t.responsibleEmployeeId || "";
+          if (document.getElementById("formTaskContractor")) document.getElementById("formTaskContractor").value = t.contractorId || "";
+          if (document.getElementById("formTaskPriority")) document.getElementById("formTaskPriority").value = t.priority || "Medium";
+          if (document.getElementById("formTaskProgress")) document.getElementById("formTaskProgress").value = t.progress !== undefined ? t.progress : 0;
+          if (document.getElementById("formTaskStatus")) document.getElementById("formTaskStatus").value = t.status || "Pending";
+          const remarksEl = document.getElementById("formTaskRemarks") || document.getElementById("formTaskDesc");
+          if (remarksEl) remarksEl.value = t.remarks || t.notes || "";
+        }
+      } else {
+        if (document.getElementById("formTaskNameAr")) document.getElementById("formTaskNameAr").value = "";
+        if (document.getElementById("formTaskNameEn")) document.getElementById("formTaskNameEn").value = "";
+        if (document.getElementById("formTaskDesc")) document.getElementById("formTaskDesc").value = "";
+        if (document.getElementById("formTaskStartDate")) document.getElementById("formTaskStartDate").value = new Date().toISOString().slice(0, 10);
+        if (document.getElementById("formTaskDueDate")) document.getElementById("formTaskDueDate").value = "";
+        if (document.getElementById("formTaskResponsible")) document.getElementById("formTaskResponsible").value = "";
+        if (document.getElementById("formTaskContractor")) document.getElementById("formTaskContractor").value = "";
+        if (document.getElementById("formTaskPriority")) document.getElementById("formTaskPriority").value = "Medium";
+        if (document.getElementById("formTaskProgress")) document.getElementById("formTaskProgress").value = 0;
+        if (document.getElementById("formTaskStatus")) document.getElementById("formTaskStatus").value = "Pending";
+        if (document.getElementById("formTaskRemarks")) document.getElementById("formTaskRemarks").value = "";
+      }
+
+      this.updateTaskBanner();
+      App.openModal("projectTaskModal");
+    } catch (error) {
+      console.error("Error opening projectTaskModal, falling back to openModal:", error);
+      App.openModal("projectTaskModal");
     }
+  }
 
-    const contractorSelect = document.getElementById("formTaskContractor");
-    if (contractorSelect) {
-      contractorSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "المقاول المنفذ (اختياري)" : "Contractor (Optional)"} --</option>` +
-        contractors.filter(c => c.active !== false)
-          .map(c => `<option value="${c.id}">${lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr)}</option>`).join("");
+  handleTaskProjectChange(val) {
+    const hiddenProj = document.getElementById("formTaskProjectId");
+    if (hiddenProj) hiddenProj.value = val || "";
+    this.updateTaskBanner();
+  }
+
+  handleTaskNameChange(val) {
+    const el = document.getElementById("bannerTaskName");
+    if (el) el.textContent = (val || "").trim() || "-";
+  }
+
+  handleTaskAssigneeChange(empId) {
+    const el = document.getElementById("bannerTaskAssignee");
+    if (!el) return;
+    if (!empId) {
+      el.textContent = "-";
+      return;
     }
-
-    if (taskId) {
-      const t = await db.getById("projectTasks", taskId);
-      if (!t) return;
-      document.getElementById("formTaskNameAr").value = t.nameAr || "";
-      document.getElementById("formTaskNameEn").value = t.nameEn || "";
-      document.getElementById("formTaskDesc").value = t.description || "";
-      document.getElementById("formTaskStartDate").value = t.startDate || "";
-      document.getElementById("formTaskDueDate").value = t.dueDate || "";
-      document.getElementById("formTaskResponsible").value = t.responsibleEmployeeId || "";
-      document.getElementById("formTaskContractor").value = t.contractorId || "";
-      document.getElementById("formTaskProgress").value = t.progress !== undefined ? t.progress : 0;
-      const remarksEl = document.getElementById("formTaskRemarks") || document.getElementById("formTaskDesc");
-      if (remarksEl) remarksEl.value = t.remarks || "";
+    const emp = (this._cachedTaskEmployees || []).find(e => e.id === empId);
+    if (emp) {
+      el.textContent = AppState.lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr);
     } else {
-      const nameArEl = document.getElementById("formTaskNameAr"); if (nameArEl) nameArEl.value = "";
-      const nameEnEl = document.getElementById("formTaskNameEn"); if (nameEnEl) nameEnEl.value = "";
-      const descEl = document.getElementById("formTaskDesc"); if (descEl) descEl.value = "";
-      const startEl = document.getElementById("formTaskStartDate"); if (startEl) startEl.value = new Date().toISOString().slice(0, 10);
-      const dueEl = document.getElementById("formTaskDueDate"); if (dueEl) dueEl.value = "";
-      const respEl = document.getElementById("formTaskResponsible"); if (respEl) respEl.value = "";
-      const contEl = document.getElementById("formTaskContractor"); if (contEl) contEl.value = "";
-      const progEl = document.getElementById("formTaskProgress"); if (progEl) progEl.value = 0;
-      const statEl = document.getElementById("formTaskStatus"); if (statEl) statEl.value = "Pending";
-      const remarksEl = document.getElementById("formTaskRemarks"); if (remarksEl) remarksEl.value = "";
+      el.textContent = empId;
     }
+  }
 
-    App.openModal("projectTaskModal");
+  handleTaskPriorityChange(priority) {
+    const el = document.getElementById("bannerTaskPriority");
+    if (!el) return;
+    const prioLabels = {
+      Low: AppState.lang === "ar" ? "منخفضة (Low)" : "Low",
+      Medium: AppState.lang === "ar" ? "متوسطة (Medium)" : "Medium",
+      High: AppState.lang === "ar" ? "عالية (High)" : "High",
+      Urgent: AppState.lang === "ar" ? "حرجة / عاجلة (Urgent)" : "Urgent"
+    };
+    el.textContent = prioLabels[priority] || priority || "-";
+  }
+
+  handleTaskDueDateChange(dueDate) {
+    const el = document.getElementById("bannerTaskDueDate");
+    if (el) el.textContent = dueDate || "-";
+  }
+
+  handleTaskProgressChange(progress) {
+    const el = document.getElementById("bannerTaskProgress");
+    if (el) el.textContent = (progress !== "" && progress !== null && progress !== undefined) ? `${progress}%` : "0%";
+  }
+
+  handleTaskStatusChange(status) {
+    if (status === "Completed") {
+      const progEl = document.getElementById("formTaskProgress");
+      if (progEl) {
+        progEl.value = 100;
+        this.handleTaskProgressChange(100);
+      }
+    }
+    this.updateTaskBanner();
+  }
+
+  updateTaskBanner() {
+    try {
+      const tn = document.getElementById("bannerTaskName");
+      const ta = document.getElementById("bannerTaskAssignee");
+      const tp = document.getElementById("bannerTaskPriority");
+      const td = document.getElementById("bannerTaskDueDate");
+      const pr = document.getElementById("bannerTaskProgress");
+
+      const nameArEl = document.getElementById("formTaskNameAr");
+      const nameEnEl = document.getElementById("formTaskNameEn");
+      const nameAr = nameArEl ? (nameArEl.value || "").trim() : "";
+      const nameEn = nameEnEl ? (nameEnEl.value || "").trim() : "";
+      if (tn) tn.textContent = nameAr || nameEn || "-";
+
+      const respEl = document.getElementById("formTaskResponsible");
+      const respId = respEl ? respEl.value : "";
+      if (ta) {
+        if (respId && this._cachedTaskEmployees) {
+          const emp = this._cachedTaskEmployees.find(e => e.id === respId);
+          ta.textContent = emp ? (AppState.lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr)) : respId;
+        } else {
+          ta.textContent = "-";
+        }
+      }
+
+      const prioEl = document.getElementById("formTaskPriority");
+      const priority = prioEl ? prioEl.value : "Medium";
+      if (tp) {
+        const prioLabels = {
+          Low: AppState.lang === "ar" ? "منخفضة" : "Low",
+          Medium: AppState.lang === "ar" ? "متوسطة" : "Medium",
+          High: AppState.lang === "ar" ? "عالية" : "High",
+          Urgent: AppState.lang === "ar" ? "حرجة" : "Urgent"
+        };
+        tp.textContent = prioLabels[priority] || priority;
+      }
+
+      const dueEl = document.getElementById("formTaskDueDate");
+      const dueDate = dueEl ? dueEl.value : "";
+      if (td) td.textContent = dueDate || "-";
+
+      const progEl = document.getElementById("formTaskProgress");
+      const prog = progEl ? progEl.value : "";
+      if (pr) pr.textContent = (prog !== "" && prog !== undefined && prog !== null) ? `${prog}%` : "0%";
+    } catch (e) {
+      console.warn("updateTaskBanner error:", e);
+    }
   }
 
   async handleTaskSubmit(event) {
     if (event) event.preventDefault();
     try {
-      const projectId = document.getElementById("formTaskProjectId") ? document.getElementById("formTaskProjectId").value : "";
+      const projSelect = document.getElementById("formTaskProjectIdSelect");
+      const hiddenProj = document.getElementById("formTaskProjectId");
+      let projectId = (projSelect && projSelect.value) ? projSelect.value : (hiddenProj ? hiddenProj.value : "");
+      if (!projectId || projectId === "undefined" || projectId === "null") {
+        projectId = this.activeDetailProjectId || "";
+      }
+
+      if (!projectId) {
+        App.showToast(AppState.lang === "ar" ? "يرجى تحديد المشروع المرتبط بالمهمة" : "Please select a project for this task", "error");
+        return;
+      }
+
       const taskId = document.getElementById("formTaskId") ? document.getElementById("formTaskId").value : "";
       const nameAr = document.getElementById("formTaskNameAr")?.value.trim() || "";
       const nameEn = document.getElementById("formTaskNameEn")?.value.trim() || "";
@@ -1367,6 +1551,7 @@ class ProjectManagementController {
       const dueDate = document.getElementById("formTaskDueDate")?.value || "";
       const responsibleEmployeeId = document.getElementById("formTaskResponsible")?.value || null;
       const contractorId = document.getElementById("formTaskContractor")?.value || null;
+      const priority = document.getElementById("formTaskPriority")?.value || "Medium";
       let progress = parseInt(document.getElementById("formTaskProgress")?.value, 10) || 0;
       let status = document.getElementById("formTaskStatus")?.value || "Pending";
       const remarksEl = document.getElementById("formTaskRemarks") || document.getElementById("formTaskDesc");
@@ -1378,6 +1563,7 @@ class ProjectManagementController {
       }
 
       if (status === "Completed") progress = 100;
+      if (progress === 100 && status === "Pending") status = "Completed";
 
       let generatedId = taskId;
       if (!generatedId) {
@@ -1393,14 +1579,18 @@ class ProjectManagementController {
         projectId,
         nameAr: nameAr || nameEn,
         nameEn: nameEn || nameAr,
+        taskNameAr: nameAr || nameEn,
+        taskNameEn: nameEn || nameAr,
         description,
         startDate,
         dueDate,
         responsibleEmployeeId,
         contractorId,
+        priority,
         progress,
         status,
         remarks,
+        notes: remarks,
         updatedAt: new Date().toISOString()
       };
       if (!taskId) task.createdAt = new Date().toISOString();
@@ -1416,7 +1606,10 @@ class ProjectManagementController {
 
       App.closeModal("projectTaskModal");
       App.showToast(AppState.lang === "ar" ? "تم حفظ المهمة وتحديث نسبة الإنجاز تلقائياً" : "Task saved and project progress updated", "success");
-      if (projectId) {
+      
+      const detailsModal = document.getElementById("projectDetailsModal");
+      const isDetailsOpen = detailsModal && (detailsModal.classList.contains("active") || detailsModal.classList.contains("show") || detailsModal.style.display === "flex");
+      if (projectId && (isDetailsOpen || this.activeDetailProjectId === projectId)) {
         await this.viewProjectDetails(projectId);
       }
       await this.render();
