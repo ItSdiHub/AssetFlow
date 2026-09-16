@@ -3255,6 +3255,71 @@
               <label data-i18n="notes">ملاحظات ونطاق العمل</label>
               <textarea id="formPrjRemarks" class="form-control" rows="2"></textarea>
             </div>
+
+            <!-- Digital Documents & Contracts Section (Upload & Cloud Links) -->
+            <div class="form-group full-width" style="margin-top: 10px;">
+              <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; background: rgba(255,255,255,0.02);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <label style="font-weight: 700; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas fa-file-contract text-primary"></i>
+                    <span data-i18n="projectDocuments">المستندات والعقود الرقمية</span>
+                  </label>
+                  <span class="badge badge-info" id="projectDocsCountBadge">0</span>
+                </div>
+                <p class="text-xs text-muted mb-3" data-i18n="projectDocsDesc">إرفاق ملفات PDF، عقود التوريد، المواصفات الفنية، والروابط السحابية للمشروع</p>
+
+                <!-- Dual Options: Upload Dropzone & Link Form -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px;">
+                  <!-- Dropzone for File Upload -->
+                  <div id="projectDocDropzone" class="dropzone-area" 
+                       ondragover="ProjectManager.handleDocDragOver(event)" 
+                       ondragleave="ProjectManager.handleDocDragLeave(event)" 
+                       ondrop="ProjectManager.handleDocDrop(event)"
+                       onclick="document.getElementById('projectDocFileInput').click()"
+                       style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: rgba(0,0,0,0.02);">
+                    <input type="file" id="projectDocFileInput" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style="display: none;" onchange="ProjectManager.handleDocFileInput(event)">
+                    <i class="fas fa-cloud-upload-alt text-primary" style="font-size: 24px; margin-bottom: 6px;"></i>
+                    <div style="font-size: 12px; font-weight: 600;">
+                      <span data-i18n="dragDropDocs">اسحب وأفلت ملفات PDF أو العقود هنا، أو</span> 
+                      <span class="text-primary" style="text-decoration: underline;" data-i18n="browseFiles">استعراض الملفات</span>
+                    </div>
+                    <div class="text-muted" style="font-size: 11px; margin-top: 4px;" data-i18n="supportedFormats">الصيغ المدعومة: PDF, DOC, DOCX, XLS, XLSX, JPG, PNG (بحد أقصى 15 ميجابايت للملف)</div>
+                  </div>
+
+                  <!-- Link Cloud Document / Contract URL -->
+                  <div style="border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; background: var(--bg-surface);">
+                    <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                      <i class="fas fa-link text-info"></i>
+                      <span data-i18n="linkCloudDoc">ربط مستند سحابي (URL)</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                      <div style="display: flex; gap: 6px;">
+                        <select id="formDocCategory" class="form-control text-xs" style="width: 140px;">
+                          <option value="Contract" data-i18n="catContract">عقد / اتفاقية</option>
+                          <option value="Specs" data-i18n="catSpecs">مواصفات فنية</option>
+                          <option value="Handover" data-i18n="catHandover">محضر تسليم</option>
+                          <option value="Invoice" data-i18n="catInvoice">فاتورة مالية</option>
+                          <option value="SLA" data-i18n="catSLA">اتفاقية SLA</option>
+                          <option value="Other" data-i18n="catOther">مستند عام</option>
+                        </select>
+                        <input type="text" id="formDocTitle" class="form-control text-xs" placeholder="عنوان المستند / Contract Title" data-i18n-placeholder="docName" style="flex: 1;">
+                      </div>
+                      <div style="display: flex; gap: 6px;">
+                        <input type="url" id="formDocUrl" class="form-control text-xs" placeholder="https://drive.google.com/... أو رابط السحابة" data-i18n-placeholder="docUrl" style="flex: 1;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="ProjectManager.addDocLinkFromForm()" style="white-space: nowrap;">
+                          <i class="fas fa-plus"></i> <span data-i18n="btnAddLink">إضافة الرابط</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Document List Container -->
+                <div id="projectModalDocsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -3446,7 +3511,7 @@
         <div class="d-flex justify-between items-center mb-2">
           <h4 style="margin: 0;"><i class="fas fa-desktop text-primary"></i> <span data-i18n="relatedAssets">الأصول المرتبطة بالمشروع</span></h4>
         </div>
-        <div class="table-responsive">
+        <div class="table-responsive mb-4">
           <table class="custom-table" style="font-size: 12px;">
             <thead>
               <tr>
@@ -3458,6 +3523,28 @@
               </tr>
             </thead>
             <tbody id="pdAssetsTableBody">
+              <!-- Populated via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Project Documents & Contracts Section -->
+        <div class="d-flex justify-between items-center mb-2">
+          <h4 style="margin: 0;"><i class="fas fa-file-contract text-primary"></i> <span data-i18n="projectDocuments">المستندات والعقود الرقمية</span></h4>
+          <span class="badge badge-info" id="pdDocsCountBadge">0</span>
+        </div>
+        <div class="table-responsive mb-2">
+          <table class="custom-table" style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th data-i18n="docName">المستند</th>
+                <th data-i18n="docCategory">التصنيف</th>
+                <th data-i18n="size">الحجم / المصدر</th>
+                <th data-i18n="date">التاريخ</th>
+                <th data-i18n="actions">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="pdDocsTableBody">
               <!-- Populated via JS -->
             </tbody>
           </table>

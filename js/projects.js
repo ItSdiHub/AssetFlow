@@ -647,6 +647,8 @@ class ProjectManagementController {
           return;
         }
 
+        this.stagedProjectDocuments = (p && Array.isArray(p.documents)) ? JSON.parse(JSON.stringify(p.documents)) : [];
+
         const prjNoEl = document.getElementById("formPrjNumber");
         if (prjNoEl) prjNoEl.value = p.projectNo || "";
         const nameArEl = document.getElementById("formPrjNameAr");
@@ -874,7 +876,11 @@ class ProjectManagementController {
 
         const initialProg = this.calculateProjectProgress({ status: "Planning" }, []);
         this.updateProjectModalProgressUI(initialProg, "Planning", 0);
+        this.stagedProjectDocuments = [];
       }
+
+      // Render digital documents & contracts list in modal
+      this.renderProjectModalDocs();
 
       // Refresh searchable combobox UI for all cascading elements
       this.refreshSelectCombobox(contractorSelect);
@@ -1095,6 +1101,7 @@ class ProjectManagementController {
       progress,
       status,
       remarks,
+      documents: Array.isArray(this.stagedProjectDocuments) ? this.stagedProjectDocuments : [],
       updatedAt: new Date().toISOString()
     };
     if (!id) project.createdAt = new Date().toISOString();
@@ -1219,6 +1226,52 @@ class ProjectManagementController {
         `;
       });
       assetsTableBody.innerHTML = assetsHtml;
+    }
+
+    // 4. Project Documents & Contracts Table
+    const docsTableBody = document.getElementById("pdDocsTableBody");
+    const docsCountBadge = document.getElementById("pdDocsCountBadge");
+    const prjDocs = Array.isArray(project.documents) ? project.documents : [];
+    if (docsCountBadge) docsCountBadge.textContent = prjDocs.length;
+    
+    if (docsTableBody) {
+      if (prjDocs.length === 0) {
+        docsTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">${lang === 'ar' ? 'لا توجد مستندات أو عقود مرفقة بهذا المشروع بعد' : 'No documents or contracts attached to this project yet'}</td></tr>`;
+      } else {
+        docsTableBody.innerHTML = prjDocs.map(doc => {
+          const catBadge = this.getDocCategoryBadge(doc.category, lang);
+          const iconHtml = this.getDocIconHtml(doc);
+          const sourceText = doc.url ? (lang === 'ar' ? 'رابط سحابي' : 'Cloud Link') : (doc.size || '-');
+          return `
+            <tr>
+              <td>
+                <div class="d-flex items-center gap-2">
+                  ${iconHtml}
+                  <div>
+                    <strong>${doc.name || '-'}</strong>
+                    ${doc.url ? `<div class="text-xs text-muted" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.url}</div>` : ''}
+                  </div>
+                </div>
+              </td>
+              <td>${catBadge}</td>
+              <td><span class="text-xs ${doc.url ? 'text-info font-bold' : 'text-muted'}">${sourceText}</span></td>
+              <td><span class="text-xs text-muted">${doc.addedAt || '-'}</span></td>
+              <td>
+                <div class="table-actions">
+                  <button type="button" class="btn btn-xs btn-primary" onclick="ProjectManager.openDocumentById('${doc.id}', '${project.id}')" title="${lang === 'ar' ? 'فتح / معاينة' : 'Open / View'}">
+                    <i class="${doc.url ? 'fas fa-external-link-alt' : 'fas fa-eye'}"></i>
+                  </button>
+                  ${doc.dataUrl ? `
+                    <button type="button" class="btn btn-xs btn-secondary" onclick="ProjectManager.downloadDocumentById('${doc.id}', '${project.id}')" title="${lang === 'ar' ? 'تحميل' : 'Download'}">
+                      <i class="fas fa-download"></i>
+                    </button>
+                  ` : ''}
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
     }
 
     App.openModal("projectDetailsModal");
@@ -1364,6 +1417,316 @@ class ProjectManagementController {
 
   async printProjectTasks(projectId = null) {
     window.print();
+  }
+
+  // =========================================================================
+  // DIGITAL DOCUMENTS & CONTRACTS (PDFs, Specifications, Cloud Links)
+  // =========================================================================
+
+  handleDocDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropzone = document.getElementById("projectDocDropzone");
+    if (dropzone) {
+      dropzone.style.borderColor = "var(--primary-color, #0B3C68)";
+      dropzone.style.backgroundColor = "rgba(11, 60, 104, 0.08)";
+    }
+  }
+
+  handleDocDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropzone = document.getElementById("projectDocDropzone");
+    if (dropzone) {
+      dropzone.style.borderColor = "var(--border-color)";
+      dropzone.style.backgroundColor = "rgba(0, 0, 0, 0.02)";
+    }
+  }
+
+  handleDocDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.handleDocDragLeave(e);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      this.processDocFiles(e.dataTransfer.files);
+    }
+  }
+
+  handleDocFileInput(e) {
+    if (e.target && e.target.files && e.target.files.length > 0) {
+      this.processDocFiles(e.target.files);
+      e.target.value = "";
+    }
+  }
+
+  async processDocFiles(files) {
+    const lang = AppState.lang || "ar";
+    if (!this.stagedProjectDocuments) this.stagedProjectDocuments = [];
+    const MAX_SIZE = 15 * 1024 * 1024; // 15MB max
+    let addedCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > MAX_SIZE) {
+        App.showToast(lang === "ar" ? `الملف ${file.name} يتجاوز الحد الأقصى (15MB)` : `File ${file.name} exceeds 15MB limit`, "error");
+        continue;
+      }
+
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("File read error"));
+          reader.readAsDataURL(file);
+        });
+
+        // Smart Category Detection
+        let category = "Contract";
+        const lower = file.name.toLowerCase();
+        if (lower.includes("spec") || lower.includes("rfp") || lower.includes("مواصفات") || lower.includes("فني")) {
+          category = "Specs";
+        } else if (lower.includes("handover") || lower.includes("تسليم") || lower.includes("استلام") || lower.includes("محضر")) {
+          category = "Handover";
+        } else if (lower.includes("invoice") || lower.includes("فاتورة") || lower.includes("مالي") || lower.includes("bill")) {
+          category = "Invoice";
+        } else if (lower.includes("sla") || lower.includes("صيانة") || lower.includes("اتفاقية")) {
+          category = "SLA";
+        } else if (lower.includes("contract") || lower.includes("عقد") || lower.includes("اتفاق")) {
+          category = "Contract";
+        } else {
+          category = "Other";
+        }
+
+        const sizeFormatted = file.size < 1024 * 1024 
+          ? (file.size / 1024).toFixed(1) + " KB" 
+          : (file.size / (1024 * 1024)).toFixed(2) + " MB";
+
+        this.stagedProjectDocuments.push({
+          id: "doc-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+          name: file.name,
+          category,
+          size: sizeFormatted,
+          mime: file.type || "application/octet-stream",
+          dataUrl,
+          url: null,
+          addedAt: new Date().toISOString().slice(0, 10)
+        });
+        addedCount++;
+      } catch (readErr) {
+        console.error("Error reading document file:", readErr);
+        App.showToast(lang === "ar" ? `فشل قراءة الملف ${file.name}` : `Failed to read file ${file.name}`, "error");
+      }
+    }
+
+    if (addedCount > 0) {
+      this.renderProjectModalDocs();
+      App.showToast(lang === "ar" ? `تم إرفاق ${addedCount} مستند بنجاح` : `Successfully attached ${addedCount} document(s)`, "success");
+    }
+  }
+
+  addDocLinkFromForm() {
+    const lang = AppState.lang || "ar";
+    const titleInput = document.getElementById("formDocTitle");
+    const catSelect = document.getElementById("formDocCategory");
+    const urlInput = document.getElementById("formDocUrl");
+
+    const url = urlInput ? urlInput.value.trim() : "";
+    const title = titleInput ? titleInput.value.trim() : "";
+    const category = catSelect ? catSelect.value : "Contract";
+
+    if (!url) {
+      App.showToast(lang === "ar" ? "يرجى إدخال رابط المستند السحابي (URL)" : "Please enter the document / cloud URL", "warning");
+      if (urlInput) urlInput.focus();
+      return;
+    }
+
+    if (!this.stagedProjectDocuments) this.stagedProjectDocuments = [];
+
+    this.stagedProjectDocuments.push({
+      id: "doc-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+      name: title || (lang === "ar" ? "مستند سحابي مرتبط" : "Linked Cloud Document"),
+      category,
+      size: lang === "ar" ? "رابط سحابي" : "Cloud Link",
+      mime: "link",
+      dataUrl: null,
+      url: url,
+      addedAt: new Date().toISOString().slice(0, 10)
+    });
+
+    if (titleInput) titleInput.value = "";
+    if (urlInput) urlInput.value = "";
+
+    this.renderProjectModalDocs();
+    App.showToast(lang === "ar" ? "تمت إضافة الرابط السحابي بنجاح" : "Cloud document link added successfully", "success");
+  }
+
+  removeStagedDocument(docId) {
+    if (!this.stagedProjectDocuments) return;
+    const lang = AppState.lang || "ar";
+    this.stagedProjectDocuments = this.stagedProjectDocuments.filter(d => d.id !== docId);
+    this.renderProjectModalDocs();
+    App.showToast(lang === "ar" ? "تم حذف المستند من القائمة" : "Document removed from list", "info");
+  }
+
+  renderProjectModalDocs() {
+    const container = document.getElementById("projectModalDocsList");
+    const badge = document.getElementById("projectDocsCountBadge");
+    const lang = AppState.lang || "ar";
+    const docs = this.stagedProjectDocuments || [];
+
+    if (badge) badge.textContent = docs.length;
+
+    if (!container) return;
+
+    if (docs.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-3 text-muted" style="border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+          <i class="fas fa-folder-open text-muted mb-1" style="font-size: 20px;"></i>
+          <div style="font-size: 11px;">${I18N[lang].noProjectDocs || 'لا توجد مستندات أو عقود مرفقة بهذا المشروع بعد'}</div>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = docs.map(doc => {
+      const catBadge = this.getDocCategoryBadge(doc.category, lang);
+      const iconHtml = this.getDocIconHtml(doc);
+      return `
+        <div class="card p-2 d-flex justify-between items-center" style="background: var(--bg-surface); border: 1px solid var(--border-color); margin-bottom: 0;">
+          <div class="d-flex items-center gap-2" style="overflow: hidden; flex: 1;">
+            ${iconHtml}
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <div style="font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.name || '-'}</div>
+              <div class="text-xs text-muted d-flex items-center gap-2" style="font-size: 10px;">
+                <span>${catBadge}</span>
+                <span>&bull;</span>
+                <span class="${doc.url ? 'text-info font-bold' : ''}">${doc.size || '-'}</span>
+                <span>&bull;</span>
+                <span>${doc.addedAt || '-'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex gap-1" style="flex-shrink: 0; margin-inline-start: 8px;">
+            <button type="button" class="btn btn-xs btn-primary" onclick="ProjectManager.openStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'معاينة / فتح' : 'Open / View'}">
+              <i class="${doc.url ? 'fas fa-external-link-alt' : 'fas fa-eye'}"></i>
+            </button>
+            ${doc.dataUrl ? `
+              <button type="button" class="btn btn-xs btn-secondary" onclick="ProjectManager.downloadStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'تحميل' : 'Download'}">
+                <i class="fas fa-download"></i>
+              </button>
+            ` : ''}
+            <button type="button" class="btn btn-xs btn-secondary text-danger" onclick="ProjectManager.removeStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'حذف' : 'Delete'}">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  getDocCategoryBadge(cat, lang = "ar") {
+    switch(cat) {
+      case "Contract":
+        return `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'عقد توريد' : 'Contract'}</span>`;
+      case "Specs":
+        return `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #2563eb; border: 1px solid rgba(59, 130, 246, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'مواصفات فنية' : 'Technical Specs'}</span>`;
+      case "Handover":
+        return `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'محضر استلام' : 'Handover'}</span>`;
+      case "Invoice":
+        return `<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #7c3aed; border: 1px solid rgba(139, 92, 246, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'فاتورة مالية' : 'Invoice'}</span>`;
+      case "SLA":
+        return `<span class="badge" style="background: rgba(6, 182, 212, 0.15); color: #0891b2; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'اتفاقية SLA' : 'SLA'}</span>`;
+      default:
+        return `<span class="badge" style="background: rgba(107, 114, 128, 0.15); color: #4b5563; border: 1px solid rgba(107, 114, 128, 0.3); font-size: 10px; padding: 1px 6px;">${lang === 'ar' ? 'مستند عام' : 'General Doc'}</span>`;
+    }
+  }
+
+  getDocIconHtml(doc) {
+    if (doc.url) {
+      return `<i class="fas fa-link text-info" style="font-size: 16px;"></i>`;
+    }
+    const name = (doc.name || "").toLowerCase();
+    if (name.endsWith(".pdf") || (doc.mime && doc.mime.includes("pdf"))) {
+      return `<i class="fas fa-file-pdf" style="color: #ef4444; font-size: 16px;"></i>`;
+    }
+    if (name.endsWith(".doc") || name.endsWith(".docx") || (doc.mime && doc.mime.includes("word"))) {
+      return `<i class="fas fa-file-word" style="color: #2563eb; font-size: 16px;"></i>`;
+    }
+    if (name.endsWith(".xls") || name.endsWith(".xlsx") || (doc.mime && (doc.mime.includes("sheet") || doc.mime.includes("excel")))) {
+      return `<i class="fas fa-file-excel" style="color: #059669; font-size: 16px;"></i>`;
+    }
+    if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || (doc.mime && doc.mime.includes("image"))) {
+      return `<i class="fas fa-file-image" style="color: #8b5cf6; font-size: 16px;"></i>`;
+    }
+    return `<i class="fas fa-file-alt text-primary" style="font-size: 16px;"></i>`;
+  }
+
+  openStagedDocument(docId) {
+    const doc = (this.stagedProjectDocuments || []).find(d => d.id === docId);
+    if (!doc) return;
+    this.openDocObject(doc);
+  }
+
+  async openDocumentById(docId, projectId) {
+    const prj = await db.getById("projects", projectId);
+    if (!prj || !Array.isArray(prj.documents)) return;
+    const doc = prj.documents.find(d => d.id === docId);
+    if (!doc) return;
+    this.openDocObject(doc);
+  }
+
+  openDocObject(doc) {
+    if (doc.url) {
+      try {
+        window.open(doc.url, "_blank", "noopener,noreferrer");
+      } catch (e) {
+        window.location.href = doc.url;
+      }
+      return;
+    }
+    if (doc.dataUrl) {
+      try {
+        const newTab = window.open();
+        if (newTab) {
+          if (doc.mime && doc.mime.includes("pdf")) {
+            newTab.document.write(`<iframe src="${doc.dataUrl}" style="border:none; width:100%; height:100%;" title="${doc.name}"></iframe>`);
+          } else if (doc.mime && doc.mime.includes("image")) {
+            newTab.document.write(`<img src="${doc.dataUrl}" style="max-width:100%; max-height:100%; margin:auto; display:block;" alt="${doc.name}"/>`);
+          } else {
+            this.triggerFileDownload(doc.dataUrl, doc.name);
+          }
+        } else {
+          this.triggerFileDownload(doc.dataUrl, doc.name);
+        }
+      } catch (e) {
+        this.triggerFileDownload(doc.dataUrl, doc.name);
+      }
+    }
+  }
+
+  downloadStagedDocument(docId) {
+    const doc = (this.stagedProjectDocuments || []).find(d => d.id === docId);
+    if (doc && doc.dataUrl) {
+      this.triggerFileDownload(doc.dataUrl, doc.name);
+    }
+  }
+
+  async downloadDocumentById(docId, projectId) {
+    const prj = await db.getById("projects", projectId);
+    if (!prj || !Array.isArray(prj.documents)) return;
+    const doc = prj.documents.find(d => d.id === docId);
+    if (doc && doc.dataUrl) {
+      this.triggerFileDownload(doc.dataUrl, doc.name);
+    }
+  }
+
+  triggerFileDownload(dataUrl, filename) {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename || "document";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 }
 
