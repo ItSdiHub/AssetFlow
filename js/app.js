@@ -2889,7 +2889,9 @@ class Application {
       const allStatuses = [
         "Available",
         "Assigned",
+        "Installed",
         "In Store",
+        "In Transit",
         "Under Maintenance",
         "Damaged",
         "Lost",
@@ -3504,8 +3506,22 @@ class Application {
 
     const repOrgName = (lang === 'ar' ? settings.systemNameAr : settings.systemNameEn) || settings.systemNameAr || settings.orgNameAr || (lang === 'ar' ? "معهد الشارقة للسياقة" : "Sharjah Driving Institute");
 
+    const colCount = (tableHeader.match(/<th\b/gi) || []).length || 12;
+
     if (!rowsHtml) {
-      rowsHtml = `<tr><td colspan="15" class="text-center py-4 text-muted">${I18N[lang].noResultsFound || "لا توجد نتائج مطابقة"}</td></tr>`;
+      const primaryStore = (reportType === "helpdesk") ? "helpdeskRequests" 
+        : (reportType === "maint") ? "maintenance"
+        : (reportType === "history") ? "assetTransactions"
+        : (reportType === "transfers") ? "assetTransfers"
+        : (reportType === "projects") ? "projects"
+        : (reportType === "warehouseIssues" || reportType === "installations") ? "warehouseIssues"
+        : "assets";
+      const qErr = (typeof db !== "undefined" && db.getLastError) ? db.getLastError(primaryStore) : null;
+      if (qErr) {
+        rowsHtml = `<tr><td colspan="${colCount}" class="text-center py-4 text-danger"><i class="fas fa-exclamation-triangle"></i> ${lang === 'ar' ? 'تعذر جلب بيانات التقرير من الخادم السحابي' : 'Failed to retrieve report data from cloud server'} (${qErr.message || ''})</td></tr>`;
+      } else {
+        rowsHtml = `<tr><td colspan="${colCount}" class="text-center py-4 text-muted">${I18N[lang].noResultsFound || "لا توجد نتائج مطابقة"}</td></tr>`;
+      }
     }
 
     const pad = (n) => String(n).padStart(2, "0");
@@ -3513,7 +3529,6 @@ class Application {
     const dateFormatted = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
     const timeFormatted = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const footerOrgName = settings.orgNameEn || "Sharjah Driving Institute";
-    const colCount = (tableHeader.match(/<th\b/gi) || []).length || 12;
 
     reportArea.innerHTML = `
       <div class="table-responsive report-table-wrap">
