@@ -189,6 +189,7 @@ class AssetInventoryManager {
       case "Available": return "badge-primary";
       case "Assigned": return "badge-success";
       case "Installed": return "badge-success";
+      case "In Transit": return "badge-warning";
       case "Under Maintenance": return "badge-danger";
       case "In Store": return "badge-warning";
       case "Damaged": return "badge-danger";
@@ -205,13 +206,14 @@ class AssetInventoryManager {
       case "Available": return lang === "ar" ? "متاح" : "Available";
       case "Assigned": return lang === "ar" ? "مسند لموظف" : "Assigned";
       case "Installed": return lang === "ar" ? "مركب" : "Installed";
+      case "In Transit": return lang === "ar" ? "قيد النقل / بانتظار التركيب" : "In Transit";
       case "Under Maintenance": return lang === "ar" ? "في الصيانة" : "Under Maintenance";
       case "In Store": return lang === "ar" ? "في المستودع" : "In Store";
       case "Damaged": return lang === "ar" ? "تالف" : "Damaged";
       case "Lost": return lang === "ar" ? "مفقود" : "Lost";
       case "Retired": return lang === "ar" ? "مكهن" : "Retired";
       case "Disposed": return lang === "ar" ? "مستبعد" : "Disposed";
-      default: return status;
+      default: return status || "-";
     }
   }
 
@@ -676,8 +678,10 @@ class AssetInventoryManager {
     const brand = document.getElementById("formAssetBrand").value.trim();
     const model = document.getElementById("formAssetModel").value.trim();
     const serial = document.getElementById("formAssetSerial").value.trim();
-    const barcodeValue = (document.getElementById("formAssetBarcode")?.value.trim()) || assetId;
-    const qrCodeValue = (document.getElementById("formAssetQr")?.value.trim()) || assetId;
+    const rawBarcode = document.getElementById("formAssetBarcode")?.value.trim();
+    const rawQr = document.getElementById("formAssetQr")?.value.trim();
+    const barcodeValue = rawBarcode || assetId;
+    const qrCodeValue = rawQr || assetId;
 
     const status = document.getElementById("formAssetStatus").value;
     const departmentId = document.getElementById("formAssetDept").value;
@@ -889,32 +893,36 @@ class AssetInventoryManager {
     } else {
       // EDIT EXISTING ASSET (Preserve attachments and createdDate)
       const existing = await db.getById("assets", internalId);
+      const finalBarcode = rawBarcode || existing.barcodeValue || existing.assetId;
+      const finalQr = rawQr || existing.qrCodeValue || existing.assetId;
       const updatedAsset = {
         ...existing,
         assetTypeId,
         brand,
         model,
-        serial,
-        barcodeValue,
-        qrCodeValue,
+        serial: serial || existing.serial || null,
+        barcodeValue: finalBarcode,
+        qrCodeValue: finalQr,
         status,
         departmentId,
         locationId,
         currentEmployeeId,
+        office: existing.office || null,
+        officeId: existing.officeId || existing.office || null,
         purchaseDate,
         warrantyExpiry,
         purchaseCost,
         supplier,
         notes,
-        computerName,
-        os,
-        cpu,
-        ram,
-        storage,
-        ip,
-        mac,
-        imei,
-        cameraInfo,
+        computerName: computerName || existing.computerName || (existing.specs ? existing.specs.computerName : "") || "",
+        os: os || existing.os || (existing.specs ? existing.specs.os : "") || "",
+        cpu: cpu || existing.cpu || (existing.specs ? existing.specs.cpu : "") || "",
+        ram: ram || existing.ram || (existing.specs ? existing.specs.ram : "") || "",
+        storage: storage || existing.storage || (existing.specs ? existing.specs.storage : "") || "",
+        ip: ip || existing.ip || (existing.specs ? existing.specs.ip : "") || "",
+        mac: mac || existing.mac || (existing.specs ? existing.specs.mac : "") || "",
+        imei: imei || existing.imei || (existing.specs ? existing.specs.imei : "") || "",
+        cameraInfo: cameraInfo || existing.cameraInfo || (existing.specs ? existing.specs.cameraInfo : "") || "",
         updatedDate: now
       };
 
@@ -1880,11 +1888,18 @@ class AssetInventoryManager {
     const oldEmp = asset.currentEmployeeId;
 
     // Condition-based status transition (REQ-3 & REQ-4)
-    // Good -> Available
+    // Good -> Available (or In Store if returned to warehouse)
     // Minor Damage / Damaged / Not Working -> Under Maintenance
     let newStatus = "Available";
     if (condition === "Minor Damage" || condition === "Damaged" || condition === "Not Working") {
       newStatus = "Under Maintenance";
+    } else {
+      const locations = await db.getAll("locations");
+      const curLoc = locations.find(l => l.id === asset.locationId);
+      const isWarehouse = Boolean(curLoc && (curLoc.isWarehouse || (curLoc.type && curLoc.type.toLowerCase().includes("warehouse")) || curLoc.type === "store" || (curLoc.nameAr && curLoc.nameAr.includes("مستودع"))));
+      if (isWarehouse) {
+        newStatus = "In Store";
+      }
     }
 
     asset.status = newStatus;
@@ -2192,13 +2207,35 @@ class AssetInventoryManager {
     if (toDeptId) asset.departmentId = toDeptId;
     if (toOfficeId) {
       asset.office = toOfficeId;
+      asset.officeId = toOfficeId;
       if (!asset.specs) asset.specs = {};
       asset.specs.office = toOfficeId;
+    } else {
+      asset.office = null;
+      asset.officeId = null;
+      if (asset.specs) asset.specs.office = null;
     }
-    if (toEmpId) {
+
+    const locations = await db.getAll("locations");
+    const targetLoc = locations.find(l => l.id === toLocId);
+    const isTargetWarehouse = Boolean(targetLoc && (targetLoc.isWarehouse || (targetLoc.type && targetLoc.type.toLowerCase().includes("warehouse")) || (targetLoc.type === "store") || (targetLoc.nameAr && targetLoc.nameAr.includes("مستودع"))));
+
+    if (condition === "Not Working") {
+      asset.status = "Under Maintenance";
+      asset.currentEmployeeId = toEmpId || null;
+      asset.handoverStatus = null;
+    } else if (isTargetWarehouse) {
+      asset.status = "In Store";
+      asset.currentEmployeeId = null;
+      asset.handoverStatus = null;
+    } else if (toEmpId) {
       asset.currentEmployeeId = toEmpId;
       asset.status = "Assigned";
       asset.handoverStatus = "Pending";
+    } else {
+      asset.currentEmployeeId = null;
+      asset.handoverStatus = null;
+      asset.status = (asset.status === "Installed") ? "Installed" : "Available";
     }
     asset.condition = condition;
     asset.updatedDate = new Date().toISOString().replace("T", " ").substring(0, 19);

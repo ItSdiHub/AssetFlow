@@ -1842,7 +1842,7 @@ select.filter-input option,
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 100000 !important;
+  z-index: 100000;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1853,7 +1853,23 @@ select.filter-input option,
 .modal-container.show,
 .modal-container.active {
   display: flex !important;
-  z-index: 100000 !important;
+  z-index: 100000;
+}
+
+/* Targeted stacking elevation: ensure Project Task Details modal and its backdrop layer sit above Project Details modal */
+#projectTaskModal,
+#projectTaskModal.show,
+#projectTaskModal.active {
+  z-index: 100020;
+}
+
+#projectTaskModal .modal-backdrop {
+  z-index: 1;
+}
+
+#projectTaskModal .modal-content {
+  position: relative;
+  z-index: 2;
 }
 
 .modal-container.show .modal-content,

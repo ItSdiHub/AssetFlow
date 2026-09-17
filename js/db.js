@@ -247,7 +247,7 @@ function toCloudRecord(storeName, item) {
       installation_date: row.installationDate || row.installation_date || null,
       installed_by: row.installedBy || row.installed_by || null,
       project_id: row.projectId || row.project_id || null,
-      office: row.office || (row.specs ? row.specs.office : null) || null,
+      office: row.office || row.officeId || row.office_id || (row.specs ? row.specs.office : null) || null,
       branch_id: row.branchId || row.branch_id || null,
       condition: row.condition || null,
       handover_status: row.handoverStatus || row.handover_status || null,
@@ -491,7 +491,9 @@ function fromCloudRecord(storeName, row) {
     item.installationDate = row.installation_date || row.installationDate;
     item.installedBy = row.installed_by || row.installedBy;
     item.projectId = row.project_id || row.projectId;
-    item.office = row.office || row.specs?.office || item.office;
+    item.office = row.office || row.specs?.office || item.office || null;
+    item.officeId = row.office_id || item.office || null;
+    item.office_id = item.officeId;
     item.supplier = row.supplier || row.supplier;
     item.branchId = row.branch_id || row.branchId;
     item.condition = row.condition || row.condition;
@@ -587,6 +589,7 @@ class DBEngine {
     this.realtimeReconnectTimer = null;
     this.realtimeReconnectAttempts = 0;
     this.stores = Object.keys(STORE_TABLE_MAP);
+    this.lastQueryErrors = {};
     
     // AUTH-02: Early initialization of Supabase client to support Secure Auth Gate
     this.initPromise = null;
@@ -600,6 +603,10 @@ class DBEngine {
         console.error("Supabase early init error:", e);
       }
     }
+  }
+
+  getLastError(storeName) {
+    return this.lastQueryErrors ? (this.lastQueryErrors[storeName] || null) : null;
   }
 
   getFallbackStore(storeName) {
@@ -1116,20 +1123,21 @@ class DBEngine {
         const table = STORE_TABLE_MAP[storeName];
         const { data, error } = await this.supabase.from(table).select('*');
         if (!error && Array.isArray(data)) {
+          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
           const cloudItems = data.map(r => fromCloudRecord(storeName, r));
-          const fallbackItems = this.getFallbackStore(storeName);
-          if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
-            const cloudIds = new Set(cloudItems.map(x => x && x.id));
-            const extraLocal = fallbackItems.filter(x => x && x.id && !cloudIds.has(x.id));
-            if (extraLocal.length > 0) {
-              return [...cloudItems, ...extraLocal];
-            }
-          }
+          // Authoritative Cloud sync: save authoritative snapshot to local cache
+          try {
+            this.saveFallbackStore(storeName, cloudItems);
+          } catch (e) {}
           return cloudItems;
         }
-        if (error) console.warn(`Supabase getAll(${storeName}) failed:`, error);
+        if (error) {
+          if (this.lastQueryErrors) this.lastQueryErrors[storeName] = error;
+          console.warn(`Supabase getAll(${storeName}) failed:`, error);
+        }
         return this.getFallbackStore(storeName);
       } catch (cloudErr) {
+        if (this.lastQueryErrors) this.lastQueryErrors[storeName] = cloudErr;
         console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
         return this.getFallbackStore(storeName);
       }

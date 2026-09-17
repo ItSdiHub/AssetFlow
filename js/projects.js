@@ -3728,7 +3728,7 @@ class AssetOperationsController {
       let newLocationId = asset.locationId;
 
       if (destination === "warehouse") {
-        newStatus = "Available";
+        newStatus = "In Store";
         const locations = await db.getAll("locations");
         const mainWh = locations.find(l => (l.isWarehouse || (l.type && l.type.toLowerCase().includes("warehouse")) || (l.nameAr && l.nameAr.includes("مستودع"))));
         if (mainWh) newLocationId = mainWh.id;
@@ -3825,7 +3825,7 @@ class AssetOperationsController {
 
     let issue = null;
     if (issueId) issue = issues.find(i => i.id === issueId);
-    if (!issue) issue = issues.find(i => i.assetId === assetId && i.status === "In Transit") || issues.find(i => i.assetId === assetId) || {};
+    if (!issue) issue = issues.find(i => (i.assetId === assetId || i.assetId === asset.assetId) && i.status === "In Transit") || issues.find(i => (i.assetId === assetId || i.assetId === asset.assetId)) || {};
 
     const locMap = Object.fromEntries(locations.map(l => [l.id, AppState.lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
     const empMap = Object.fromEntries(employees.map(e => [e.id, AppState.lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));

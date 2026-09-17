@@ -500,6 +500,8 @@
                   <option value="" data-i18n="allStatuses">جميع الحالات</option>
                   <option value="Available" data-i18n="statusAvailable">Available (متاح)</option>
                   <option value="Assigned" data-i18n="statusAssigned">Assigned (مسند لموظف)</option>
+                  <option value="Installed" data-i18n="statusInstalled">Installed (مركب / مثبت)</option>
+                  <option value="In Transit" data-i18n="statusInTransit">In Transit (قيد النقل / بانتظار التركيب)</option>
                   <option value="Under Maintenance" data-i18n="statusUnderMaint">Under Maintenance (في الصيانة)</option>
                   <option value="In Store" data-i18n="statusInStore">In Store (بالمستودع)</option>
                   <option value="Damaged" data-i18n="statusDamaged">Damaged (تالف)</option>
@@ -999,6 +1001,8 @@
                   <option value="" data-i18n="filterAllStatuses">جميع الحالات</option>
                   <option value="Available" data-i18n="statusAvailable">متاح</option>
                   <option value="Assigned" data-i18n="statusAssigned">مسند</option>
+                  <option value="Installed" data-i18n="statusInstalled">مركب</option>
+                  <option value="In Transit" data-i18n="statusInTransit">قيد النقل / بانتظار التركيب</option>
                   <option value="In Store" data-i18n="statusInStore">في المستودع</option>
                   <option value="Under Maintenance" data-i18n="statusUnderMaint">تحت الصيانة</option>
                   <option value="Damaged" data-i18n="statusDamaged">تالف</option>
@@ -2169,6 +2173,8 @@
               <select id="formAssetStatus" class="form-control" required>
                 <option value="Available" data-i18n="statusAvailable">Available (متاح)</option>
                 <option value="Assigned" data-i18n="statusAssigned">Assigned (مسند لموظف)</option>
+                <option value="Installed" data-i18n="statusInstalled">Installed (مركب / مثبت)</option>
+                <option value="In Transit" data-i18n="statusInTransit">In Transit (قيد النقل / بانتظار التركيب)</option>
                 <option value="Under Maintenance" data-i18n="statusUnderMaint">Under Maintenance (قيد الصيانة)</option>
                 <option value="In Store" data-i18n="statusInStore">In Store (في المستودع)</option>
                 <option value="Damaged" data-i18n="statusDamaged">Damaged (تالف)</option>
@@ -3509,7 +3515,7 @@
         <!-- Tasks Section -->
         <div class="d-flex justify-between items-center mb-2">
           <h4 style="margin: 0;"><i class="fas fa-tasks text-primary"></i> <span data-i18n="tabProjectTasks">مهام المشروع</span></h4>
-          <button type="button" id="btnAddNewProjectTask" class="btn btn-xs btn-primary user-write-action">
+          <button type="button" id="btnAddNewProjectTask" class="btn btn-xs btn-primary user-write-action" onclick="ProjectManager.openTaskModal(ProjectManager.activeDetailProjectId)">
             <i class="fas fa-plus"></i> <span data-i18n="btnAddTask">إضافة مهمة</span>
           </button>
         </div>

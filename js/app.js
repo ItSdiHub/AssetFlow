@@ -4731,8 +4731,37 @@ class Application {
   openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
-      this.modalZIndex = (this.modalZIndex || 100000) + 10;
-      modal.style.zIndex = this.modalZIndex;
+      // Ensure the opened modal is always appended to the top of the DOM stacking context
+      try {
+        if (modal.parentElement) {
+          modal.parentElement.appendChild(modal);
+        } else {
+          document.body.appendChild(modal);
+        }
+      } catch (domErr) {
+        console.warn("[App.openModal] DOM append error:", domErr);
+      }
+
+      // Dynamically calculate the highest z-index among all currently active modals
+      // to ensure the most recently opened modal always appears at the top
+      let highestZ = 100000;
+      const activeModals = document.querySelectorAll(".modal-container.active, .modal-container.show");
+      activeModals.forEach((activeModal) => {
+        if (activeModal !== modal) {
+          const styleZ = parseInt(activeModal.style.zIndex, 10);
+          const computedZ = parseInt(window.getComputedStyle(activeModal).zIndex, 10);
+          const currentZ = Math.max(
+            !isNaN(styleZ) ? styleZ : 0,
+            !isNaN(computedZ) ? computedZ : 0
+          );
+          if (currentZ > highestZ) {
+            highestZ = currentZ;
+          }
+        }
+      });
+
+      this.modalZIndex = Math.max(this.modalZIndex || 100000, highestZ) + 10;
+      modal.style.setProperty("z-index", String(this.modalZIndex), "important");
       modal.classList.add("active");
       modal.classList.add("show");
       modal.style.display = "flex";
@@ -5024,6 +5053,7 @@ class Application {
       modal.classList.remove("show");
       modal.style.display = "none";
       modal.setAttribute("aria-hidden", "true");
+      modal.style.removeProperty("z-index");
       if (!document.querySelector(".modal-container.active, .modal-container.show")) {
         document.body.classList.remove("modal-open");
       }

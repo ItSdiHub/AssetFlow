@@ -625,7 +625,18 @@ class MaintenanceController {
     const asset = await db.getById("assets", assetId);
     if (asset) {
       if (status === "Completed") {
-        asset.status = asset.currentEmployeeId ? "Assigned" : "Available";
+        let returnStatus = "Available";
+        if (asset.currentEmployeeId) {
+          returnStatus = "Assigned";
+        } else if (asset.installationDate && asset.locationId) {
+          returnStatus = "Installed";
+        } else {
+          const locations = await db.getAll("locations");
+          const curLoc = locations.find(l => l.id === asset.locationId);
+          const isWarehouse = Boolean(curLoc && (curLoc.isWarehouse || (curLoc.type && curLoc.type.toLowerCase().includes("warehouse")) || curLoc.type === "store" || (curLoc.nameAr && curLoc.nameAr.includes("مستودع"))));
+          if (isWarehouse) returnStatus = "In Store";
+        }
+        asset.status = returnStatus;
         await db.put("assets", asset);
         await db.logTransaction({
           assetId: asset.id,
@@ -684,7 +695,18 @@ class MaintenanceController {
     // Update asset
     const asset = await db.getById("assets", t.assetId);
     if (asset) {
-      asset.status = asset.currentEmployeeId ? "Assigned" : "Available";
+      let returnStatus = "Available";
+      if (asset.currentEmployeeId) {
+        returnStatus = "Assigned";
+      } else if (asset.installationDate && asset.locationId) {
+        returnStatus = "Installed";
+      } else {
+        const locations = await db.getAll("locations");
+        const curLoc = locations.find(l => l.id === asset.locationId);
+        const isWarehouse = Boolean(curLoc && (curLoc.isWarehouse || (curLoc.type && curLoc.type.toLowerCase().includes("warehouse")) || curLoc.type === "store" || (curLoc.nameAr && curLoc.nameAr.includes("مستودع"))));
+        if (isWarehouse) returnStatus = "In Store";
+      }
+      asset.status = returnStatus;
       await db.put("assets", asset);
 
       await db.logTransaction({
