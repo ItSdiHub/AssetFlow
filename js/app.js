@@ -384,7 +384,10 @@ class Application {
     else if (targetTab === "contractors") {
       if (window.ContractorManager) await ContractorManager.render();
     }
-    else if (targetTab === "reports") await this.generateSelectedReport();
+    else if (targetTab === "reports") {
+      await this.populateReportDropdowns();
+      await this.generateSelectedReport();
+    }
     else if (targetTab === "settings") {
       await UserManager.renderAssetTypes();
       await UserManager.renderUsers();
@@ -2210,10 +2213,18 @@ class Application {
   async populateReportDropdowns() {
     const lang = AppState.lang;
     const reportType = document.getElementById("reportSelect")?.value || "inventory";
-    const types = await db.getAll("assetTypes");
-    const depts = await db.getAll("departments");
-    const locs = await db.getAll("locations");
-    const emps = await db.getAll("employees");
+
+    const [typesRes, deptsRes, locsRes, empsRes] = await Promise.allSettled([
+      db.getAll("assetTypes"),
+      db.getAll("departments"),
+      db.getAll("locations"),
+      db.getAll("employees")
+    ]);
+
+    const types = (typesRes.status === "fulfilled" && Array.isArray(typesRes.value)) ? typesRes.value : [];
+    const depts = (deptsRes.status === "fulfilled" && Array.isArray(deptsRes.value)) ? deptsRes.value : [];
+    const locs = (locsRes.status === "fulfilled" && Array.isArray(locsRes.value)) ? locsRes.value : [];
+    const emps = (empsRes.status === "fulfilled" && Array.isArray(empsRes.value)) ? empsRes.value : [];
 
     // 1. Asset Types Filter
     const typeSelect = document.getElementById("reportFilterType");
@@ -2221,7 +2232,9 @@ class Application {
       const curVal = typeSelect.value;
       typeSelect.innerHTML = `<option value="" data-i18n="filterAllTypes">${I18N[lang].filterAllTypes || "جميع الأنواع"}</option>` +
         types.map(t => `<option value="${t.id}">${lang === "ar" ? t.nameAr : (t.nameEn || t.nameAr)}</option>`).join("");
-      if (curVal) typeSelect.value = curVal;
+      if (curVal && [...typeSelect.options].some(o => o.value === curVal)) {
+        typeSelect.value = curVal;
+      }
     }
 
     // 2. Status Filter dynamically adapted to report type
@@ -2279,7 +2292,9 @@ class Application {
       const curVal = deptSelect.value;
       deptSelect.innerHTML = `<option value="" data-i18n="filterAllDepts">${I18N[lang].filterAllDepts || "جميع الأقسام"}</option>` +
         depts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
-      if (curVal) deptSelect.value = curVal;
+      if (curVal && [...deptSelect.options].some(o => o.value === curVal)) {
+        deptSelect.value = curVal;
+      }
     }
 
     // 4. Locations Filter
@@ -2288,7 +2303,9 @@ class Application {
       const curVal = locSelect.value;
       locSelect.innerHTML = `<option value="" data-i18n="filterAllLocs">${I18N[lang].filterAllLocs || "جميع المواقع"}</option>` +
         locs.map(l => `<option value="${l.id}">${lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)}</option>`).join("");
-      if (curVal) locSelect.value = curVal;
+      if (curVal && [...locSelect.options].some(o => o.value === curVal)) {
+        locSelect.value = curVal;
+      }
     }
 
     // 5. Employees Filter
@@ -2296,8 +2313,10 @@ class Application {
     if (empSelect) {
       const curVal = empSelect.value;
       empSelect.innerHTML = `<option value="" data-i18n="filterAllEmps">${I18N[lang].filterAllEmps || "جميع الموظفين"}</option>` +
-        emps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber})</option>`).join("");
-      if (curVal) empSelect.value = curVal;
+        emps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)}${e.employeeNumber ? ` (${e.employeeNumber})` : ''}</option>`).join("");
+      if (curVal && [...empSelect.options].some(o => o.value === curVal)) {
+        empSelect.value = curVal;
+      }
     }
   }
 
