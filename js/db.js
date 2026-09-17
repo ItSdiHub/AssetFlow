@@ -69,6 +69,8 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "assetTransfers") {
+    const currentUserId = (typeof AppState !== "undefined" && AppState.currentUser) ? AppState.currentUser.id : null;
+    const currentUserName = (typeof AppState !== "undefined" && AppState.currentUser) ? (AppState.currentUser.fullName || AppState.currentUser.username) : "System";
     return {
       id: row.id,
       transfer_no: row.transferNo || row.transfer_no || "",
@@ -79,6 +81,8 @@ function toCloudRecord(storeName, item) {
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       status: row.status || "Completed",
       condition: row.condition || "Working",
+      created_by_user_id: row.createdByUserId || row.created_by_user_id || row.userId || currentUserId,
+      performed_by: row.performedBy || row.performed_by || currentUserName,
       notes: row.notes || null
     };
   }
@@ -269,6 +273,8 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "assetTransactions") {
+    const currentUserId = (typeof AppState !== "undefined" && AppState.currentUser) ? AppState.currentUser.id : null;
+    const currentUserName = (typeof AppState !== "undefined" && AppState.currentUser) ? (AppState.currentUser.fullName || AppState.currentUser.username) : "System";
     return {
       id: row.id,
       asset_id: row.assetId || row.asset_id || "",
@@ -277,8 +283,11 @@ function toCloudRecord(storeName, item) {
       to_employee_id: row.toEmployeeId || row.to_employee_id || null,
       from_location_id: row.fromLocationId || row.from_location_id || null,
       to_location_id: row.toLocationId || row.to_location_id || null,
+      from_status: row.fromStatus || row.from_status || null,
+      to_status: row.toStatus || row.to_status || null,
       date: row.date || row.transactionDate || new Date().toISOString(),
-      user: row.user || row.performedBy || "System",
+      user: row.user || row.performedBy || currentUserName,
+      user_id: row.userId || row.performedByUserId || row.user_id || currentUserId,
       notes: row.notes || null
     };
   }
@@ -378,6 +387,9 @@ function fromCloudRecord(storeName, row) {
     item.toLocationId = row.to_location_id || row.toLocationId;
     item.transferDate = row.transfer_date || row.transferDate;
     item.responsibleEmployeeId = row.responsible_employee_id || row.responsibleEmployeeId;
+    item.createdByUserId = row.created_by_user_id || row.createdByUserId || row.user_id;
+    item.userId = row.created_by_user_id || row.userId || row.user_id;
+    item.performedBy = row.performed_by || row.performedBy;
   } else if (storeName === "contractors") {
     item.companyNameAr = row.company_name_ar || row.companyNameAr;
     item.companyNameEn = row.company_name_en || row.companyNameEn;
@@ -520,8 +532,12 @@ function fromCloudRecord(storeName, row) {
     item.toEmployeeId = row.to_employee_id || row.toEmployeeId;
     item.fromLocationId = row.from_location_id || row.fromLocationId;
     item.toLocationId = row.to_location_id || row.toLocationId;
+    item.fromStatus = row.from_status || row.fromStatus;
+    item.toStatus = row.to_status || row.toStatus;
     item.transactionDate = row.date || row.transactionDate;
     item.performedBy = row.user || row.performedBy;
+    item.performedByUserId = row.user_id || row.performedByUserId;
+    item.userId = row.user_id || row.userId;
   } else if (storeName === "systemSettings") {
     item.systemNameAr = row.system_name_ar || row.systemNameAr;
     item.systemNameEn = row.system_name_en || row.systemNameEn;
@@ -1820,14 +1836,29 @@ class DBEngine {
     fromStatus = null,
     toStatus = null,
     transactionDate = null,
-    performedBy = "System",
+    performedBy = null,
+    performedByUserId = null,
+    userId = null,
     notes = ""
   }) {
+    // Determine active logged-in user id and name
+    let currentUserId = userId || performedByUserId || null;
+    let currentUserName = performedBy || null;
+    if (typeof AppState !== "undefined" && AppState.currentUser) {
+      if (!currentUserId) {
+        currentUserId = AppState.currentUser.id || null;
+      }
+      if (!currentUserName || currentUserName === "System") {
+        currentUserName = AppState.currentUser.fullName || AppState.currentUser.fullNameAr || AppState.currentUser.username || "System";
+      }
+    }
+    if (!currentUserName) currentUserName = "System";
+
     const txId = await this.getNextSequentialId("assetTransactions");
     const record = {
       id: txId,
       assetId,
-      transactionType, // Added, Assigned, Returned, Transferred, Sent to Maintenance, Returned from Maintenance, Retired, Disposed
+      transactionType, // Added, Assigned, Returned, Transferred, Sent to Maintenance, Returned from Maintenance, Retired, Disposed, Status Changed, Moved
       fromEmployeeId,
       toEmployeeId,
       fromDepartmentId,
@@ -1837,7 +1868,9 @@ class DBEngine {
       fromStatus,
       toStatus,
       transactionDate: transactionDate || new Date().toISOString().replace("T", " ").substring(0, 19),
-      performedBy,
+      performedBy: currentUserName,
+      performedByUserId: currentUserId,
+      userId: currentUserId,
       notes: notes || ""
     };
     await this.put("assetTransactions", record);

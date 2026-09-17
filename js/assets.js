@@ -2280,6 +2280,9 @@ class AssetInventoryManager {
       status: "Completed",
       condition,
       notes,
+      createdByUserId: (typeof AppState !== "undefined" && AppState.currentUser) ? AppState.currentUser.id : null,
+      performedBy: currentUserName,
+      userId: (typeof AppState !== "undefined" && AppState.currentUser) ? AppState.currentUser.id : null,
       createdAt: new Date().toISOString()
     };
     await db.put("assetTransfers", transferRecord);
@@ -2296,6 +2299,7 @@ class AssetInventoryManager {
       toLocationId: toLocId,
       transactionDate: trDate + " " + new Date().toTimeString().slice(0, 8),
       performedBy: currentUserName,
+      performedByUserId: (typeof AppState !== "undefined" && AppState.currentUser) ? AppState.currentUser.id : null,
       notes: notes || `[${transferNo}] Location Transfer: ${fromLoc} -> ${toLocId} (${condition})`
     });
 
