@@ -509,7 +509,7 @@ class ProjectManagementController {
       let filteredDepts = activeDepts;
       if (locId) {
         filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
-        if (filteredDepts.length === 0) filteredDepts = activeDepts;
+
       }
       const curDept = deptSelect.value;
       deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر القسم (اختياري)" : "Select Department (Optional)"} --</option>` +
@@ -522,7 +522,7 @@ class ProjectManagementController {
       let filteredOffices = activeOffices;
       if (locId) {
         filteredOffices = activeOffices.filter(o => (o.location_id === locId || o.locationId === locId));
-        if (filteredOffices.length === 0) filteredOffices = activeOffices;
+
       }
       const curOff = officeSelect.value;
       officeSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر المكتب (اختياري)" : "Select Office (Optional)"} --</option>` +
@@ -535,7 +535,7 @@ class ProjectManagementController {
       let filteredEmps = activeEmps;
       if (locId) {
         filteredEmps = activeEmps.filter(e => (e.locationId === locId || e.location_id === locId));
-        if (filteredEmps.length === 0) filteredEmps = activeEmps;
+
       }
       const curEmp = empSelect.value;
       empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
@@ -600,7 +600,7 @@ class ProjectManagementController {
       let filteredEmps = activeEmps;
       if (deptId) {
         filteredEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
-        if (filteredEmps.length === 0) filteredEmps = activeEmps;
+
       }
       const curEmp = empSelect.value;
       empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "اختر مسؤول المشروع (IT)" : "Select Responsible IT Employee"} --</option>` +
@@ -640,10 +640,8 @@ class ProjectManagementController {
 
       if (officeId) {
         filteredEmps = activeEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
-        if (filteredEmps.length === 0 && deptId) {
-          filteredEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
-        }
-        if (filteredEmps.length === 0) filteredEmps = activeEmps;
+      } else if (deptId) {
+        filteredEmps = activeEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
       }
 
       const curEmp = empSelect.value;
@@ -3110,7 +3108,7 @@ class AssetOperationsController {
 
     let filteredDepts = activeDepts;
     if (locId) filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
-    if (filteredDepts.length === 0 && activeDepts.length > 0) filteredDepts = activeDepts;
+
     
     deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الإدارة / القسم (اختياري)" : "Department (Optional)"} --</option>` +
       filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
@@ -3130,7 +3128,7 @@ class AssetOperationsController {
     if (deptId) filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
     if (officeId) filteredEmps = filteredEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
     if (locId && !deptId) filteredEmps = filteredEmps.filter(e => (e.locationId === locId || e.location_id === locId));
-    if (filteredEmps.length === 0 && activeEmps.length > 0) filteredEmps = activeEmps;
+
 
     empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف المستلم (اختياري)" : "Employee (Optional)"} --</option>` +
       filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");

@@ -377,7 +377,7 @@ class MaintenanceController {
     let filteredDepts = activeDepts;
     if (locId) {
       filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
-      if (filteredDepts.length === 0) filteredDepts = activeDepts;
+
     }
     const selectDeptPlaceholder = lang === "ar" ? "-- اختر القسم / الإدارة --" : "-- Select Department --";
     deptSelect.innerHTML = `<option value="">${selectDeptPlaceholder}</option>` +
@@ -404,7 +404,7 @@ class MaintenanceController {
     if (locId && !deptId) {
       filteredEmps = filteredEmps.filter(e => getEmpLocation(e) === locId);
     }
-    if (filteredEmps.length === 0) filteredEmps = activeEmps;
+
 
     const selectEmpPlaceholder = lang === "ar" ? "-- اختر الموظف (المسؤول / العهدة) --" : "-- Select Employee (Optional) --";
     empSelect.innerHTML = `<option value="">${selectEmpPlaceholder}</option>` +

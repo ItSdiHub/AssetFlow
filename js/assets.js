@@ -2128,7 +2128,7 @@ class AssetInventoryManager {
 
     let filteredDepts = activeDepts;
     if (locId) filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
-    if (filteredDepts.length === 0 && activeDepts.length > 0) filteredDepts = activeDepts;
+
     
     deptSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "القسم (اختياري)" : "Department (Optional)"} --</option>` +
       filteredDepts.map(d => `<option value="${d.id}">${lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
@@ -2148,7 +2148,7 @@ class AssetInventoryManager {
     if (deptId) filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
     if (officeId) filteredEmps = filteredEmps.filter(e => (e.officeId === officeId || e.office_id === officeId));
     if (locId && !deptId) filteredEmps = filteredEmps.filter(e => (e.locationId === locId || e.location_id === locId));
-    if (filteredEmps.length === 0 && activeEmps.length > 0) filteredEmps = activeEmps;
+
 
     empSelect.innerHTML = `<option value="">-- ${lang === "ar" ? "الموظف / المستلم الجديد (اختياري)" : "New Employee / Custodian (Optional)"} --</option>` +
       filteredEmps.map(e => `<option value="${e.id}">${lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber || e.id})</option>`).join("");

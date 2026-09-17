@@ -1,0 +1,826 @@
+  2095	  // Initial Seed & Migration Handler
+  2096	  async ensureInitialSeedAndMigration() {
+  2097	    // Production must only use records entered by authorized users or imported
+  2098	    // from an approved source. Demo/sample records are never created implicitly.
+  2099	    if (!SUPABASE_CONFIG.allowDemoSeed) return;
+  2100	
+  2101	    // 1. Asset Types
+  2102	    const typeCount = await this.count("assetTypes");
+  2103	    if (typeCount === 0) {
+  2104	      const defaultTypes = [
+  2105	        { id: "type-computer", code: "COM", nameAr: "كمبيوتر مكتبي", nameEn: "Computer", hasTechSpecs: true, isDefault: true, active: true },
+  2106	        { id: "type-laptop", code: "LTP", nameAr: "كمبيوتر محمول", nameEn: "Laptop", hasTechSpecs: true, isDefault: true, active: true },
+  2107	        { id: "type-monitor", code: "MON", nameAr: "شاشة عرض", nameEn: "Monitor", hasTechSpecs: false, isDefault: true, active: true },
+  2108	        { id: "type-printer", code: "PRT", nameAr: "طابعة", nameEn: "Printer", hasTechSpecs: false, isDefault: true, active: true },
+  2109	        { id: "type-scanner", code: "SCN", nameAr: "ماسح ضوئي", nameEn: "Scanner", hasTechSpecs: false, isDefault: true, active: true },
+  2110	        { id: "type-camera", code: "CAM", nameAr: "كاميرا", nameEn: "Camera", hasTechSpecs: false, isDefault: true, active: true },
+  2111	        { id: "type-tablet", code: "TAB", nameAr: "جهاز لوحي (تابلت)", nameEn: "Tablet", hasTechSpecs: true, isDefault: true, active: true },
+  2112	        { id: "type-mobile", code: "MOB", nameAr: "هاتف ذكي", nameEn: "Mobile Device", hasTechSpecs: true, isDefault: true, active: true },
+  2113	        { id: "type-network", code: "NET", nameAr: "جهاز شبكة (سويتش/راوتر)", nameEn: "Network Device", hasTechSpecs: false, isDefault: true, active: true },
+  2114	        { id: "type-server", code: "SRV", nameAr: "خادم (سيرفر)", nameEn: "Server", hasTechSpecs: true, isDefault: true, active: true },
+  2115	        { id: "type-ups", code: "UPS", nameAr: "مزود طاقة غير منقطعة (UPS)", nameEn: "UPS", hasTechSpecs: false, isDefault: true, active: true },
+  2116	        { id: "type-other", code: "OTH", nameAr: "أخرى", nameEn: "Other", hasTechSpecs: false, isDefault: true, active: true }
+  2117	      ];
+  2118	      for (const t of defaultTypes) await this.put("assetTypes", t);
+  2119	    }
+  2120	
+  2121	    // 2. Departments
+  2122	    const deptCount = await this.count("departments");
+  2123	    if (deptCount === 0) {
+  2124	      const defaultDepts = [
+  2125	        { id: "dept-it", nameAr: "تقنية المعلومات", nameEn: "IT Department", description: "إدارة البنية التحتية والأنظمة والدعم الفني", active: true, locationId: "loc-main", location_id: "loc-main", code: "IT" },
+  2126	        { id: "dept-admin", nameAr: "الشؤون الإدارية والموارد البشرية", nameEn: "Administration & HR", description: "الموارد البشرية والشؤون الإدارية", active: true, locationId: "loc-main", location_id: "loc-main", code: "ADM" },
+  2127	        { id: "dept-cs", nameAr: "خدمة العملاء والتسجيل", nameEn: "Customer Service & Registration", description: "كاونترات واستقبال المتدربين", active: true, locationId: "loc-main", location_id: "loc-main", code: "CS" },
+  2128	        { id: "dept-exam", nameAr: "قاعات الفحص النظري والذكي", nameEn: "Examination Labs", description: "قاعات وأنظمة الفحص النظري والذكي", active: true, locationId: "loc-main", location_id: "loc-main", code: "EXM" },
+  2129	        { id: "dept-fleet", nameAr: "أسطول سيارات الفحص الذكي", nameEn: "Smart Fleet Operations", description: "إدارة مركبات التدريب والفحص الذكي", active: true, locationId: "loc-br-dhd", location_id: "loc-br-dhd", code: "FLT" },
+  2130	        { id: "dept-finance", nameAr: "الشؤون المالية والمشتريات", nameEn: "Finance & Procurement", description: "المحاسبة والعقود والمشتريات", active: true, locationId: "loc-main", location_id: "loc-main", code: "FIN" }
+  2131	      ];
+  2132	      for (const d of defaultDepts) await this.put("departments", d);
+  2133	    } else {
+  2134	      const existingDepts = await this.getAll("departments");
+  2135	      for (const d of existingDepts) {
+  2136	        if (!d.locationId && !d.location_id) {
+  2137	          d.locationId = d.id === "dept-fleet" ? "loc-br-dhd" : "loc-main";
+  2138	          d.location_id = d.locationId;
+  2139	          await this.put("departments", d);
+  2140	        }
+  2141	      }
+  2142	    }
+  2143	
+  2144	    // 3. Locations (Hierarchical Tree)
+  2145	    const locCount = await this.count("locations");
+  2146	    if (locCount === 0) {
+  2147	      const defaultLocs = [
+  2148	        // Main Office & Sub-levels
+  2149	        { id: "loc-main", parentId: null, nameAr: "المكتب الرئيسي - الرمثاء", nameEn: "Main Office - Al Ramtha", code: "HQ", icon: "building", description: "المقر الرئيسي لمعهد الشارقة للسياقة", active: true },
+  2150	        { id: "loc-admin", parentId: "loc-main", nameAr: "الشؤون الإدارية", nameEn: "Administration", code: "ADM", icon: "briefcase", description: "المكاتب الإدارية والشؤون المشتركة", active: true },
+  2151	        { id: "loc-it", parentId: "loc-main", nameAr: "قسم تقنية المعلومات", nameEn: "IT Department", code: "IT", icon: "laptop-code", description: "إدارة الأنظمة وورشة الدعم الفني", active: true },
+  2152	        { id: "loc-it-office", parentId: "loc-it", nameAr: "مكتب الدعم الفني (IT Office)", nameEn: "IT Office", code: "OFC", icon: "desktop", description: "مكاتب مهندسي الدعم الفني", active: true },
+  2153	        { id: "loc-server-room", parentId: "loc-it", nameAr: "غرفة السيرفرات (Server Room)", nameEn: "Server Room", code: "SRV", icon: "server", description: "غرفة الخوادم الرئيسية ومركز البيانات", active: true },
+  2154	        { id: "loc-store", parentId: "loc-it", nameAr: "المستودع الرئيسي (Store)", nameEn: "Store", code: "STR", icon: "boxes", description: "مستودع الأجهزة وقطع الغيار", active: true },
+  2155	        { id: "loc-security", parentId: "loc-main", nameAr: "غرفة الأمن والمراقبة", nameEn: "Security & CCTV", code: "SEC", icon: "shield-alt", description: "مكتب الأمن وغرفة كاميرات المراقبة", active: true },
+  2156	        { id: "loc-reception", parentId: "loc-main", nameAr: "صالة الاستقبال وخدمة العملاء", nameEn: "Reception & Customer Service", code: "REC", icon: "concierge-bell", description: "صالة الاستقبال الرئيسية وكاونترات التسجيل", active: true },
+  2157	        { id: "loc-meeting", parentId: "loc-main", nameAr: "قاعة الاجتماعات الرئيسية", nameEn: "Meeting Room", code: "MTG", icon: "users-cog", description: "قاعة الاجتماعات الكبرى", active: true },
+  2158	        
+  2159	        // Branches
+  2160	        { id: "loc-br-nas", parentId: null, nameAr: "فرع الناصرية (Branch 1)", nameEn: "Branch - Nasseriya", code: "NAS", icon: "building", description: "مبنى فرع الناصرية", active: true },
+  2161	        { id: "loc-nas-ofc1", parentId: "loc-br-nas", nameAr: "مكتب 1 (Office 1 - التسجيل)", nameEn: "Office 1", code: "OF1", icon: "door-open", description: "كاونتر التسجيل الرئيسي", active: true },
+  2162	        { id: "loc-nas-ofc2", parentId: "loc-br-nas", nameAr: "مكتب 2 (Office 2 - الإدارة)", nameEn: "Office 2", code: "OF2", icon: "door-open", description: "مكتب إدارة الفرع", active: true },
+  2163	        { id: "loc-nas-store", parentId: "loc-br-nas", nameAr: "المستودع (Store)", nameEn: "Store", code: "STR", icon: "archive", description: "مستودع أجهزة ومستلزمات الفرع", active: true },
+  2164	
+  2165	        { id: "loc-br-dhd", parentId: null, nameAr: "فرع الذيد", nameEn: "Branch - Al Dhaid", code: "DHD", icon: "building", description: "مبنى فرع الذيد", active: true },
+  2166	        { id: "loc-br-khk", parentId: null, nameAr: "فرع خورفكان", nameEn: "Branch - Khorfakkan", code: "KHK", icon: "building", description: "مبنى فرع خورفكان", active: true },
+  2167	        { id: "loc-br-klb", parentId: null, nameAr: "فرع كلباء", nameEn: "Branch - Kalba", code: "KLB", icon: "building", description: "مبنى فرع كلباء", active: true },
+  2168	        { id: "loc-other", parentId: null, nameAr: "مواقع أخرى", nameEn: "Other", code: "OTH", icon: "map-pin", description: "مواقع مؤقتة أو خارجية", active: true }
+  2169	      ];
+  2170	      for (const l of defaultLocs) await this.put("locations", l);
+  2171	    } else {
+  2172	      // Enrich existing locations with hierarchy attributes if missing
+  2173	      const existingLocs = await this.getAll("locations");
+  2174	      const hierarchyMapping = {
+  2175	        "loc-main": { parentId: null, code: "HQ", icon: "building" },
+  2176	        "loc-admin": { parentId: "loc-main", code: "ADM", icon: "briefcase" },
+  2177	        "loc-it": { parentId: "loc-main", code: "IT", icon: "laptop-code" },
+  2178	        "loc-it-office": { parentId: "loc-it", code: "OFC", icon: "desktop" },
+  2179	        "loc-server-room": { parentId: "loc-it", code: "SRV", icon: "server" },
+  2180	        "loc-store": { parentId: "loc-it", code: "STR", icon: "boxes" },
+  2181	        "loc-security": { parentId: "loc-main", code: "SEC", icon: "shield-alt" },
+  2182	        "loc-reception": { parentId: "loc-main", code: "REC", icon: "concierge-bell" },
+  2183	        "loc-meeting": { parentId: "loc-main", code: "MTG", icon: "users-cog" },
+  2184	        "loc-br-nas": { parentId: null, code: "NAS", icon: "building" },
+  2185	        "loc-nas-ofc1": { parentId: "loc-br-nas", code: "OF1", icon: "door-open" },
+  2186	        "loc-nas-ofc2": { parentId: "loc-br-nas", code: "OF2", icon: "door-open" },
+  2187	        "loc-nas-store": { parentId: "loc-br-nas", code: "STR", icon: "archive" },
+  2188	        "loc-br-dhd": { parentId: null, code: "DHD", icon: "building" },
+  2189	        "loc-br-khk": { parentId: null, code: "KHK", icon: "building" },
+  2190	        "loc-br-klb": { parentId: null, code: "KLB", icon: "building" },
+  2191	        "loc-other": { parentId: null, code: "OTH", icon: "map-pin" }
+  2192	      };
+  2193	
+  2194	      for (const l of existingLocs) {
+  2195	        if (hierarchyMapping[l.id]) {
+  2196	          let updated = false;
+  2197	          if (l.parentId === undefined && hierarchyMapping[l.id].parentId !== undefined) {
+  2198	            l.parentId = hierarchyMapping[l.id].parentId;
+  2199	            updated = true;
+  2200	          }
+  2201	          if (!l.code) { l.code = hierarchyMapping[l.id].code; updated = true; }
+  2202	          if (!l.icon) { l.icon = hierarchyMapping[l.id].icon; updated = true; }
+  2203	          if (updated) await this.put("locations", l);
+  2204	        }
+  2205	      }
+  2206	
+  2207	      // Ensure sample hierarchy rooms exist if missing
+  2208	      const sampleRooms = [
+  2209	        { id: "loc-admin", parentId: "loc-main", nameAr: "الشؤون الإدارية", nameEn: "Administration", code: "ADM", icon: "briefcase", description: "المكاتب الإدارية والشؤون المشتركة", active: true },
+  2210	        { id: "loc-it-office", parentId: "loc-it", nameAr: "مكتب الدعم الفني (IT Office)", nameEn: "IT Office", code: "OFC", icon: "desktop", description: "مكاتب مهندسي الدعم الفني", active: true },
+  2211	        { id: "loc-server-room", parentId: "loc-it", nameAr: "غرفة السيرفرات (Server Room)", nameEn: "Server Room", code: "SRV", icon: "server", description: "غرفة الخوادم الرئيسية ومركز البيانات", active: true },
+  2212	        { id: "loc-nas-ofc1", parentId: "loc-br-nas", nameAr: "مكتب 1 (Office 1 - التسجيل)", nameEn: "Office 1", code: "OF1", icon: "door-open", description: "كاونتر التسجيل الرئيسي", active: true },
+  2213	        { id: "loc-nas-ofc2", parentId: "loc-br-nas", nameAr: "مكتب 2 (Office 2 - الإدارة)", nameEn: "Office 2", code: "OF2", icon: "door-open", description: "مكتب إدارة الفرع", active: true },
+  2214	        { id: "loc-nas-store", parentId: "loc-br-nas", nameAr: "المستودع (Store)", nameEn: "Store", code: "STR", icon: "archive", description: "مستودع أجهزة ومستلزمات الفرع", active: true }
+  2215	      ];
+  2216	      for (const r of sampleRooms) {
+  2217	        if (!existingLocs.some(x => x.id === r.id)) {
+  2218	          await this.put("locations", r);
+  2219	        }
+  2220	      }
+  2221	    }
+  2222	
+  2223	    // 3b. Offices Table (Master Data: Location -> Department -> Office)
+  2224	    const offCount = await this.count("offices");
+  2225	    if (offCount === 0) {
+  2226	      const defaultOffices = [
+  2227	        { id: "off-it-01", code: "OFC-IT-01", nameAr: "مكتب الدعم الفني الرئيسي", nameEn: "Main IT Support Office", location_id: "loc-main", department_id: "dept-it", locationId: "loc-main", departmentId: "dept-it", status: "Active" },
+  2228	        { id: "off-it-02", code: "OFC-IT-02", nameAr: "غرفة الخوادم ومركز البيانات", nameEn: "Server Room & Data Center", location_id: "loc-main", department_id: "dept-it", locationId: "loc-main", departmentId: "dept-it", status: "Active" },
+  2229	        { id: "off-admin-01", code: "OFC-ADM-01", nameAr: "مكتب الإدارة والموارد البشرية", nameEn: "Administration & HR Office", location_id: "loc-main", department_id: "dept-admin", locationId: "loc-main", departmentId: "dept-admin", status: "Active" },
+  2230	        { id: "off-cs-01", code: "OFC-CS-01", nameAr: "كاونتر التسجيل وخدمة العملاء", nameEn: "Customer Service & Registration Counter", location_id: "loc-main", department_id: "dept-cs", locationId: "loc-main", departmentId: "dept-cs", status: "Active" },
+  2231	        { id: "off-exam-01", code: "OFC-EXM-01", nameAr: "قاعة الاختبارات الذكية", nameEn: "Smart Exam Hall", location_id: "loc-main", department_id: "dept-exam", locationId: "loc-main", departmentId: "dept-exam", status: "Active" },
+  2232	        { id: "off-nas-01", code: "OFC-NAS-01", nameAr: "مكتب تسجيل الناصرية", nameEn: "Nasseriya Registration Office", location_id: "loc-br-nas", department_id: "dept-cs", locationId: "loc-br-nas", departmentId: "dept-cs", status: "Active" },
+  2233	        { id: "off-dhd-01", code: "OFC-DHD-01", nameAr: "مكتب عمليات أسطول الذيد", nameEn: "Al Dhaid Fleet Operations Office", location_id: "loc-br-dhd", department_id: "dept-fleet", locationId: "loc-br-dhd", departmentId: "dept-fleet", status: "Active" },
+  2234	        { id: "off-khk-01", code: "OFC-KHK-01", nameAr: "كاونتر فرع خورفكان", nameEn: "Khorfakkan Branch Counter", location_id: "loc-br-khk", department_id: "dept-cs", locationId: "loc-br-khk", departmentId: "dept-cs", status: "Active" }
+  2235	      ];
+  2236	      for (const o of defaultOffices) await this.put("offices", o);
+  2237	    } else {
+  2238	      const existingOffices = await this.getAll("offices");
+  2239	      for (const o of existingOffices) {
+  2240	        let changed = false;
+  2241	        if (!o.locationId && o.location_id) { o.locationId = o.location_id; changed = true; }
+  2242	        if (!o.departmentId && o.department_id) { o.departmentId = o.department_id; changed = true; }
+  2243	        if (changed) await this.put("offices", o);
+  2244	      }
+  2245	    }
+  2246	
+  2247	    // 4. Employees
+  2248	    const empCount = await this.count("employees");
+  2249	    if (empCount === 0) {
+  2250	      // Check if we have legacy staff to migrate
+  2251	      const legacyStaff = await this.getAll("staff");
+  2252	      if (legacyStaff && legacyStaff.length > 0) {
+  2253	        for (const s of legacyStaff) {
+  2254	          const emp = {
+  2255	            id: s.id || ("emp-" + Math.random().toString(36).substr(2, 6)),
+  2256	            employeeNumber: s.empId || ("EMP-" + Math.floor(1000 + Math.random() * 9000)),
+  2257	            nameAr: s.fullName || s.name || "موظف",
+  2258	            nameEn: s.fullNameEn || s.nameEn || "",
+  2259	            departmentId: s.department === "sub-main-it" ? "dept-it" : "dept-cs",
+  2260	            department_id: s.department === "sub-main-it" ? "dept-it" : "dept-cs",
+  2261	            officeId: s.department === "sub-main-it" ? "off-it-01" : "off-cs-01",
+  2262	            office_id: s.department === "sub-main-it" ? "off-it-01" : "off-cs-01",
+  2263	            locationId: "loc-main",
+  2264	            location_id: "loc-main",
+  2265	            phone: s.phone || "",
+  2266	            email: s.email || "",
+  2267	            status: "Active",
+  2268	            notes: s.notes || ""
+  2269	          };
+  2270	          await this.put("employees", emp);
+  2271	        }
+  2272	      } else {
+  2273	        const defaultEmployees = [
+  2274	          { id: "emp-101", employeeNumber: "SDI-1021", nameAr: "م. أحمد الشامسي", nameEn: "Eng. Ahmed Al Shamsi", departmentId: "dept-it", department_id: "dept-it", officeId: "off-it-01", office_id: "off-it-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤول النظم والدعم الفني", phone: "+971 6 538 2000", email: "ahmed.shamsi@sdi.ae", status: "Active", notes: "مسؤول النظم والدعم الفني" },
+  2275	          { id: "emp-102", employeeNumber: "SDI-1045", nameAr: "مريم الحمادي", nameEn: "Maryam Al Hammadi", departmentId: "dept-cs", department_id: "dept-cs", officeId: "off-cs-01", office_id: "off-cs-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مشرفة كاونتر التسجيل", phone: "+971 6 538 2110", email: "maryam.h@sdi.ae", status: "Active", notes: "مشرفة كاونتر التسجيل" },
+  2276	          { id: "emp-103", employeeNumber: "SDI-1088", nameAr: "سلطان القاسمي", nameEn: "Sultan Al Qasimi", departmentId: "dept-exam", department_id: "dept-exam", officeId: "off-exam-01", office_id: "off-exam-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤول قاعة الفحص النظري الذكي", phone: "+971 6 538 2200", email: "sultan.q@sdi.ae", status: "Active", notes: "مسؤول قاعة الفحص النظري الذكي" },
+  2277	          { id: "emp-104", employeeNumber: "SDI-1102", nameAr: "فاطمة الزعابي", nameEn: "Fatima Al Zaabi", departmentId: "dept-admin", department_id: "dept-admin", officeId: "off-admin-01", office_id: "off-admin-01", locationId: "loc-main", location_id: "loc-main", jobTitle: "مسؤولة الموارد البشرية والشؤون الإدارية", phone: "+971 6 538 2300", email: "fatima.z@sdi.ae", status: "Active", notes: "مسؤولة الموارد البشرية والشؤون الإدارية" },
+  2278	          { id: "emp-105", employeeNumber: "SDI-1140", nameAr: "عائشة النقبي", nameEn: "Aisha Al Naqbi", departmentId: "dept-cs", department_id: "dept-cs", officeId: "off-khk-01", office_id: "off-khk-01", locationId: "loc-br-khk", location_id: "loc-br-khk", jobTitle: "كاونتر التسجيل الرئيسي - خورفكان", phone: "+971 9 238 1111", email: "aisha.n@sdi.ae", status: "Active", notes: "كاونتر التسجيل الرئيسي - خورفكان" },
+  2279	          { id: "emp-106", employeeNumber: "SDI-1180", nameAr: "خالد الطنيجي", nameEn: "Khalid Al Tunaiji", departmentId: "dept-fleet", department_id: "dept-fleet", officeId: "off-dhd-01", office_id: "off-dhd-01", locationId: "loc-br-dhd", location_id: "loc-br-dhd", jobTitle: "مشرف فحص سيارات الذيد", phone: "+971 6 882 3344", email: "khalid.t@sdi.ae", status: "Active", notes: "مشرف فحص سيارات الذيد" }
+  2280	        ];
+  2281	        for (const e of defaultEmployees) await this.put("employees", e);
+  2282	      }
+  2283	    } else {
+  2284	      const existingEmployees = await this.getAll("employees");
+  2285	      for (const e of existingEmployees) {
+  2286	        let changed = false;
+  2287	        if (!e.officeId && !e.office_id) {
+  2288	          if (e.id === "emp-101" || e.departmentId === "dept-it") {
+  2289	            e.officeId = "off-it-01"; e.office_id = "off-it-01";
+  2290	            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+  2291	            changed = true;
+  2292	          } else if (e.id === "emp-102") {
+  2293	            e.officeId = "off-cs-01"; e.office_id = "off-cs-01";
+  2294	            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+  2295	            changed = true;
+  2296	          } else if (e.id === "emp-103") {
+  2297	            e.officeId = "off-exam-01"; e.office_id = "off-exam-01";
+  2298	            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+  2299	            changed = true;
+  2300	          } else if (e.id === "emp-104") {
+  2301	            e.officeId = "off-admin-01"; e.office_id = "off-admin-01";
+  2302	            e.locationId = e.locationId || "loc-main"; e.location_id = e.locationId;
+  2303	            changed = true;
+  2304	          } else if (e.id === "emp-105") {
+  2305	            e.officeId = "off-khk-01"; e.office_id = "off-khk-01";
+  2306	            e.locationId = e.locationId || "loc-br-khk"; e.location_id = e.locationId;
+  2307	            changed = true;
+  2308	          } else if (e.id === "emp-106") {
+  2309	            e.officeId = "off-dhd-01"; e.office_id = "off-dhd-01";
+  2310	            e.locationId = e.locationId || "loc-br-dhd"; e.location_id = e.locationId;
+  2311	            changed = true;
+  2312	          }
+  2313	        }
+  2314	        if (changed) await this.put("employees", e);
+  2315	      }
+  2316	    }
+  2317	
+  2318	    // 5. Users Store (Authentication)
+  2319	    const userCount = await this.count("users");
+  2320	    if (userCount === 0) {
+  2321	      const defaultUsers = [
+  2322	        { id: "usr-admin", username: "admin", email: "admin@sdi.ae", password: "123", fullName: "مدير النظام", fullNameAr: "مدير النظام", fullNameEn: "System Administrator", role: "Administrator", employeeId: null, active: true },
+  2323	        { id: "usr-tech", username: "ituser", email: "it.tech@sdi.ae", password: "123", fullName: "فني الدعم الفني", fullNameAr: "فني الدعم الفني", fullNameEn: "IT Support Technician", role: "IT User", employeeId: null, active: true },
+  2324	        { id: "usr-emp-101", username: "ahmed", email: "ahmed.shamsi@sdi.ae", password: "123", fullName: "م. أحمد الشامسي", fullNameAr: "م. أحمد الشامسي", fullNameEn: "Eng. Ahmed Al Shamsi", role: "Employee", employeeId: "emp-101", active: true },
+  2325	        { id: "usr-emp-102", username: "maryam", email: "maryam.h@sdi.ae", password: "123", fullName: "مريم الحمادي", fullNameAr: "مريم الحمادي", fullNameEn: "Maryam Al Hammadi", role: "Employee", employeeId: "emp-102", active: true },
+  2326	        { id: "usr-view", username: "viewer", email: "viewer@sdi.ae", password: "123", fullName: "مستعرض التقارير", fullNameAr: "مستعرض التقارير", fullNameEn: "Reports Viewer", role: "Viewer", employeeId: null, active: true }
+  2327	      ];
+  2328	      for (const u of defaultUsers) await this.put("users", u);
+  2329	    } else {
+  2330	      // Migrate existing users to ensure fullNameEn and fullNameAr exist
+  2331	      const existingUsers = await this.getAll("users");
+  2332	      for (const u of existingUsers) {
+  2333	        let mod = false;
+  2334	        if (!u.fullNameEn || /[\u0600-\u06FF]/.test(u.fullNameEn)) {
+  2335	          if (u.username === "admin") { u.fullNameEn = "System Administrator"; u.fullNameAr = "مدير النظام"; mod = true; }
+  2336	          else if (u.username === "ituser") { u.fullNameEn = "IT Support Technician"; u.fullNameAr = "فني الدعم الفني"; mod = true; }
+  2337	          else if (u.username === "ahmed") { u.fullNameEn = "Eng. Ahmed Al Shamsi"; u.fullNameAr = "م. أحمد الشامسي"; mod = true; }
+  2338	          else if (u.username === "maryam") { u.fullNameEn = "Maryam Al Hammadi"; u.fullNameAr = "مريم الحمادي"; mod = true; }
+  2339	          else if (u.username === "viewer") { u.fullNameEn = "Reports Viewer"; u.fullNameAr = "مستعرض التقارير"; mod = true; }
+  2340	          else if (u.employeeId) {
+  2341	            const emp = await this.getById("employees", u.employeeId);
+  2342	            if (emp) { u.fullNameEn = emp.nameEn || emp.nameAr; u.fullNameAr = emp.nameAr; mod = true; }
+  2343	          } else {
+  2344	            u.fullNameEn = u.username;
+  2345	            mod = true;
+  2346	          }
+  2347	        }
+  2348	        if (mod) await this.put("users", u);
+  2349	      }
+  2350	    }
+  2351	
+  2352	    // 6. System Settings Store
+  2353	    try {
+  2354	      let settings = await this.getById("systemSettings", "general");
+  2355	      if (!settings) {
+  2356	        settings = {
+  2357	          id: "general",
+  2358	          nextAssetSeq: 11,
+  2359	          orgNameAr: "معهد الشارقة للسياقة",
+  2360	          orgNameEn: "Sharjah Driving Institute",
+  2361	          systemNameAr: "SDI IT Asset Hub",
+  2362	          systemNameEn: "SDI IT Asset Hub",
+  2363	          logoDataUrl: null,
+  2364	          primaryColor: "#0B3C68",
+  2365	          accentColor: "#F37021",
+  2366	          lang: "ar",
+  2367	          theme: "sdi"
+  2368	        };
+  2369	        await this.put("systemSettings", settings);
+  2370	      } else {
+  2371	        let modifiedSettings = false;
+  2372	        if (!settings.primaryColor) { settings.primaryColor = "#0B3C68"; modifiedSettings = true; }
+  2373	        if (!settings.accentColor) { settings.accentColor = "#F37021"; modifiedSettings = true; }
+  2374	        if (!settings.systemNameAr) { settings.systemNameAr = "SDI IT Asset Hub"; modifiedSettings = true; }
+  2375	        if (!settings.systemNameEn) { settings.systemNameEn = "SDI IT Asset Hub"; modifiedSettings = true; }
+  2376	        if (modifiedSettings) await this.put("systemSettings", settings);
+  2377	      }
+  2378	    } catch (e) {
+  2379	      console.warn("Seed systemSettings skipped due to permission/RLS constraint:", e);
+  2380	    }
+  2381	
+  2382	    // 7. Assets Migration / Seed
+  2383	    const assets = await this.getAll("assets");
+  2384	    let needsMigration = false;
+  2385	    if (assets.length === 0) {
+  2386	      // Create seed assets with standard AST-XXXXXX IDs
+  2387	      const seedAssets = [
+  2388	        {
+  2389	          id: "ast-000001",
+  2390	          assetId: "AST-000001",
+  2391	          assetTypeId: "type-computer",
+  2392	          brand: "HP",
+  2393	          model: "EliteDesk 800 G9",
+  2394	          serial: "CZC34091KL",
+  2395	          status: "Assigned",
+  2396	          purchaseDate: "2024-01-15",
+  2397	          warrantyExpiry: "2027-01-15",
+  2398	          purchaseCost: 4500,
+  2399	          supplier: "HP Middle East / Alpha Data",
+  2400	          departmentId: "dept-it",
+  2401	          locationId: "loc-it",
+  2402	          currentEmployeeId: "emp-101",
+  2403	          notes: "محطة عمل رئيسية لمسؤول النظم والدعم الفني",
+  2404	          createdDate: "2024-01-15 09:00:00",
+  2405	          updatedDate: "2024-01-15 09:00:00",
+  2406	          cpu: "Intel Core i7-13700",
+  2407	          ram: "32 GB DDR5",
+  2408	          storage: "1 TB NVMe SSD",
+  2409	          os: "Windows 11 Pro 64-bit",
+  2410	          computerName: "SDI-HQ-IT-01",
+  2411	          ip: "192.168.10.15",
+  2412	          mac: "B4:2E:99:A1:3C:55",
+  2413	          attachments: []
+  2414	        },
+  2415	        {
+  2416	          id: "ast-000002",
+  2417	          assetId: "AST-000002",
+  2418	          assetTypeId: "type-laptop",
+  2419	          brand: "Dell",
+  2420	          model: "Latitude 5540",
+  2421	          serial: "8KLR9Z3",
+  2422	          status: "Assigned",
+  2423	          purchaseDate: "2024-02-10",
+  2424	          warrantyExpiry: "2027-02-10",
+  2425	          purchaseCost: 5200,
+  2426	          supplier: "Dell Direct UAE",
+  2427	          departmentId: "dept-it",
+  2428	          locationId: "loc-it",
+  2429	          currentEmployeeId: "emp-101",
+  2430	          notes: "لابتوب متنقل مخصص لطوارئ الشبكات والفروع",
+  2431	          createdDate: "2024-02-10 10:30:00",
+  2432	          updatedDate: "2024-02-10 10:30:00",
+  2433	          cpu: "Intel Core i5-1345U",
+  2434	          ram: "16 GB DDR4",
+  2435	          storage: "512 GB NVMe SSD",
+  2436	          os: "Windows 11 Pro",
+  2437	          computerName: "SDI-HQ-LAP-02",
+  2438	          ip: "192.168.10.44",
+  2439	          mac: "70:85:C2:5F:11:80",
+  2440	          attachments: []
+  2441	        },
+  2442	        {
+  2443	          id: "ast-000003",
+  2444	          assetId: "AST-000003",
+  2445	          assetTypeId: "type-computer",
+  2446	          brand: "Lenovo",
+  2447	          model: "ThinkCentre M70q Tiny",
+  2448	          serial: "MJ0E59AA",
+  2449	          status: "Assigned",
+  2450	          purchaseDate: "2023-05-20",
+  2451	          warrantyExpiry: "2026-05-20",
+  2452	          purchaseCost: 3200,
+  2453	          supplier: "Sharaf DG Enterprise",
+  2454	          departmentId: "dept-cs",
+  2455	          locationId: "loc-reception",
+  2456	          currentEmployeeId: "emp-102",
+  2457	          notes: "كاونتر التسجيل الرئيسي رقم 1",
+  2458	          createdDate: "2023-05-20 08:15:00",
+  2459	          updatedDate: "2023-05-20 08:15:00",
+  2460	          cpu: "Intel Core i5-12400T",
+  2461	          ram: "16 GB DDR4",
+  2462	          storage: "512 GB NVMe SSD",
+  2463	          os: "Windows 11 Pro",
+  2464	          computerName: "SDI-CS-PC-01",
+  2465	          ip: "192.168.20.101",
+  2466	          mac: "48:2A:E3:44:88:C1",
+  2467	          attachments: []
+  2468	        },
+  2469	        {
+  2470	          id: "ast-000004",
+  2471	          assetId: "AST-000004",
+  2472	          assetTypeId: "type-printer",
+  2473	          brand: "HID Fargo",
+  2474	          model: "HDP5000",
+  2475	          serial: "FG904412B",
+  2476	          status: "Assigned",
+  2477	          purchaseDate: "2023-08-12",
+  2478	          warrantyExpiry: "2026-10-05",
+  2479	          purchaseCost: 9800,
+  2480	          supplier: "ScreenCheck Middle East",
+  2481	          departmentId: "dept-cs",
+  2482	          locationId: "loc-reception",
+  2483	          currentEmployeeId: "emp-102",
+  2484	          notes: "طابعة رخص القيادة والبطاقات الذكية",
+  2485	          createdDate: "2023-08-12 11:00:00",
+  2486	          updatedDate: "2023-08-12 11:00:00",
+  2487	          ip: "192.168.20.200",
+  2488	          mac: "00:14:D1:49:EE:12",
+  2489	          attachments: []
+  2490	        },
+  2491	        {
+  2492	          id: "ast-000005",
+  2493	          assetId: "AST-000005",
+  2494	          assetTypeId: "type-camera",
+  2495	          brand: "Hikvision",
+  2496	          model: "DS-2CD2387G2P-LSU",
+  2497	          serial: "HK88921004",
+  2498	          status: "Assigned",
+  2499	          purchaseDate: "2023-09-01",
+  2500	          warrantyExpiry: "2026-09-28",
+  2501	          purchaseCost: 1850,
+  2502	          supplier: "Al Falak Security",
+  2503	          departmentId: "dept-admin",
+  2504	          locationId: "loc-security",
+  2505	          currentEmployeeId: null,
+  2506	          notes: "كاميرا مراقبة بانورامية بزاوية 180 درجة بالبوابة الرئيسية",
+  2507	          createdDate: "2023-09-01 12:00:00",
+  2508	          updatedDate: "2023-09-01 12:00:00",
+  2509	          ip: "192.168.40.15",
+  2510	          mac: "44:19:B6:88:20:11",
+  2511	          cameraInfo: "4K ColorVu Panoramic Dome Camera",
+  2512	          attachments: []
+  2513	        },
+  2514	        {
+  2515	          id: "ast-000006",
+  2516	          assetId: "AST-000006",
+  2517	          assetTypeId: "type-server",
+  2518	          brand: "Dell",
+  2519	          model: "PowerEdge R750 Rack Server",
+  2520	          serial: "9XLM7Q2",
+  2521	          status: "Available",
+  2522	          purchaseDate: "2023-03-10",
+  2523	          warrantyExpiry: "2028-03-10",
+  2524	          purchaseCost: 38000,
+  2525	          supplier: "Dell Enterprise Services",
+  2526	          departmentId: "dept-it",
+  2527	          locationId: "loc-it",
+  2528	          currentEmployeeId: null,
+  2529	          notes: "سيرفر رئيسي لاستضافة قواعد بيانات وأنظمة الفحص الذكي",
+  2530	          createdDate: "2023-03-10 09:00:00",
+  2531	          updatedDate: "2023-03-10 09:00:00",
+  2532	          cpu: "Dual Intel Xeon Silver 4314 (32 Cores)",
+  2533	          ram: "128 GB ECC DDR4",
+  2534	          storage: "4x 1.92TB SAS SSD RAID 10",
+  2535	          os: "VMware ESXi 8.0 / Windows Server 2022",
+  2536	          computerName: "SDI-SRV-PROD-01",
+  2537	          ip: "192.168.10.2",
+  2538	          mac: "2C:F8:9B:AA:01:44",
+  2539	          attachments: []
+  2540	        },
+  2541	        {
+  2542	          id: "ast-000007",
+  2543	          assetId: "AST-000007",
+  2544	          assetTypeId: "type-computer",
+  2545	          brand: "Lenovo",
+  2546	          model: "ThinkCentre M70q Tiny",
+  2547	          serial: "MJ0E61BB",
+  2548	          status: "Under Maintenance",
+  2549	          purchaseDate: "2023-05-20",
+  2550	          warrantyExpiry: "2026-05-20",
+  2551	          purchaseCost: 3200,
+  2552	          supplier: "Sharaf DG Enterprise",
+  2553	          departmentId: "dept-cs",
+  2554	          locationId: "loc-br-khk",
+  2555	          currentEmployeeId: "emp-105",
+  2556	          notes: "كاونتر التسجيل - فرع خورفكان (في الصيانة بسبب عطل بمزود الطاقة)",
+  2557	          createdDate: "2023-05-20 08:30:00",
+  2558	          updatedDate: "2026-09-01 14:00:00",
+  2559	          cpu: "Intel Core i5-12400T",
+  2560	          ram: "16 GB DDR4",
+  2561	          storage: "512 GB NVMe SSD",
+  2562	          os: "Windows 11 Pro",
+  2563	          computerName: "SDI-KHK-PC-01",
+  2564	          ip: "192.168.60.22",
+  2565	          mac: "48:2A:E3:44:99:E5",
+  2566	          attachments: []
+  2567	        },
+  2568	        {
+  2569	          id: "ast-000008",
+  2570	          assetId: "AST-000008",
+  2571	          assetTypeId: "type-tablet",
+  2572	          brand: "Samsung",
+  2573	          model: "Galaxy Tab Active4 Pro Rugged",
+  2574	          serial: "R52T90ABCD4",
+  2575	          status: "Assigned",
+  2576	          purchaseDate: "2024-03-01",
+  2577	          warrantyExpiry: "2026-03-01",
+  2578	          purchaseCost: 2450,
+  2579	          supplier: "Samsung Gulf",
+  2580	          departmentId: "dept-fleet",
+  2581	          locationId: "loc-br-dhd",
+  2582	          currentEmployeeId: "emp-106",
+  2583	          notes: "تابلت الفاحص الذكي المقاوم للصدمات لسيارة الفحص 08",
+  2584	          createdDate: "2024-03-01 10:00:00",
+  2585	          updatedDate: "2024-03-01 10:00:00",
+  2586	          os: "Android 14 Enterprise",
+  2587	          storage: "128 GB",
+  2588	          imei: "354921098452119",
+  2589	          ip: "192.168.50.77",
+  2590	          attachments: []
+  2591	        },
+  2592	        {
+  2593	          id: "ast-000009",
+  2594	          assetId: "AST-000009",
+  2595	          assetTypeId: "type-network",
+  2596	          brand: "Cisco",
+  2597	          model: "Catalyst 9200L 48-Port PoE+",
+  2598	          serial: "FOC2441L0AB",
+  2599	          status: "Available",
+  2600	          purchaseDate: "2023-01-10",
+  2601	          warrantyExpiry: "2028-01-10",
+  2602	          purchaseCost: 14500,
+  2603	          supplier: "Cisco UAE Partner",
+  2604	          departmentId: "dept-it",
+  2605	          locationId: "loc-it",
+  2606	          currentEmployeeId: null,
+  2607	          notes: "سويتش شبكة رئيسي لكبائن الفروع",
+  2608	          createdDate: "2023-01-10 09:00:00",
+  2609	          updatedDate: "2023-01-10 09:00:00",
+  2610	          ip: "192.168.10.254",
+  2611	          mac: "00:78:88:AC:33:10",
+  2612	          attachments: []
+  2613	        },
+  2614	        {
+  2615	          id: "ast-000010",
+  2616	          assetId: "AST-000010",
+  2617	          assetTypeId: "type-ups",
+  2618	          brand: "APC Schneider Electric",
+  2619	          model: "Smart-UPS RT 3000VA On-Line",
+  2620	          serial: "AS2145008912",
+  2621	          status: "In Store",
+  2622	          purchaseDate: "2023-06-15",
+  2623	          warrantyExpiry: "2026-06-15",
+  2624	          purchaseCost: 7200,
+  2625	          supplier: "Schneider Electric ME",
+  2626	          departmentId: "dept-it",
+  2627	          locationId: "loc-store",
+  2628	          currentEmployeeId: null,
+  2629	          notes: "وحدة UPS احتياطية جاهزة للتركيب",
+  2630	          createdDate: "2023-06-15 14:00:00",
+  2631	          updatedDate: "2023-06-15 14:00:00",
+  2632	          attachments: []
+  2633	        }
+  2634	      ];
+  2635	
+  2636	      for (const a of seedAssets) {
+  2637	        await this.put("assets", a);
+  2638	        // Create initial Added transaction
+  2639	        await this.logTransaction({
+  2640	          assetId: a.id,
+  2641	          transactionType: "Added",
+  2642	          toEmployeeId: a.currentEmployeeId,
+  2643	          toDepartmentId: a.departmentId,
+  2644	          toLocationId: a.locationId,
+  2645	          transactionDate: a.createdDate,
+  2646	          performedBy: "admin",
+  2647	          notes: "تم تسجيل وإدخال الأصل لأول مرة بالنظام"
+  2648	        });
+  2649	        if (a.currentEmployeeId) {
+  2650	          await this.logTransaction({
+  2651	            assetId: a.id,
+  2652	            transactionType: "Assigned",
+  2653	            toEmployeeId: a.currentEmployeeId,
+  2654	            toDepartmentId: a.departmentId,
+  2655	            toLocationId: a.locationId,
+  2656	            transactionDate: a.createdDate,
+  2657	            performedBy: "admin",
+  2658	            notes: "تسليم العهدة للموظف المسؤول"
+  2659	          });
+  2660	        }
+  2661	        if (a.status === "Under Maintenance") {
+  2662	          await this.logTransaction({
+  2663	            assetId: a.id,
+  2664	            transactionType: "Sent to Maintenance",
+  2665	            fromDepartmentId: a.departmentId,
+  2666	            fromLocationId: a.locationId,
+  2667	            transactionDate: "2026-09-01 14:00:00",
+  2668	            performedBy: "ituser",
+  2669	            notes: "عطل في مزود الطاقة وتشويش شاشة الكاونتر"
+  2670	          });
+  2671	          await this.put("maintenance", {
+  2672	            id: "maint-001",
+  2673	            assetId: a.id,
+  2674	            maintenanceDate: "2026-09-01",
+  2675	            problem: "الجهاز لا يعمل ومزود الطاقة تالف مع انقطاع الإشارة",
+  2676	            actionTaken: "تم الفحص وتأكيد الحاجة لاستبدال محول الطاقة 65W Lenovo",
+  2677	            technician: "م. أحمد الشامسي",
+  2678	            vendor: "Lenovo Authorized Service",
+  2679	            cost: 150,
+  2680	            returnDate: "",
+  2681	            status: "In Progress",
+  2682	            notes: "بانتظار وصول القطعة الأصلية من المورد"
+  2683	          });
+  2684	        }
+  2685	      }
+  2686	    } else {
+  2687	      // Migrate existing assets if needed
+  2688	      let index = 1;
+  2689	      for (const a of assets) {
+  2690	        let modified = false;
+  2691	        if (!a.assetId || !a.assetId.startsWith("AST-")) {
+  2692	          a.assetId = "AST-" + String(index).padStart(6, "0");
+  2693	          modified = true;
+  2694	        }
+  2695	        // Map category
+  2696	        if (!a.assetTypeId) {
+  2697	          if (a.category === "catDesktop") a.assetTypeId = "type-computer";
+  2698	          else if (a.category === "catLaptop") a.assetTypeId = "type-laptop";
+  2699	          else if (a.category === "catPrinter") a.assetTypeId = "type-printer";
+  2700	          else if (a.category === "catServer") a.assetTypeId = "type-server";
+  2701	          else if (a.category === "catExamCamera" || a.category === "catCctvCamera") a.assetTypeId = "type-camera";
+  2702	          else if (a.category === "catNetwork") a.assetTypeId = "type-network";
+  2703	          else a.assetTypeId = "type-other";
+  2704	          modified = true;
+  2705	        }
+  2706	        // Map status
+  2707	        if (!["Available", "Assigned", "Under Maintenance", "In Store", "Damaged", "Lost", "Retired", "Disposed", "Installed", "In Use"].includes(a.status)) {
+  2708	          if (a.status === "statusActive") a.status = a.assignedStaffId ? "Assigned" : "Available";
+  2709	          else if (a.status === "statusMaintenance") a.status = "Under Maintenance";
+  2710	          else if (a.status === "statusSpare") a.status = "In Store";
+  2711	          else if (a.status === "statusRetired") a.status = "Retired";
+  2712	          else a.status = "Available";
+  2713	          modified = true;
+  2714	        }
+  2715	        if (a.assignedStaffId && !a.currentEmployeeId) {
+  2716	          a.currentEmployeeId = a.assignedStaffId;
+  2717	          modified = true;
+  2718	        }
+  2719	        if (a.branchId && !a.locationId) {
+  2720	          a.locationId = a.branchId === "br-main" ? "loc-main" : (a.branchId === "br-dhaid" ? "loc-br-dhd" : "loc-br-khk");
+  2721	          modified = true;
+  2722	        }
+  2723	        if (a.department && !a.departmentId) {
+  2724	          a.departmentId = a.department === "sub-main-it" ? "dept-it" : "dept-cs";
+  2725	          modified = true;
+  2726	        }
+  2727	        if (!a.qrCodeValue && a.assetId) {
+  2728	          a.qrCodeValue = a.assetId;
+  2729	          modified = true;
+  2730	        }
+  2731	        if (!a.barcodeValue && a.assetId) {
+  2732	          const numPart = a.assetId.replace("AST-", "").padStart(9, "0");
+  2733	          a.barcodeValue = "629" + numPart;
+  2734	          modified = true;
+  2735	        }
+  2736	        if (a.id === "ast-000005" && a.warrantyExpiry === "2026-09-01") {
+  2737	          a.warrantyExpiry = "2026-09-28";
+  2738	          modified = true;
+  2739	        }
+  2740	        if (a.id === "ast-000004" && a.warrantyExpiry === "2026-08-12") {
+  2741	          a.warrantyExpiry = "2026-10-05";
+  2742	          modified = true;
+  2743	        }
+  2744	        if (modified) {
+  2745	          await this.put("assets", a);
+  2746	        }
+  2747	
+  2748	        // Ensure at least one transaction exists for this asset
+  2749	        const txHistory = await this.getAssetHistory(a.id);
+  2750	        if (txHistory.length === 0) {
+  2751	          await this.logTransaction({
+  2752	            assetId: a.id,
+  2753	            transactionType: "Added",
+  2754	            toEmployeeId: a.currentEmployeeId || null,
+  2755	            toDepartmentId: a.departmentId || null,
+  2756	            toLocationId: a.locationId || null,
+  2757	            transactionDate: a.createdDate || "2024-01-01 10:00:00",
+  2758	            performedBy: "admin",
+  2759	            notes: "ترحيل وتثبيت بيانات الأصل التاريخية"
+  2760	          });
+  2761	          if (a.status === "Assigned" && a.currentEmployeeId) {
+  2762	            await this.logTransaction({
+  2763	              assetId: a.id,
+  2764	              transactionType: "Assigned",
+  2765	              toEmployeeId: a.currentEmployeeId,
+  2766	              toDepartmentId: a.departmentId,
+  2767	              toLocationId: a.locationId,
+  2768	              transactionDate: a.createdDate || "2024-01-01 10:05:00",
+  2769	              performedBy: "admin",
+  2770	              notes: "تسليم العهدة"
+  2771	            });
+  2772	          }
+  2773	        }
+  2774	        index++;
+  2775	      }
+  2776	    }
+  2777	
+  2778	    // 7.1 Safe Migration: Reconcile assets with confirmed Installation transactions
+  2779	    try {
+  2780	      const allTx = await this.getAll("assetTransactions");
+  2781	      const installTransactions = allTx.filter(t => 
+  2782	        (t.transactionType === "Installed" || t.action_type === "Installed" || t.actionType === "Installed")
+  2783	      );
+  2784	      if (installTransactions.length > 0) {
+  2785	        const [allCurrentAssets, issues] = await Promise.all([
+  2786	          this.getAll("assets"),
+  2787	          this.getAll("warehouseIssues")
+  2788	        ]);
+  2789	        for (const tx of installTransactions) {
+  2790	          if (!tx.assetId) continue;
+  2791	          const targetAsset = allCurrentAssets.find(a => a.id === tx.assetId || a.assetId === tx.assetId);
+  2792	          if (targetAsset && targetAsset.status !== "Installed") {
+  2793	            targetAsset.status = "Installed";
+  2794	            if (!targetAsset.installationDate && tx.transactionDate) {
+  2795	              targetAsset.installationDate = tx.transactionDate.slice(0, 10);
+  2796	            }
+  2797	            if (tx.toLocationId) targetAsset.locationId = tx.toLocationId;
+  2798	            if (tx.toEmployeeId && !targetAsset.currentEmployeeId) targetAsset.currentEmployeeId = tx.toEmployeeId;
+  2799	
+  2800	            // Link technician, project, and office from matching warehouse issue if available
+  2801	            const matchingIssue = issues.find(i => i.assetId === targetAsset.id || i.assetId === targetAsset.assetId);
+  2802	            if (matchingIssue) {
+  2803	              if (matchingIssue.itEmployeeId && !targetAsset.installedBy) {
+  2804	                targetAsset.installedBy = matchingIssue.itEmployeeId;
+  2805	              }
+  2806	              if (matchingIssue.projectId && !targetAsset.projectId) {
+  2807	                targetAsset.projectId = matchingIssue.projectId;
+  2808	              }
+  2809	              if (matchingIssue.installedOffice && !targetAsset.office) {
+  2810	                targetAsset.office = matchingIssue.installedOffice;
+  2811	              }
+  2812	              if (matchingIssue.installedDepartmentId && !targetAsset.departmentId) {
+  2813	                targetAsset.departmentId = matchingIssue.installedDepartmentId;
+  2814	              }
+  2815	            }
+  2816	            targetAsset.updatedDate = new Date().toISOString().replace("T", " ").substring(0, 19);
+  2817	            await this.put("assets", targetAsset);
+  2818	          }
+  2819	        }
+  2820	      }
+  2821	    } catch (migErr) {
+  2822	      console.warn("[ensureInitialSeedAndMigration] Installed assets migration warning:", migErr);
+  2823	    }
+  2824	
+  2825	    // 9. Ensure Initial Helpdesk Requests & Notifications
+  2826	    const reqCount = await this.count("helpdeskRequests");
+  2827	    if (reqCount === 0) {
+  2828	      const sampleRequests = [
+  2829	        {
+  2830	          id: "req-000101",
+  2831	          requestId: "REQ-000101",
+  2832	          requestNumber: "REQ-000101",
+  2833	          employeeId: "emp-102",
+  2834	          assetId: "ast-000003",
+  2835	          requestType: "Hardware",
+  2836	          subject: "الشاشة تومض بشكل متقطع عند بدء التشغيل",
+  2837	          subjectAr: "الشاشة تومض بشكل متقطع عند بدء التشغيل",
+  2838	          subjectEn: "Screen flickers intermittently upon startup",
+  2839	          description: "شاشة كمبيوتر كاونتر التسجيل الرئيسي تومض باللون الأسود وتتأخر في إظهار شاشة الدخول.",
+  2840	          descriptionAr: "شاشة كمبيوتر كاونتر التسجيل الرئيسي تومض باللون الأسود وتتأخر في إظهار شاشة الدخول.",
+  2841	          descriptionEn: "Main registration counter monitor flickers black and delays showing login screen.",
+  2842	          status: "In Progress",
+  2843	          createdDate: "2026-09-02 08:30:00",
+  2844	          updatedDate: "2026-09-02 09:15:00",
+  2845	          messages: [
+  2846	            {
+  2847	              id: "msg-1",
+  2848	              senderType: "Employee",
+  2849	              senderName: "مريم الحمادي",
+  2850	              senderNameEn: "Maryam Al Hammadi",
+  2851	              text: "السلام عليكم، الشاشة تومض وتتوقف عدة ثواني أثناء العمل.",
+  2852	              textEn: "Hello, the screen flickers and pauses for several seconds during operation.",
+  2853	              date: "2026-09-02 08:30:00"
+  2854	            },
+  2855	            {
+  2856	              id: "msg-2",
+  2857	              senderType: "IT",
+  2858	              senderName: "م. أحمد الشامسي (IT)",
+  2859	              senderNameEn: "Eng. Ahmed Al Shamsi (IT)",
+  2860	              text: "وعليكم السلام، سنقوم بفحص كابل DisplayPort واستبداله فوراً.",
+  2861	              textEn: "We will check the DisplayPort cable and replace it immediately.",
+  2862	              date: "2026-09-02 09:15:00"
+  2863	            }
+  2864	          ],
+  2865	          maintenanceId: null,
+  2866	          statusHistory: [
+  2867	            { status: "New", changedBy: "مريم الحمادي", changedByEn: "Maryam Al Hammadi", date: "2026-09-02 08:30:00", note: "إنشاء الطلب" },
+  2868	            { status: "In Progress", changedBy: "م. أحمد الشامسي", changedByEn: "Eng. Ahmed Al Shamsi", date: "2026-09-02 09:15:00", note: "بدء المعالجة" }
+  2869	          ]
+  2870	        },
+  2871	        {
+  2872	          id: "req-000102",
+  2873	          requestId: "REQ-000102",
+  2874	          requestNumber: "REQ-000102",
+  2875	          employeeId: "emp-101",
+  2876	          assetId: "ast-000002",
+  2877	          requestType: "Software",
+  2878	          subject: "تحديث برنامج التدريب الذكي",
+  2879	          subjectAr: "تحديث برنامج التدريب الذكي",
+  2880	          subjectEn: "Update Smart Training Software",
+  2881	          description: "يرجى تثبيت أحدث حزمة تحديث لبرنامج Smart Exam على لابتوب الطوارئ.",
+  2882	          descriptionAr: "يرجى تثبيت أحدث حزمة تحديث لبرنامج Smart Exam على لابتوب الطوارئ.",
+  2883	          descriptionEn: "Please install the latest Smart Exam update package on emergency laptop.",
+  2884	          status: "Completed",
+  2885	          createdDate: "2026-08-28 11:00:00",
+  2886	          updatedDate: "2026-08-28 12:30:00",
+  2887	          messages: [
+  2888	            {
+  2889	              id: "msg-3",
+  2890	              senderType: "Employee",
+  2891	              senderName: "م. أحمد الشامسي",
+  2892	              senderNameEn: "Eng. Ahmed Al Shamsi",
+  2893	              text: "مطلوب تجهيز الحزمة لاختبارات الغد.",
+  2894	              textEn: "The software package is required for tomorrow's examination sessions.",
+  2895	              date: "2026-08-28 11:00:00"
+  2896	            },
+  2897	            {
+  2898	              id: "msg-4",
+  2899	              senderType: "IT",
+  2900	              senderName: "ituser",
+  2901	              senderNameEn: "IT Support",
+  2902	              text: "تم تحديث واختبار البرنامج بنجاح.",
+  2903	              textEn: "The application has been updated and tested successfully.",
+  2904	              date: "2026-08-28 12:30:00"
+  2905	            }
+  2906	          ],
+  2907	          maintenanceId: null,
+  2908	          statusHistory: [
+  2909	            { status: "New", changedBy: "م. أحمد الشامسي", changedByEn: "Eng. Ahmed Al Shamsi", date: "2026-08-28 11:00:00", note: "إنشاء الطلب" },
+  2910	            { status: "Completed", changedBy: "ituser", changedByEn: "IT Support", date: "2026-08-28 12:30:00", note: "اكتمال التثبيت" }
+  2911	          ]
+  2912	        }
+  2913	      ];
+  2914	      for (const r of sampleRequests) await this.put("helpdeskRequests", r);
+  2915	    } else {
+  2916	      // Migrate existing requests to ensure English fields exist
+  2917	      const existingReqs = await this.getAll("helpdeskRequests");
+  2918	      for (const r of existingReqs) {
+  2919	        let mod = false;
+  2920	        if (!r.subjectEn) {

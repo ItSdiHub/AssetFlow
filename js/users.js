@@ -714,7 +714,7 @@ class OrganizationalManager {
       // In headless test environments where formDeptLocation was not pre-populated by test
       const locations = await db.getAll("locations");
       const activeLocations = locations.filter(l => l.active !== false);
-      locationId = activeLocations[0]?.id || "loc-main";
+      locationId = activeLocations[0]?.id || null;
     }
 
     const deptData = {
