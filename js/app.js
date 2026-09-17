@@ -2422,6 +2422,22 @@ class Application {
       const filtered = filterAssetList(assets);
       const totalCost = filtered.reduce((acc, a) => acc + (parseFloat(a.purchaseCost) || 0), 0);
 
+      // Data consistency check: verify rendered row count against fresh DB count query
+      let dbConsistencyBadge = "";
+      if (!filterType && !filterStatus && !filterDept && !filterLoc && !filterEmp && !dateFrom && !dateTo && !searchVal) {
+        try {
+          const freshDbAssets = await db.getAll("assets");
+          const freshDbCount = Array.isArray(freshDbAssets) ? freshDbAssets.length : assets.length;
+          if (filtered.length === freshDbCount) {
+            dbConsistencyBadge = `<div style="font-size: 11px; color: #16a34a; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px;"><i class="fas fa-check-circle"></i> <span>${lang === 'ar' ? 'متطابق مع قاعدة البيانات' : 'Verified with DB'} (${freshDbCount})</span></div>`;
+          } else {
+            dbConsistencyBadge = `<div style="font-size: 11px; color: #eab308; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px;"><i class="fas fa-sync fa-spin"></i> <span>${lang === 'ar' ? 'جاري التحقق...' : 'Syncing...'}</span></div>`;
+          }
+        } catch (e) {
+          console.warn("Report #1 DB consistency check error:", e);
+        }
+      }
+
       rowsHtml = filtered.map(a => `
         <tr>
           <td class="report-col-compact col-report-id"><strong>${a.assetId}</strong></td>
@@ -2441,8 +2457,8 @@ class Application {
       `).join("");
 
       totalsHtml = `
-        <div class="report-totals-card" style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 16px;">
-          <div><span>${lang === 'ar' ? 'إجمالي الأصول المسجلة' : 'Total Assets'}:</span> <strong>${filtered.length}</strong></div>
+        <div class="report-totals-card" style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 16px; align-items: center;">
+          <div><span>${lang === 'ar' ? 'إجمالي الأصول المسجلة' : 'Total Assets'}:</span> <strong>${filtered.length}</strong>${dbConsistencyBadge}</div>
           <div><span>${lang === 'ar' ? 'إجمالي تكلفة الشراء' : 'Total Purchase Cost'}:</span> <strong class="text-primary">${totalCost.toLocaleString()} AED</strong></div>
         </div>
       `;
