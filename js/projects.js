@@ -1301,8 +1301,10 @@ class ProjectManagementController {
 
     const btnAddTask = document.getElementById("btnAddNewProjectTask");
     if (btnAddTask) {
+      btnAddTask.type = "button";
       btnAddTask.onclick = (e) => {
         e.preventDefault();
+        e.stopPropagation();
         this.openTaskModal(projectId);
       };
     }

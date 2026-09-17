@@ -265,7 +265,8 @@ CREATE TABLE IF NOT EXISTS public.project_tasks (
     progress NUMERIC DEFAULT 0,
     status TEXT DEFAULT 'Pending',
     notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT project_tasks_project_id_fk FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE
 );
 
 -- 14. Software Licenses Table
