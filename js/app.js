@@ -3177,9 +3177,33 @@ class Application {
         </tr>
       `;
 
-      const allProjects = await db.getAll("projects");
-      const allContractors = await db.getAll("contractors");
+      let allProjects = [];
+      let allTasks = [];
+      let allContractors = [];
+      try {
+        [allProjects, allTasks, allContractors] = await Promise.all([
+          db.getAll("projects"),
+          db.getAll("projectTasks"),
+          db.getAll("contractors")
+        ]);
+      } catch (err) {
+        console.error("Error loading project report data from database:", err);
+      }
+
+      allProjects = Array.isArray(allProjects) ? allProjects : [];
+      allTasks = Array.isArray(allTasks) ? allTasks : [];
+      allContractors = Array.isArray(allContractors) ? allContractors : [];
       const contractorMap = Object.fromEntries(allContractors.map(c => [c.id, lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr)]));
+
+      // Group tasks by project id (handling both projectId and project_id)
+      const tasksByProjectId = {};
+      allTasks.forEach(t => {
+        const pId = t.projectId || t.project_id;
+        if (pId) {
+          if (!tasksByProjectId[pId]) tasksByProjectId[pId] = [];
+          tasksByProjectId[pId].push(t);
+        }
+      });
 
       let filteredProjects = allProjects.filter(p => {
         if (filterStatus && p.status !== filterStatus) return false;
@@ -3188,8 +3212,17 @@ class Application {
         if (dateFrom && p.startDate && p.startDate < dateFrom) return false;
         if (dateTo && p.plannedEndDate && p.plannedEndDate > dateTo) return false;
         if (searchVal) {
-          const str = `${p.projectNo || ""} ${p.id || ""} ${p.nameAr || ""} ${p.nameEn || ""} ${contractorMap[p.contractorId] || ""} ${locMap[p.locationId] || ""} ${deptMap[p.departmentId] || ""} ${p.projectType || ""}`.toLowerCase();
-          if (!str.includes(searchVal)) return false;
+          const prjTasks = tasksByProjectId[p.id] || [];
+          let taskMatches = false;
+          for (const t of prjTasks) {
+            const taskText = `${t.taskNameAr || t.nameAr || t.task_name_ar || ""} ${t.taskNameEn || t.nameEn || t.task_name_en || ""} ${t.description || ""} ${t.notes || ""}`.toLowerCase();
+            if (taskText.includes(searchVal)) {
+              taskMatches = true;
+              break;
+            }
+          }
+          const prjStr = `${p.projectNo || ""} ${p.id || ""} ${p.nameAr || ""} ${p.nameEn || ""} ${contractorMap[p.contractorId] || ""} ${locMap[p.locationId] || ""} ${deptMap[p.departmentId] || ""} ${p.projectType || ""}`.toLowerCase();
+          if (!prjStr.includes(searchVal) && !taskMatches) return false;
         }
         return true;
       });
@@ -3200,28 +3233,135 @@ class Application {
         const name = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
         const overdue = p.status !== "Completed" && p.status !== "Cancelled" && p.plannedEndDate && p.plannedEndDate < today;
         const prjIdentifier = p.projectNo || p.id || "-";
+        const projectTasks = tasksByProjectId[p.id] || [];
+
+        let tasksSectionHtml = "";
+        if (projectTasks.length === 0) {
+          tasksSectionHtml = `
+            <div style="padding: 8px 12px; color: var(--text-muted, #64748b); font-size: 12px; font-style: italic; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px dashed var(--border-color, #cbd5e1); display: flex; align-items: center; gap: 8px;">
+              <i class="fas fa-info-circle" style="color: var(--text-muted, #64748b);"></i>
+              <span>${lang === 'ar' ? 'لا توجد مهام مسجلة لهذا المشروع' : 'No tasks recorded for this project'}</span>
+            </div>
+          `;
+        } else {
+          const taskRows = projectTasks.map((t, idx) => {
+            const tName = lang === "ar" ? (t.taskNameAr || t.nameAr || t.task_name_ar || (lang === 'ar' ? 'مهمة بدون اسم' : 'Untitled Task')) : (t.taskNameEn || t.nameEn || t.task_name_en || t.taskNameAr || t.nameAr || 'Untitled Task');
+            const desc = t.description || "-";
+            const assignee = empMap[t.responsibleEmployeeId || t.responsible_employee_id] || "-";
+            const contractor = contractorMap[t.contractorId || t.contractor_id] || "-";
+            const startDate = t.startDate || t.start_date || "-";
+            const dueDate = t.dueDate || t.due_date || "-";
+            const progress = t.progress !== undefined && t.progress !== null ? t.progress : 0;
+            const status = t.status || "Pending";
+            const priority = t.priority || "-";
+            const notes = t.notes ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;"><i class="far fa-sticky-note"></i> ${t.notes}</div>` : "";
+
+            let statusBadgeClass = "badge-secondary";
+            if (status === "Completed") statusBadgeClass = "badge-success";
+            else if (status === "In Progress") statusBadgeClass = "badge-primary";
+            else if (status === "Overdue") statusBadgeClass = "badge-danger";
+            else if (status === "On Hold") statusBadgeClass = "badge-warning";
+            else if (status === "Cancelled") statusBadgeClass = "badge-danger";
+
+            let priorityBadge = "-";
+            if (priority && priority !== "-") {
+              let priClass = "badge-secondary";
+              if (priority === "Critical") priClass = "badge-danger";
+              else if (priority === "High") priClass = "badge-warning";
+              else if (priority === "Medium") priClass = "badge-info";
+              priorityBadge = `<span class="badge ${priClass}">${priority}</span>`;
+            }
+
+            return `
+              <tr style="background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top;">
+                  <strong>${tName}</strong>
+                  ${notes}
+                </td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; max-width: 200px; word-break: break-word;">${desc}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top;">${assignee}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top;">${contractor}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; text-align: center;">${startDate}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; text-align: center;">${dueDate}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; text-align: center;">${priorityBadge}</td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; text-align: center;"><strong>${progress}%</strong></td>
+                <td style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); vertical-align: top; text-align: center;"><span class="badge ${statusBadgeClass}">${status}</span></td>
+              </tr>
+            `;
+          }).join("");
+
+          tasksSectionHtml = `
+            <div style="margin: 4px 0 6px 0;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                <i class="fas fa-tasks text-primary" style="font-size: 11px;"></i>
+                <span>${lang === 'ar' ? 'المهام المسندة للمشروع' : 'Project Tasks'} (${projectTasks.length})</span>
+              </div>
+              <div class="table-responsive" style="overflow-x: auto; margin: 0; border: 1px solid var(--border-color, #cbd5e1); border-radius: 4px;">
+                <table class="custom-table" style="width: 100%; font-size: 12px; margin: 0; border-collapse: collapse; background: #ffffff;">
+                  <thead>
+                    <tr style="background: var(--bg-surface-hover, #f1f5f9); font-size: 11px; color: var(--text-secondary, #475569);">
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0);">${lang === 'ar' ? 'المهمة' : 'Task'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0);">${lang === 'ar' ? 'الوصف' : 'Description'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0);">${lang === 'ar' ? 'المسؤول' : 'Responsible'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0);">${lang === 'ar' ? 'المقاول' : 'Contractor'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); text-align: center;">${lang === 'ar' ? 'تاريخ البدء' : 'Start'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); text-align: center;">${lang === 'ar' ? 'تاريخ الاستحقاق' : 'Due'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); text-align: center;">${lang === 'ar' ? 'الأولوية' : 'Priority'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); text-align: center;">${lang === 'ar' ? 'نسبة الإنجاز' : 'Progress'}</th>
+                      <th style="padding: 6px 8px; border: 1px solid var(--border-color, #e2e8f0); text-align: center;">${lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${taskRows}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        }
+
         return `
-          <tr>
+          <tr class="report-project-header-row" style="background-color: var(--bg-surface-hover, #f1f5f9); font-weight: 600; border-top: 2px solid var(--border-color, #cbd5e1);">
             <td class="report-col-compact col-report-id"><strong><code>${prjIdentifier}</code></strong></td>
             <td class="report-col-wide col-report-desc"><strong>${name}</strong><br><small class="text-muted">${p.projectType || ""}</small></td>
             <td class="report-col-medium col-report-emp">${contractorMap[p.contractorId] || "-"}</td>
             <td class="report-col-wide col-report-loc">${locMap[p.locationId] || "-"}</td>
             <td class="report-col-compact col-report-date">${p.startDate || "-"}</td>
             <td class="report-col-compact col-report-date">${p.plannedEndDate || "-"}</td>
-            <td class="report-col-compact col-report-number report-number">${p.progress || 0}%</td>
+            <td class="report-col-compact col-report-number report-number"><strong>${p.progress !== undefined && p.progress !== null ? p.progress : 0}%</strong></td>
             <td class="report-col-compact col-report-status">
-              <span class="badge ${p.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${p.status}</span>
+              <span class="badge ${p.status === 'Completed' ? 'badge-success' : 'badge-warning'}">${p.status || '-'}</span>
               ${overdue ? ` <span class="badge badge-danger">${I18N[lang].badgeOverdue || 'متأخر'}</span>` : ''}
+            </td>
+          </tr>
+          <tr class="report-project-tasks-row" style="border-bottom: 2px solid var(--border-color, #cbd5e1);">
+            <td colspan="8" style="padding: 6px 12px 14px 12px; background: #ffffff;">
+              ${tasksSectionHtml}
             </td>
           </tr>
         `;
       }).join("");
 
+      let totalProjectsCount = filteredProjects.length;
+      let totalTasksCount = 0;
+      let completedTasksCount = 0;
+      let inProgressTasksCount = 0;
+
+      filteredProjects.forEach(p => {
+        const pTasks = tasksByProjectId[p.id] || [];
+        totalTasksCount += pTasks.length;
+        pTasks.forEach(t => {
+          if (t.status === "Completed") completedTasksCount++;
+          else if (t.status === "In Progress") inProgressTasksCount++;
+        });
+      });
+
       totalsHtml = `
         <div class="report-totals-card" style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 16px;">
-          <div><span>${lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects'}:</span> <strong>${filteredProjects.length}</strong></div>
-          <div><span>${lang === 'ar' ? 'مكتمل' : 'Completed'}:</span> <strong class="text-success">${filteredProjects.filter(p => p.status === 'Completed').length}</strong></div>
-          <div><span>${lang === 'ar' ? 'قيد التنفيذ' : 'In Progress'}:</span> <strong class="text-warning">${filteredProjects.filter(p => p.status === 'In Progress').length}</strong></div>
+          <div><span>${lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects'}:</span> <strong>${totalProjectsCount}</strong></div>
+          <div><span>${lang === 'ar' ? 'إجمالي المهام' : 'Total Tasks'}:</span> <strong style="color: var(--sdi-blue);">${totalTasksCount}</strong></div>
+          <div><span>${lang === 'ar' ? 'مهام مكتملة' : 'Completed Tasks'}:</span> <strong class="text-success">${completedTasksCount}</strong></div>
+          <div><span>${lang === 'ar' ? 'مهام قيد التنفيذ' : 'In Progress Tasks'}:</span> <strong class="text-warning">${inProgressTasksCount}</strong></div>
         </div>
       `;
 

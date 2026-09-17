@@ -158,6 +158,13 @@ class ProjectManagementController {
     this.currentFilterStatus = "";
     this.currentFilterContractor = "";
     this.activeDetailProjectId = null;
+    this.currentSubTab = "list"; // "list" | "calendar"
+    this.calendarDate = new Date();
+    this.calendarFilterProject = "";
+    this.calendarFilterStatus = "";
+    this.calendarFilterPriority = "";
+    this.calendarSearchText = "";
+    this.selectedCalendarDateStr = null;
   }
 
   isOverdue(project) {
@@ -167,7 +174,440 @@ class ProjectManagementController {
     return project.plannedEndDate < today;
   }
 
+  switchSubTab(subTab = "list") {
+    this.currentSubTab = subTab;
+    const btnList = document.getElementById("btnProjectSubTabList");
+    const btnCal = document.getElementById("btnProjectSubTabCalendar");
+    const listContainer = document.getElementById("projectsListViewContainer");
+    const calContainer = document.getElementById("projectsCalendarViewContainer");
+    const btnAddPrj = document.getElementById("btnAddNewProject");
+    const btnAddTaskHeader = document.getElementById("btnAddNewTaskFromHeader");
+
+    if (subTab === "calendar") {
+      if (btnList) { btnList.className = "btn btn-sm btn-secondary"; }
+      if (btnCal) { btnCal.className = "btn btn-sm btn-primary"; }
+      if (listContainer) listContainer.style.display = "none";
+      if (calContainer) calContainer.style.display = "block";
+      if (btnAddPrj) btnAddPrj.style.display = "none";
+      if (btnAddTaskHeader) btnAddTaskHeader.style.display = "inline-flex";
+      this.renderCalendar();
+    } else {
+      if (btnList) { btnList.className = "btn btn-sm btn-primary"; }
+      if (btnCal) { btnCal.className = "btn btn-sm btn-secondary"; }
+      if (listContainer) listContainer.style.display = "block";
+      if (calContainer) calContainer.style.display = "none";
+      if (btnAddPrj) btnAddPrj.style.display = "inline-flex";
+      if (btnAddTaskHeader) btnAddTaskHeader.style.display = "none";
+      this.render();
+    }
+  }
+
+  prevMonth() {
+    this.calendarDate = new Date(this.calendarDate.getFullYear(), this.calendarDate.getMonth() - 1, 1);
+    this.renderCalendar();
+  }
+
+  nextMonth() {
+    this.calendarDate = new Date(this.calendarDate.getFullYear(), this.calendarDate.getMonth() + 1, 1);
+    this.renderCalendar();
+  }
+
+  jumpToToday() {
+    this.calendarDate = new Date();
+    this.renderCalendar();
+  }
+
+  handleCalendarFilterChange() {
+    this.calendarFilterProject = document.getElementById("calendarFilterProject")?.value || "";
+    this.calendarFilterStatus = document.getElementById("calendarFilterStatus")?.value || "";
+    this.calendarFilterPriority = document.getElementById("calendarFilterPriority")?.value || "";
+    this.calendarSearchText = (document.getElementById("calendarSearchInput")?.value || "").trim().toLowerCase();
+    this.renderCalendar();
+  }
+
+  resetCalendarFilters() {
+    const prjEl = document.getElementById("calendarFilterProject");
+    const stEl = document.getElementById("calendarFilterStatus");
+    const priEl = document.getElementById("calendarFilterPriority");
+    const searchEl = document.getElementById("calendarSearchInput");
+    if (prjEl) prjEl.value = "";
+    if (stEl) stEl.value = "";
+    if (priEl) priEl.value = "";
+    if (searchEl) searchEl.value = "";
+    this.calendarFilterProject = "";
+    this.calendarFilterStatus = "";
+    this.calendarFilterPriority = "";
+    this.calendarSearchText = "";
+    this.renderCalendar();
+  }
+
+  async renderCalendar() {
+    const calGrid = document.getElementById("projectCalendarGrid");
+    if (!calGrid) return;
+    const lang = AppState.lang;
+
+    let [projects, tasks, employees] = [[], [], []];
+    try {
+      [projects, tasks, employees] = await Promise.all([
+        db.getAll("projects").catch(() => []),
+        db.getAll("projectTasks").catch(() => []),
+        db.getAll("employees").catch(() => [])
+      ]);
+    } catch (e) {
+      console.warn("Error loading calendar data:", e);
+    }
+
+    projects = Array.isArray(projects) ? projects : [];
+    tasks = Array.isArray(tasks) ? tasks : [];
+    employees = Array.isArray(employees) ? employees : [];
+
+    const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+    const employeeMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+
+    // Populate Project Select Filter if needed
+    const prjSelect = document.getElementById("calendarFilterProject");
+    if (prjSelect && (!prjSelect.options || prjSelect.options.length <= 1)) {
+      prjSelect.innerHTML = `<option value="">${lang === "ar" ? "جميع المشاريع" : "All Projects"}</option>` +
+        projects.map(p => {
+          const name = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
+          return `<option value="${p.id}">${p.projectNo ? `[${p.projectNo}] ` : ""}${name}</option>`;
+        }).join("");
+      if (this.calendarFilterProject) prjSelect.value = this.calendarFilterProject;
+    }
+
+    const currentYear = this.calendarDate.getFullYear();
+    const currentMonth = this.calendarDate.getMonth(); // 0-indexed
+
+    // Format Month & Year Title
+    const arabicMonths = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    const englishMonths = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const monthName = lang === "ar" ? arabicMonths[currentMonth] : englishMonths[currentMonth];
+    const monthYearTextEl = document.getElementById("calendarMonthYearText");
+    if (monthYearTextEl) {
+      monthYearTextEl.textContent = `${monthName} ${currentYear}`;
+    }
+
+    // Current Date strings
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    // Month boundaries
+    const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    const startOfMonth = new Date(currentYear, currentMonth, 1);
+    const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+    const daysInMonth = endOfMonth.getDate();
+    const startDayOfWeek = startOfMonth.getDay(); // 0: Sunday, 1: Monday, ... 6: Saturday
+
+    // Calculate start & end of current week for KPIs
+    const dayOfWeek = today.getDay();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - dayOfWeek);
+    startOfWeek.setHours(0,0,0,0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23,59,59,999);
+    const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
+    const endOfWeekStr = endOfWeek.toISOString().slice(0, 10);
+
+    // Compute KPIs across all tasks in this month
+    let totalMonthTasks = 0;
+    let dueTodayTasks = 0;
+    let dueWeekTasks = 0;
+    let overdueTasks = 0;
+    let completedMonthTasks = 0;
+
+    tasks.forEach(t => {
+      const d = t.dueDate || t.due_date;
+      const isCompleted = t.status === "Completed";
+      const isCancelled = t.status === "Cancelled";
+
+      if (d && d.startsWith(monthPrefix)) {
+        totalMonthTasks++;
+        if (isCompleted) completedMonthTasks++;
+      }
+      if (d === todayStr && !isCompleted && !isCancelled) {
+        dueTodayTasks++;
+      }
+      if (d && d >= startOfWeekStr && d <= endOfWeekStr && !isCompleted && !isCancelled) {
+        dueWeekTasks++;
+      }
+      if (d && d < todayStr && !isCompleted && !isCancelled) {
+        overdueTasks++;
+      }
+    });
+
+    const kpiTotalEl = document.getElementById("calKpiTotalMonth");
+    const kpiTodayEl = document.getElementById("calKpiDueToday");
+    const kpiWeekEl = document.getElementById("calKpiDueWeek");
+    const kpiOverdueEl = document.getElementById("calKpiOverdue");
+    const kpiCompletedEl = document.getElementById("calKpiCompleted");
+    if (kpiTotalEl) kpiTotalEl.textContent = totalMonthTasks;
+    if (kpiTodayEl) kpiTodayEl.textContent = dueTodayTasks;
+    if (kpiWeekEl) kpiWeekEl.textContent = dueWeekTasks;
+    if (kpiOverdueEl) kpiOverdueEl.textContent = overdueTasks;
+    if (kpiCompletedEl) kpiCompletedEl.textContent = completedMonthTasks;
+
+    // Filter Tasks for Calendar Display
+    const filterPrj = this.calendarFilterProject;
+    const filterStatus = this.calendarFilterStatus;
+    const filterPriority = this.calendarFilterPriority;
+    const searchVal = this.calendarSearchText;
+
+    const filteredTasks = tasks.filter(t => {
+      const pId = t.projectId || t.project_id;
+      if (filterPrj && pId !== filterPrj) return false;
+      if (filterStatus && t.status !== filterStatus) return false;
+      if (filterPriority && (t.priority || "Medium") !== filterPriority) return false;
+      if (searchVal) {
+        const nameAr = (t.nameAr || t.taskNameAr || t.task_name_ar || "").toLowerCase();
+        const nameEn = (t.nameEn || t.taskNameEn || t.task_name_en || "").toLowerCase();
+        const desc = (t.description || "").toLowerCase();
+        const prj = projectMap[pId];
+        const pNameAr = prj ? (prj.nameAr || "").toLowerCase() : "";
+        const pNameEn = prj ? (prj.nameEn || "").toLowerCase() : "";
+        const pNo = prj ? (prj.projectNo || "").toLowerCase() : "";
+        if (!nameAr.includes(searchVal) && !nameEn.includes(searchVal) && !desc.includes(searchVal) && !pNameAr.includes(searchVal) && !pNameEn.includes(searchVal) && !pNo.includes(searchVal)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Group tasks by dueDate
+    const tasksByDate = {};
+    filteredTasks.forEach(t => {
+      const d = t.dueDate || t.due_date;
+      if (d) {
+        if (!tasksByDate[d]) tasksByDate[d] = [];
+        tasksByDate[d].push(t);
+      }
+    });
+
+    // Build Calendar Cells
+    const prevMonthLastDate = new Date(currentYear, currentMonth, 0).getDate();
+    let cellsHtml = "";
+
+    // 1. Trailing days from previous month
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      const dayNum = prevMonthLastDate - i;
+      const prevMonthIdx = currentMonth === 0 ? 11 : currentMonth - 1;
+      const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      const dateStr = `${prevYear}-${String(prevMonthIdx + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      const dayTasks = tasksByDate[dateStr] || [];
+
+      cellsHtml += this._renderDayCell(dayNum, dateStr, dayTasks, true, false, projectMap, lang, todayStr);
+    }
+
+    // 2. Current Month days
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isToday = dateStr === todayStr;
+      const dayTasks = tasksByDate[dateStr] || [];
+
+      cellsHtml += this._renderDayCell(day, dateStr, dayTasks, false, isToday, projectMap, lang, todayStr);
+    }
+
+    // 3. Leading days of next month to complete the grid (total cells multiple of 7)
+    const totalRendered = startDayOfWeek + daysInMonth;
+    const remainingCells = (7 - (totalRendered % 7)) % 7;
+    for (let day = 1; day <= remainingCells; day++) {
+      const nextMonthIdx = currentMonth === 11 ? 0 : currentMonth + 1;
+      const nextYear = currentMonth === 11 ? currentYear + 1 : currentYear;
+      const dateStr = `${nextYear}-${String(nextMonthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayTasks = tasksByDate[dateStr] || [];
+
+      cellsHtml += this._renderDayCell(day, dateStr, dayTasks, true, false, projectMap, lang, todayStr);
+    }
+
+    calGrid.innerHTML = cellsHtml;
+  }
+
+  _renderDayCell(dayNum, dateStr, tasks, isOtherMonth, isToday, projectMap, lang, todayStr) {
+    const cellClass = `cal-day-cell ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'is-today' : ''}`;
+    const taskCount = tasks.length;
+
+    let tasksListHtml = "";
+    if (taskCount > 0) {
+      // Sort tasks by priority (Critical > High > Medium > Low)
+      const priorityOrder = { "Critical": 4, "High": 3, "Medium": 2, "Low": 1 };
+      const sortedTasks = [...tasks].sort((a, b) => {
+        if (a.status === "Completed" && b.status !== "Completed") return 1;
+        if (a.status !== "Completed" && b.status === "Completed") return -1;
+        return (priorityOrder[b.priority] || 2) - (priorityOrder[a.priority] || 2);
+      });
+
+      const visibleTasks = sortedTasks.slice(0, 3);
+      visibleTasks.forEach(t => {
+        const tName = lang === "ar" ? (t.taskNameAr || t.nameAr || t.task_name_ar || "مهمة بدون اسم") : (t.taskNameEn || t.nameEn || t.task_name_en || t.taskNameAr || "Untitled Task");
+        const priority = (t.priority || "Medium").toLowerCase();
+        const pId = t.projectId || t.project_id;
+        const prj = projectMap[pId];
+        const prjBadge = prj ? (prj.projectNo || (prj.nameAr ? prj.nameAr.slice(0, 8) : "PRJ")) : "";
+        const isOverdue = t.dueDate < todayStr && t.status !== "Completed" && t.status !== "Cancelled";
+        const isCompleted = t.status === "Completed";
+        
+        let chipClass = `cal-task-chip priority-${priority}`;
+        if (isCompleted) chipClass += " status-completed";
+        else if (isOverdue) chipClass += " status-overdue";
+
+        let statusIcon = "";
+        if (isCompleted) statusIcon = `<i class="fas fa-check-circle text-success" style="font-size:10px;"></i>`;
+        else if (isOverdue) statusIcon = `<i class="fas fa-exclamation-circle text-danger" style="font-size:10px;"></i>`;
+        else if (t.status === "In Progress") statusIcon = `<i class="fas fa-spinner fa-spin" style="font-size:9px; color:var(--sdi-blue);"></i>`;
+
+        tasksListHtml += `
+          <div class="${chipClass}" onclick="event.stopPropagation(); ProjectManager.openTaskModal('${pId}', '${t.id}')" title="${tName} | ${lang === 'ar' ? 'المشروع' : 'Project'}: ${prj ? (lang === 'ar' ? prj.nameAr : prj.nameEn) : ''} | ${lang === 'ar' ? 'الأولوية' : 'Priority'}: ${t.priority || 'Medium'} | ${lang === 'ar' ? 'نسبة الإنجاز' : 'Progress'}: ${t.progress || 0}%">
+            ${statusIcon}
+            <span class="cal-task-title">${tName}</span>
+            ${prjBadge ? `<span class="cal-task-prj-badge">${prjBadge}</span>` : ''}
+          </div>
+        `;
+      });
+
+      if (taskCount > 3) {
+        const moreCount = taskCount - 3;
+        tasksListHtml += `
+          <div class="cal-more-chip" onclick="event.stopPropagation(); ProjectManager.viewDateTasks('${dateStr}')">
+            +${moreCount} ${lang === 'ar' ? 'مهام إضافية' : 'more'}
+          </div>
+        `;
+      }
+    }
+
+    return `
+      <div class="${cellClass}" onclick="ProjectManager.viewDateTasks('${dateStr}')" data-date="${dateStr}">
+        <div class="cal-day-header">
+          <span class="cal-day-num">${dayNum}</span>
+          ${isToday ? `<span class="cal-day-badge-today">${lang === 'ar' ? 'اليوم' : 'Today'}</span>` : ''}
+          ${taskCount > 0 ? `<span class="cal-day-count-badge">${taskCount}</span>` : ''}
+        </div>
+        <div class="cal-day-tasks-list">
+          ${tasksListHtml}
+        </div>
+        <button type="button" class="cal-add-day-btn user-write-action" onclick="event.stopPropagation(); ProjectManager.quickAddTaskForDate('${dateStr}')" title="${lang === 'ar' ? 'إضافة مهمة بهذا التاريخ' : 'Add task on this date'}">
+          <i class="fas fa-plus"></i>
+        </button>
+      </div>
+    `;
+  }
+
+  async viewDateTasks(dateStr) {
+    this.selectedCalendarDateStr = dateStr;
+    const lang = AppState.lang;
+    const modalTitleEl = document.getElementById("calDayModalTitle");
+    const modalContentEl = document.getElementById("calDayModalContent");
+    if (!modalTitleEl || !modalContentEl) return;
+
+    let [tasks, projects, employees] = [[], [], []];
+    try {
+      [tasks, projects, employees] = await Promise.all([
+        db.getAll("projectTasks").catch(() => []),
+        db.getAll("projects").catch(() => []),
+        db.getAll("employees").catch(() => [])
+      ]);
+    } catch (e) {
+      console.warn("Error loading day tasks:", e);
+    }
+
+    tasks = Array.isArray(tasks) ? tasks : [];
+    projects = Array.isArray(projects) ? projects : [];
+    employees = Array.isArray(employees) ? employees : [];
+
+    const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+    const employeeMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+
+    modalTitleEl.innerHTML = `<i class="fas fa-calendar-day text-primary"></i> <span>${lang === 'ar' ? 'مهام تاريخ' : 'Tasks for'} ${dateStr}</span>`;
+
+    const dayTasks = tasks.filter(t => (t.dueDate || t.due_date) === dateStr);
+    const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
+
+    if (dayTasks.length === 0) {
+      modalContentEl.innerHTML = `
+        <div class="text-center py-4 text-muted">
+          <i class="far fa-calendar-times" style="font-size: 36px; color: var(--text-muted); opacity: 0.6; margin-bottom: 8px; display: block;"></i>
+          <p class="m-0">${lang === 'ar' ? 'لا توجد أي مهام مجدولة للاستحقاق في هذا اليوم.' : 'No tasks scheduled for deadline on this date.'}</p>
+        </div>
+      `;
+    } else {
+      let html = "";
+      dayTasks.forEach(t => {
+        const tName = lang === "ar" ? (t.taskNameAr || t.nameAr || t.task_name_ar || "مهمة بدون اسم") : (t.taskNameEn || t.nameEn || t.task_name_en || t.taskNameAr || "Untitled Task");
+        const pId = t.projectId || t.project_id;
+        const prj = projectMap[pId];
+        const prjName = prj ? (lang === "ar" ? prj.nameAr : (prj.nameEn || prj.nameAr)) : "-";
+        const assignee = employeeMap[t.responsibleEmployeeId || t.responsible_employee_id] || (lang === "ar" ? "غير محدد" : "Unassigned");
+        const priority = t.priority || "Medium";
+        const progress = t.progress !== undefined ? t.progress : 0;
+        const status = t.status || "Pending";
+
+        let priorityBadgeClass = "badge-secondary";
+        if (priority === "Critical") priorityBadgeClass = "badge-danger";
+        else if (priority === "High") priorityBadgeClass = "badge-warning";
+        else if (priority === "Medium") priorityBadgeClass = "badge-info";
+
+        let statusBadgeClass = "badge-secondary";
+        if (status === "Completed") statusBadgeClass = "badge-success";
+        else if (status === "In Progress") statusBadgeClass = "badge-primary";
+        else if (status === "Overdue") statusBadgeClass = "badge-danger";
+
+        html += `
+          <div class="card p-3" style="border: 1px solid var(--border-color); background: var(--bg-surface); border-radius: var(--radius-md);">
+            <div class="d-flex justify-between items-center mb-2" style="flex-wrap: wrap; gap: 8px;">
+              <div>
+                <strong style="font-size: 15px; color: var(--text-primary);">${tName}</strong>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                  <i class="fas fa-project-diagram text-primary"></i> ${prj ? `[${prj.projectNo || ''}] ` : ''}<strong>${prjName}</strong>
+                </div>
+              </div>
+              <div class="d-flex gap-2 align-items-center">
+                <span class="badge ${priorityBadgeClass}">${priority}</span>
+                <span class="badge ${statusBadgeClass}">${status}</span>
+              </div>
+            </div>
+
+            <div class="d-flex justify-between items-center text-muted mb-2" style="font-size: 12px; flex-wrap: wrap; gap: 8px;">
+              <span><i class="fas fa-user-tie text-secondary"></i> ${lang === 'ar' ? 'المسؤول' : 'Assignee'}: <strong>${assignee}</strong></span>
+              <span><i class="fas fa-clock text-warning"></i> ${lang === 'ar' ? 'الموعد النهائي' : 'Deadline'}: <strong>${dateStr}</strong></span>
+            </div>
+
+            <div class="progress-container mb-2" style="height: 6px; background: var(--border-color); border-radius: 4px; overflow: hidden;">
+              <div class="progress-bar ${progress === 100 ? 'bg-success' : 'bg-primary'}" style="width: ${progress}%; height: 100%;"></div>
+            </div>
+            <div class="d-flex justify-between items-center" style="font-size: 11px; color: var(--text-muted);">
+              <span>${lang === 'ar' ? 'نسبة الإنجاز:' : 'Progress:'} ${progress}%</span>
+              ${!isViewer ? `
+                <button type="button" class="btn btn-xs btn-outline-primary" onclick="App.closeModal('projectDayTasksModal'); ProjectManager.openTaskModal('${pId}', '${t.id}')">
+                  <i class="fas fa-edit"></i> ${lang === 'ar' ? 'تعديل المهمة' : 'Edit Task'}
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      });
+      modalContentEl.innerHTML = html;
+    }
+
+    App.openModal("projectDayTasksModal");
+  }
+
+  quickAddTaskForDate(dateStr) {
+    this.openTaskModal(null, null, dateStr);
+  }
+
+  openTaskModalFromDate() {
+    App.closeModal("projectDayTasksModal");
+    if (this.selectedCalendarDateStr) {
+      this.openTaskModal(null, null, this.selectedCalendarDateStr);
+    } else {
+      this.openTaskModal();
+    }
+  }
+
   async render() {
+    if (this.currentSubTab === "calendar") {
+      await this.renderCalendar();
+    }
+
     const tableBody = document.getElementById("projectsTableBody");
     if (!tableBody) return;
     const lang = AppState.lang;
@@ -1310,7 +1750,7 @@ class ProjectManagementController {
     App.openModal("projectDetailsModal");
   }
 
-  async openTaskModal(projectId = null, taskId = null) {
+  async openTaskModal(projectId = null, taskId = null, defaultDueDate = null) {
     try {
       const lang = (window.AppState && window.AppState.lang) || "ar";
       let projects = [], employees = [], contractors = [];
@@ -1335,13 +1775,15 @@ class ProjectManagementController {
       let targetProjectId = (projectId && projectId !== "undefined" && projectId !== "null") ? projectId : (this.activeDetailProjectId || "");
       if (taskId) {
         const existingTask = await db.getById("projectTasks", taskId);
-        if (existingTask && existingTask.projectId) {
-          targetProjectId = existingTask.projectId;
+        if (existingTask && (existingTask.projectId || existingTask.project_id)) {
+          targetProjectId = existingTask.projectId || existingTask.project_id;
         }
       }
       
-      if (!targetProjectId) {
-        App.showToast(lang === "ar" ? "يرجى تحديد المشروع المرتبط بالمهمة" : "Please select a project first", "error");
+      if (!targetProjectId && projects.length > 0) {
+        targetProjectId = projects[0].id;
+      } else if (!targetProjectId && projects.length === 0) {
+        App.showToast(lang === "ar" ? "يرجى إنشاء مشروع أولاً قبل إضافة المهام" : "Please create a project first before adding tasks", "warning");
         return;
       }
 
@@ -1413,7 +1855,7 @@ class ProjectManagementController {
         if (document.getElementById("formTaskNameEn")) document.getElementById("formTaskNameEn").value = "";
         if (document.getElementById("formTaskDesc")) document.getElementById("formTaskDesc").value = "";
         if (document.getElementById("formTaskStartDate")) document.getElementById("formTaskStartDate").value = new Date().toISOString().slice(0, 10);
-        if (document.getElementById("formTaskDueDate")) document.getElementById("formTaskDueDate").value = "";
+        if (document.getElementById("formTaskDueDate")) document.getElementById("formTaskDueDate").value = defaultDueDate || "";
         if (document.getElementById("formTaskResponsible")) document.getElementById("formTaskResponsible").value = "";
         if (document.getElementById("formTaskContractor")) document.getElementById("formTaskContractor").value = "";
         if (document.getElementById("formTaskPriority")) document.getElementById("formTaskPriority").value = "Medium";

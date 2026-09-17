@@ -1398,108 +1398,247 @@
               <h2><i class="fas fa-project-diagram text-primary"></i> <span data-i18n="projectsTitle">إدارة المشاريع التقنية</span></h2>
               <p data-i18n="projectsSubtitle">متابعة مشاريع تقنية المعلومات، المقاولين، المهام، ونسب الإنجاز</p>
             </div>
-            <div class="header-btns">
+            <div class="header-btns" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <!-- Projects View Sub-Tab Switcher -->
+              <div class="btn-group" style="display: inline-flex; gap: 4px; background: var(--bg-surface); padding: 3px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                <button id="btnProjectSubTabList" class="btn btn-sm btn-primary" onclick="ProjectManager.switchSubTab('list')">
+                  <i class="fas fa-list-ul"></i> <span data-i18n="projectsSubTabList">قائمة المشاريع</span>
+                </button>
+                <button id="btnProjectSubTabCalendar" class="btn btn-sm btn-secondary" onclick="ProjectManager.switchSubTab('calendar')">
+                  <i class="fas fa-calendar-alt"></i> <span data-i18n="projectsSubTabCalendar">تقويم مهام المشاريع</span>
+                </button>
+              </div>
+
               <button id="btnAddNewProject" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal()">
                 <i class="fas fa-plus"></i> <span data-i18n="btnAddProject">إضافة مشروع جديد</span>
+              </button>
+              <button id="btnAddNewTaskFromHeader" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openTaskModal()" style="display: none;">
+                <i class="fas fa-plus"></i> <span data-i18n="btnAddTask">إضافة مهمة جديدة</span>
               </button>
             </div>
           </div>
 
-          <div class="filter-toolbar">
-            <div class="filter-inputs-group" style="align-items: flex-end;">
-              <div class="filter-group">
-                <label data-i18n="searchInReport">البحث الشامل:</label>
-                <input 
-                  type="text" 
-                  id="projectSearchInput" 
-                  class="filter-input" 
-                  style="width: 328.656px;" 
-                  placeholder="بحث برقم أو اسم المشروع، المقاول..." data-i18n-placeholder="searchProjectPlaceholder"
-                  oninput="ProjectManager.render()"
-                >
-              </div>
+          <!-- 1. Projects Table View Container -->
+          <div id="projectsListViewContainer">
+            <div class="filter-toolbar">
+              <div class="filter-inputs-group" style="align-items: flex-end;">
+                <div class="filter-group">
+                  <label data-i18n="searchInReport">البحث الشامل:</label>
+                  <input 
+                    type="text" 
+                    id="projectSearchInput" 
+                    class="filter-input" 
+                    style="width: 328.656px;" 
+                    placeholder="بحث برقم أو اسم المشروع، المقاول..." data-i18n-placeholder="searchProjectPlaceholder"
+                    oninput="ProjectManager.render()"
+                  >
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterStatus">حالة المشروع:</label>
-                <select id="projectFilterStatus" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-                  <option value="" data-i18n="allStatuses">جميع الحالات</option>
-                  <option value="Planning" data-i18n="statusPlanning">تخطيط (Planning)</option>
-                  <option value="Approved" data-i18n="statusApproved">معتمد (Approved)</option>
-                  <option value="In Progress" data-i18n="statusInProgress">قيد التنفيذ (In Progress)</option>
-                  <option value="On Hold" data-i18n="statusOnHold">معلق (On Hold)</option>
-                  <option value="Completed" data-i18n="statusCompleted">مكتمل (Completed)</option>
-                  <option value="Cancelled" data-i18n="statusCancelled">ملغي (Cancelled)</option>
-                </select>
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterStatus">حالة المشروع:</label>
+                  <select id="projectFilterStatus" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                    <option value="" data-i18n="allStatuses">جميع الحالات</option>
+                    <option value="Planning" data-i18n="statusPlanning">تخطيط (Planning)</option>
+                    <option value="Approved" data-i18n="statusApproved">معتمد (Approved)</option>
+                    <option value="In Progress" data-i18n="statusInProgress">قيد التنفيذ (In Progress)</option>
+                    <option value="On Hold" data-i18n="statusOnHold">معلق (On Hold)</option>
+                    <option value="Completed" data-i18n="statusCompleted">مكتمل (Completed)</option>
+                    <option value="Cancelled" data-i18n="statusCancelled">ملغي (Cancelled)</option>
+                  </select>
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterLocation">الموقع:</label>
-                <select id="projectFilterLoc" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-                  <option value="" data-i18n="allLocs">جميع المواقع</option>
-                </select>
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterLocation">الموقع:</label>
+                  <select id="projectFilterLoc" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                    <option value="" data-i18n="allLocs">جميع المواقع</option>
+                  </select>
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterDepartment">القسم:</label>
-                <select id="projectFilterDept" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-                  <option value="" data-i18n="allDepts">جميع الأقسام</option>
-                </select>
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterDepartment">القسم:</label>
+                  <select id="projectFilterDept" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                    <option value="" data-i18n="allDepts">جميع الأقسام</option>
+                  </select>
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="contractor">المقاول:</label>
-                <select id="projectFilterContractor" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-                  <option value="" data-i18n="allContractors">جميع المقاولين</option>
-                </select>
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="contractor">المقاول:</label>
+                  <select id="projectFilterContractor" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                    <option value="" data-i18n="allContractors">جميع المقاولين</option>
+                  </select>
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterEmployee">المسؤول:</label>
-                <select id="projectFilterEmp" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-                  <option value="" data-i18n="allEmployees">جميع المسؤولين</option>
-                </select>
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterEmployee">المسؤول:</label>
+                  <select id="projectFilterEmp" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                    <option value="" data-i18n="allEmployees">جميع المسؤولين</option>
+                  </select>
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterDateFrom">من تاريخ:</label>
-                <input type="date" id="projectFilterDateFrom" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterDateFrom">من تاريخ:</label>
+                  <input type="date" id="projectFilterDateFrom" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                </div>
 
-              <div class="filter-group">
-                <label data-i18n="filterDateTo">إلى تاريخ:</label>
-                <input type="date" id="projectFilterDateTo" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
-              </div>
+                <div class="filter-group">
+                  <label data-i18n="filterDateTo">إلى تاريخ:</label>
+                  <input type="date" id="projectFilterDateTo" class="filter-input" style="width: 328.656px;" onchange="ProjectManager.render()">
+                </div>
 
-              <div class="filter-group" style="justify-content: flex-end; flex-direction: row; gap: 6px;">
-                <button class="btn btn-secondary btn-sm" onclick="ProjectManager.resetFilters()" title="إعادة تعيين" data-i18n-title="btnReset">
-                  <i class="fas fa-undo"></i> <span data-i18n="btnReset">إعادة تعيين</span>
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="ProjectManager.printProjectList()" title="طباعة قائمة المشاريع" data-i18n-title="btnPrint">
-                  <i class="fas fa-print"></i> <span data-i18n="btnPrint">طباعة</span>
-                </button>
+                <div class="filter-group" style="justify-content: flex-end; flex-direction: row; gap: 6px;">
+                  <button class="btn btn-secondary btn-sm" onclick="ProjectManager.resetFilters()" title="إعادة تعيين" data-i18n-title="btnReset">
+                    <i class="fas fa-undo"></i> <span data-i18n="btnReset">إعادة تعيين</span>
+                  </button>
+                  <button class="btn btn-secondary btn-sm" onclick="ProjectManager.printProjectList()" title="طباعة قائمة المشاريع" data-i18n-title="btnPrint">
+                    <i class="fas fa-print"></i> <span data-i18n="btnPrint">طباعة</span>
+                  </button>
+                </div>
               </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="custom-table" id="projectsTable">
+                <thead>
+                  <tr>
+                    <th data-i18n="projectNo">رقم المشروع</th>
+                    <th data-i18n="projectName">اسم المشروع</th>
+                    <th data-i18n="contractor">المقاول / الشركة</th>
+                    <th data-i18n="location">الموقع</th>
+                    <th data-i18n="startDate">تاريخ البدء</th>
+                    <th data-i18n="plannedEndDate">تاريخ الانتهاء المخطط</th>
+                    <th data-i18n="progressPct">نسبة الإنجاز (%)</th>
+                    <th data-i18n="projectStatus">حالة المشروع</th>
+                    <th data-i18n="actions">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody id="projectsTableBody">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="custom-table" id="projectsTable">
-              <thead>
-                <tr>
-                  <th data-i18n="projectNo">رقم المشروع</th>
-                  <th data-i18n="projectName">اسم المشروع</th>
-                  <th data-i18n="contractor">المقاول / الشركة</th>
-                  <th data-i18n="location">الموقع</th>
-                  <th data-i18n="startDate">تاريخ البدء</th>
-                  <th data-i18n="plannedEndDate">تاريخ الانتهاء المخطط</th>
-                  <th data-i18n="progressPct">نسبة الإنجاز (%)</th>
-                  <th data-i18n="projectStatus">حالة المشروع</th>
-                  <th data-i18n="actions">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody id="projectsTableBody">
-                <!-- Populated via JS -->
-              </tbody>
-            </table>
+          <!-- 2. Project Tasks Monthly Calendar View Container -->
+          <div id="projectsCalendarViewContainer" style="display: none;">
+            <!-- Calendar Metric KPI Cards -->
+            <div class="calendar-kpi-bar mb-3">
+              <div class="calendar-kpi-chip kpi-total">
+                <div class="kpi-icon-wrap"><i class="fas fa-tasks"></i></div>
+                <div class="kpi-content">
+                  <span class="kpi-label" data-i18n="tasksCountThisMonth">مهام الشهر</span>
+                  <span class="kpi-val" id="calKpiTotalMonth">0</span>
+                </div>
+              </div>
+              <div class="calendar-kpi-chip kpi-due-today">
+                <div class="kpi-icon-wrap"><i class="fas fa-clock"></i></div>
+                <div class="kpi-content">
+                  <span class="kpi-label" data-i18n="tasksDueToday">تستحق اليوم</span>
+                  <span class="kpi-val" id="calKpiDueToday">0</span>
+                </div>
+              </div>
+              <div class="calendar-kpi-chip kpi-due-week">
+                <div class="kpi-icon-wrap"><i class="fas fa-calendar-week"></i></div>
+                <div class="kpi-content">
+                  <span class="kpi-label" data-i18n="tasksDueThisWeek">تستحق هذا الأسبوع</span>
+                  <span class="kpi-val" id="calKpiDueWeek">0</span>
+                </div>
+              </div>
+              <div class="calendar-kpi-chip kpi-overdue">
+                <div class="kpi-icon-wrap"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="kpi-content">
+                  <span class="kpi-label" data-i18n="tasksOverdue">مهام متأخرة</span>
+                  <span class="kpi-val" id="calKpiOverdue">0</span>
+                </div>
+              </div>
+              <div class="calendar-kpi-chip kpi-completed">
+                <div class="kpi-icon-wrap"><i class="fas fa-check-circle"></i></div>
+                <div class="kpi-content">
+                  <span class="kpi-label" data-i18n="tasksCompletedMonth">مكتملة</span>
+                  <span class="kpi-val" id="calKpiCompleted">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calendar Control Header -->
+            <div class="calendar-header-card card p-3 mb-3">
+              <div class="calendar-nav-toolbar">
+                <div class="calendar-nav-buttons">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="ProjectManager.prevMonth()" title="الشهر السابق" data-i18n-title="calendarPrevMonth">
+                    <i class="fas fa-chevron-right rtl-rotate"></i>
+                  </button>
+                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="ProjectManager.jumpToToday()" title="اليوم" data-i18n-title="btnToday">
+                    <i class="fas fa-calendar-day"></i> <span data-i18n="btnToday">اليوم</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="ProjectManager.nextMonth()" title="الشهر القادم" data-i18n-title="calendarNextMonth">
+                    <i class="fas fa-chevron-left rtl-rotate"></i>
+                  </button>
+                  <div class="calendar-current-month-display">
+                    <h3 id="calendarMonthYearText" class="m-0">سبتمبر 2026</h3>
+                  </div>
+                </div>
+
+                <!-- Calendar Filters -->
+                <div class="calendar-filter-controls">
+                  <div class="cal-filter-item">
+                    <select id="calendarFilterProject" class="filter-input-sm" onchange="ProjectManager.handleCalendarFilterChange()">
+                      <option value="">جميع المشاريع</option>
+                    </select>
+                  </div>
+                  <div class="cal-filter-item">
+                    <select id="calendarFilterStatus" class="filter-input-sm" onchange="ProjectManager.handleCalendarFilterChange()">
+                      <option value="">جميع الحالات</option>
+                      <option value="Pending">Pending (قيد الانتظار)</option>
+                      <option value="In Progress">In Progress (قيد التنفيذ)</option>
+                      <option value="Completed">Completed (مكتمل)</option>
+                      <option value="On Hold">On Hold (معلق)</option>
+                      <option value="Overdue">Overdue (متأخر)</option>
+                    </select>
+                  </div>
+                  <div class="cal-filter-item">
+                    <select id="calendarFilterPriority" class="filter-input-sm" onchange="ProjectManager.handleCalendarFilterChange()">
+                      <option value="">جميع الأولويات</option>
+                      <option value="Critical">Critical (حرج)</option>
+                      <option value="High">High (عالي)</option>
+                      <option value="Medium">Medium (متوسط)</option>
+                      <option value="Low">Low (منخفض)</option>
+                    </select>
+                  </div>
+                  <div class="cal-filter-item">
+                    <input type="text" id="calendarSearchInput" class="filter-input-sm" placeholder="بحث في المهام..." data-i18n-placeholder="searchTaskPlaceholder" oninput="ProjectManager.handleCalendarFilterChange()">
+                  </div>
+                  <div class="cal-filter-item">
+                    <button type="button" class="btn btn-xs btn-secondary" onclick="ProjectManager.resetCalendarFilters()" title="إعادة تعيين الفلاتر" data-i18n-title="btnReset">
+                      <i class="fas fa-undo"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calendar Grid Container -->
+            <div class="calendar-wrapper mb-3">
+              <div class="calendar-grid-header" id="calendarGridWeekdays">
+                <div class="cal-col-header" data-i18n="daySunday">الأحد</div>
+                <div class="cal-col-header" data-i18n="dayMonday">الاثنين</div>
+                <div class="cal-col-header" data-i18n="dayTuesday">الثلاثاء</div>
+                <div class="cal-col-header" data-i18n="dayWednesday">الأربعاء</div>
+                <div class="cal-col-header" data-i18n="dayThursday">الخميس</div>
+                <div class="cal-col-header" data-i18n="dayFriday">الجمعة</div>
+                <div class="cal-col-header" data-i18n="daySaturday">السبت</div>
+              </div>
+              <div class="calendar-grid-body" id="projectCalendarGrid">
+                <!-- Day cells rendered via JS -->
+              </div>
+            </div>
+
+            <!-- Calendar Legend -->
+            <div class="calendar-legend-bar">
+              <span class="legend-title"><i class="fas fa-info-circle text-primary"></i> <span data-i18n="calendarLegend">دليل الحالات:</span></span>
+              <span class="legend-item"><span class="legend-dot status-critical"></span> <span data-i18n="legendOverdue">متأخر / حرج</span></span>
+              <span class="legend-item"><span class="legend-dot status-high"></span> <span data-i18n="legendDueSoon">يستحق قريباً</span></span>
+              <span class="legend-item"><span class="legend-dot status-in-progress"></span> <span data-i18n="legendInProgress">قيد التنفيذ</span></span>
+              <span class="legend-item"><span class="legend-dot status-completed"></span> <span data-i18n="legendCompleted">مكتمل</span></span>
+            </div>
           </div>
         </section>
 
@@ -3466,6 +3605,28 @@
           <button type="submit" class="btn btn-primary" data-i18n="btnSaveTask">حفظ المهمة</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Project Tasks on Specific Date (Calendar Day View) -->
+  <div class="modal-container" id="projectDayTasksModal">
+    <div class="modal-backdrop" onclick="App.closeModal('projectDayTasksModal')"></div>
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h3 id="calDayModalTitle"><i class="fas fa-calendar-day text-primary"></i> <span data-i18n="calendarDayTasksTitle">مهام اليوم المحدد</span></h3>
+        <button class="modal-close-btn" onclick="App.closeModal('projectDayTasksModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="calDayModalContent" class="d-flex flex-column gap-3">
+          <!-- Day tasks populated via JS -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-sm btn-primary user-write-action" id="btnCalDayModalAddTask" onclick="ProjectManager.openTaskModalFromDate()">
+          <i class="fas fa-plus"></i> <span data-i18n="btnQuickAddTaskOnDate">إضافة مهمة بهذا التاريخ</span>
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="App.closeModal('projectDayTasksModal')" data-i18n="btnClose">إغلاق</button>
+      </div>
     </div>
   </div>
 
