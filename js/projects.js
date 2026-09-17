@@ -1299,6 +1299,14 @@ class ProjectManagementController {
       }
     }
 
+    const btnAddTask = document.getElementById("btnAddNewProjectTask");
+    if (btnAddTask) {
+      btnAddTask.onclick = (e) => {
+        e.preventDefault();
+        this.openTaskModal(projectId);
+      };
+    }
+
     App.openModal("projectDetailsModal");
   }
 
@@ -1331,8 +1339,10 @@ class ProjectManagementController {
           targetProjectId = existingTask.projectId;
         }
       }
-      if (!targetProjectId && projects.length > 0) {
-        targetProjectId = projects[0].id;
+      
+      if (!targetProjectId) {
+        App.showToast(lang === "ar" ? "يرجى تحديد المشروع المرتبط بالمهمة" : "Please select a project first", "error");
+        return;
       }
 
       const prjSelect = document.getElementById("formTaskProjectIdSelect");

@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS public.project_tasks (
     due_date TEXT,
     responsible_employee_id TEXT,
     contractor_id TEXT,
+    priority TEXT DEFAULT 'Medium',
     progress NUMERIC DEFAULT 0,
     status TEXT DEFAULT 'Pending',
     notes TEXT,

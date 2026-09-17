@@ -138,6 +138,7 @@ function toCloudRecord(storeName, item) {
       due_date: row.dueDate || row.due_date || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       contractor_id: row.contractorId || row.contractor_id || null,
+      priority: row.priority || "Medium",
       progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Pending",
       notes: row.notes || row.remarks || null
@@ -435,6 +436,7 @@ function fromCloudRecord(storeName, row) {
     item.responsibleEmployeeId = row.responsible_employee_id || row.responsibleEmployeeId;
     item.contractorId = row.contractor_id || row.contractorId;
     item.progress = typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0);
+    item.priority = row.priority || item.priority || "Medium";
     item.status = row.status || item.status || "Pending";
     item.remarks = row.notes || row.remarks || item.remarks || "";
     item.notes = row.notes || row.remarks || item.notes || "";
