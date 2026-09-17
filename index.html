@@ -1398,9 +1398,6 @@
               <button id="btnAddNewProject" class="btn btn-primary btn-sm user-write-action" onclick="ProjectManager.openProjectModal()">
                 <i class="fas fa-plus"></i> <span data-i18n="btnAddProject">إضافة مشروع جديد</span>
               </button>
-              <button id="btnAddNewProjectTask" class="btn btn-secondary btn-sm user-write-action" onclick="ProjectManager.openTaskModal(ProjectManager.activeDetailProjectId || '')">
-                <i class="fas fa-tasks"></i> <span data-i18n="btnAddTask">إضافة مهمة للمشروع</span>
-              </button>
             </div>
           </div>
 
@@ -3512,7 +3509,7 @@
         <!-- Tasks Section -->
         <div class="d-flex justify-between items-center mb-2">
           <h4 style="margin: 0;"><i class="fas fa-tasks text-primary"></i> <span data-i18n="tabProjectTasks">مهام المشروع</span></h4>
-          <button class="btn btn-xs btn-primary user-write-action" onclick="ProjectManager.openTaskModal(ProjectManager.activeDetailProjectId)">
+          <button id="btnAddNewProjectTask" class="btn btn-xs btn-primary user-write-action" onclick="ProjectManager.openTaskModal(ProjectManager.activeDetailProjectId)">
             <i class="fas fa-plus"></i> <span data-i18n="btnAddTask">إضافة مهمة</span>
           </button>
         </div>
