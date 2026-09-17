@@ -114,6 +114,24 @@ class AssetInventoryManager {
     if (countBadge) countBadge.textContent = `${filtered.length} / ${assets.length}`;
 
     if (filtered.length === 0) {
+      const assetErr = (typeof db !== "undefined" && db.getLastError) ? db.getLastError("assets") : null;
+      if (assetErr && assets.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="10" class="text-center py-5">
+              <div class="empty-state">
+                <i class="fas fa-exclamation-triangle empty-icon text-danger"></i>
+                <h4 class="text-danger">${lang === "ar" ? "تعذر تحميل سجلات الأصول من قاعدة البيانات السحابية" : "Failed to load assets from cloud database"}</h4>
+                <p class="text-muted text-xs mb-3">${assetErr.message || ""}</p>
+                <button class="btn btn-sm btn-outline-primary" onclick="AssetManager.render()">
+                  <i class="fas fa-sync-alt me-1"></i> ${lang === "ar" ? "إعادة المحاولة" : "Retry Connection"}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
       tableBody.innerHTML = `
         <tr>
           <td colspan="10" class="text-center py-5">
@@ -205,7 +223,7 @@ class AssetInventoryManager {
     switch (status) {
       case "Available": return lang === "ar" ? "متاح" : "Available";
       case "Assigned": return lang === "ar" ? "مسند لموظف" : "Assigned";
-      case "Installed": return lang === "ar" ? "مركب" : "Installed";
+      case "Installed": return lang === "ar" ? "مركب / مثبت" : "Installed";
       case "In Transit": return lang === "ar" ? "قيد النقل / بانتظار التركيب" : "In Transit";
       case "Under Maintenance": return lang === "ar" ? "في الصيانة" : "Under Maintenance";
       case "In Store": return lang === "ar" ? "في المستودع" : "In Store";

@@ -342,6 +342,8 @@ const I18N = {
     // Status Values
     statusAvailable: "متاح",
     statusAssigned: "مسند",
+    statusInstalled: "مركب / مثبت",
+    statusInTransit: "قيد النقل / بانتظار التركيب",
     statusUnderMaintenance: "تحت الصيانة",
     statusInStore: "في المستودع",
     statusDamaged: "تالف",
@@ -1527,6 +1529,8 @@ const I18N = {
     // Status Values
     statusAvailable: "Available",
     statusAssigned: "Assigned",
+    statusInstalled: "Installed",
+    statusInTransit: "In Transit",
     statusUnderMaintenance: "Under Maintenance",
     statusInStore: "In Store",
     statusDamaged: "Damaged",
@@ -2432,14 +2436,14 @@ _root.formatStatus = function(status, lang = "ar") {
     case "Assigned": return I18N[l].statusAssigned || (l === "ar" ? "عهدة موظف" : "Assigned");
     case "Under Maintenance": return I18N[l].statusUnderMaintenance || (l === "ar" ? "تحت الصيانة" : "Under Maintenance");
     case "In Store": return I18N[l].statusInStore || (l === "ar" ? "بالمستودع" : "In Store");
-    case "In Transit": return I18N[l].statusInTransit || (l === "ar" ? "في الطريق" : "In Transit");
+    case "In Transit": return I18N[l].statusInTransit || (l === "ar" ? "قيد النقل / بانتظار التركيب" : "In Transit");
     case "Damaged": return I18N[l].statusDamaged || (l === "ar" ? "تالف" : "Damaged");
     case "Lost": return I18N[l].statusLost || (l === "ar" ? "مفقود" : "Lost");
     case "Retired": return I18N[l].statusRetired || (l === "ar" ? "مكهن" : "Retired");
     case "Disposed": return I18N[l].statusDisposed || (l === "ar" ? "تم التخلص منه" : "Disposed");
     case "Active": return l === "ar" ? "نشط" : "Active";
     case "Inactive": return l === "ar" ? "غير نشط" : "Inactive";
-    case "Installed": return l === "ar" ? "تم التركيب" : "Installed";
+    case "Installed": return I18N[l].statusInstalled || (l === "ar" ? "مركب / مثبت" : "Installed");
     case "Draft": return l === "ar" ? "مسودة" : "Draft";
     case "Pending": return l === "ar" ? "قيد الانتظار" : "Pending";
     case "Planning": return l === "ar" ? "مخطط" : "Planning";

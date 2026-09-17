@@ -1132,12 +1132,26 @@ class DBEngine {
           return cloudItems;
         }
         if (error) {
-          if (this.lastQueryErrors) this.lastQueryErrors[storeName] = error;
+          if (this.lastQueryErrors) {
+            this.lastQueryErrors[storeName] = {
+              table,
+              timestamp: Date.now(),
+              message: error.message || String(error),
+              error
+            };
+          }
           console.warn(`Supabase getAll(${storeName}) failed:`, error);
         }
         return this.getFallbackStore(storeName);
       } catch (cloudErr) {
-        if (this.lastQueryErrors) this.lastQueryErrors[storeName] = cloudErr;
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table: STORE_TABLE_MAP[storeName],
+            timestamp: Date.now(),
+            message: cloudErr.message || String(cloudErr),
+            error: cloudErr
+          };
+        }
         console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
         return this.getFallbackStore(storeName);
       }
@@ -1177,10 +1191,29 @@ class DBEngine {
           .eq(cloudCol, filterValue);
         
         if (!error && Array.isArray(data)) {
+          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
           return data.map(r => fromCloudRecord(storeName, r));
         }
-        if (error) console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
+        if (error) {
+          if (this.lastQueryErrors) {
+            this.lastQueryErrors[storeName] = {
+              table,
+              timestamp: Date.now(),
+              message: error.message || String(error),
+              error
+            };
+          }
+          console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
+        }
       } catch (cloudErr) {
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table: STORE_TABLE_MAP[storeName],
+            timestamp: Date.now(),
+            message: cloudErr.message || String(cloudErr),
+            error: cloudErr
+          };
+        }
         console.warn(`Supabase getFiltered(${storeName}) failed:`, cloudErr);
       }
     }
@@ -1280,10 +1313,29 @@ class DBEngine {
       try {
         const table = STORE_TABLE_MAP[storeName];
         const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
-        if (!error && data) return fromCloudRecord(storeName, data);
-        if (error) console.warn(`Supabase getById(${storeName}) failed:`, error);
+        if (!error) {
+          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
+          return data ? fromCloudRecord(storeName, data) : null;
+        }
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table,
+            timestamp: Date.now(),
+            message: error.message || String(error),
+            error
+          };
+        }
+        console.warn(`Supabase getById(${storeName}) failed:`, error);
         return searchInList(this.getFallbackStore(storeName));
       } catch (e) {
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table: STORE_TABLE_MAP[storeName],
+            timestamp: Date.now(),
+            message: e.message || String(e),
+            error: e
+          };
+        }
         console.warn(`Supabase getById(${storeName}) catch:`, e);
         return searchInList(this.getFallbackStore(storeName));
       }
@@ -1427,11 +1479,21 @@ class DBEngine {
   async put(storeName, item) {
     if (!item) return item;
 
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
+    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
     if (STORE_TABLE_MAP[storeName] && (!this.isCloudOnline || !this.supabase) && !isNodeTest) {
-      console.warn("Cloud database offline, saving to fallback storage:", storeName);
-      this.saveToFallbackStore(storeName, item);
-      return item;
+      const offlineMsg = (typeof AppState !== "undefined" && AppState && AppState.lang === "ar")
+        ? "الاتصال بقاعدة البيانات السحابية غير متاح. لا يمكن حفظ التغييرات بدون اتصال سحابي فعال."
+        : "Cloud database connection is unavailable. Cannot save business records offline.";
+      const offlineErr = new Error(offlineMsg);
+      if (this.lastQueryErrors) {
+        this.lastQueryErrors[storeName] = {
+          table: STORE_TABLE_MAP[storeName],
+          timestamp: Date.now(),
+          message: offlineMsg,
+          error: offlineErr
+        };
+      }
+      throw offlineErr;
     }
 
     // Automatic generation of Sequential Primary Key if id is missing or contains temporary timestamp/prefix
@@ -1472,18 +1534,28 @@ class DBEngine {
           const { error } = await this.supabase.from(table).insert(cloudRecord);
           if (error) throw error;
         }
-      } catch (e) {
-        console.warn(`Supabase sync error on ${storeName}:`, e);
-        this.saveToFallbackStore(storeName, item);
+        // Authoritative write successful: update local temporary read cache snapshot
+        try {
+          this.saveToFallbackStore(storeName, item);
+        } catch (cacheErr) {}
+        if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         return item;
+      } catch (e) {
+        console.error(`Supabase write error on ${storeName}:`, e);
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table: STORE_TABLE_MAP[storeName],
+            timestamp: Date.now(),
+            message: e.message || String(e),
+            error: e
+          };
+        }
+        // FAILED CLOUD WRITE: Never save to local business fallback, do not return success, throw real error
+        throw e;
       }
-
-      // In strict cloud-only mode, IndexedDB must never become a second
-      // operational source of truth after a successful cloud write.
-      if (STRICT_CLOUD_ONLY) return item;
     }
 
-    const isFallbackNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
+    const isFallbackNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
     if (!STRICT_CLOUD_ONLY || !STORE_TABLE_MAP[storeName] || isFallbackNodeTest) {
       this.saveToFallbackStore(storeName, item);
     }
@@ -1503,7 +1575,7 @@ class DBEngine {
   }
 
   async delete(storeName, id) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;
+    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
     if (STORE_TABLE_MAP[storeName] && (!this.isCloudOnline || !this.supabase) && !isNodeTest) {
       throw new Error("Cloud database connection is unavailable. This operation requires an active cloud connection. / الاتصال بقاعدة البيانات السحابية غير متاح. هذه العملية تتطلب اتصالاً فعالاً بالسحابة.");
     }
@@ -1520,8 +1592,20 @@ class DBEngine {
         const table = STORE_TABLE_MAP[storeName];
         const { error } = await this.supabase.from(table).delete().eq('id', id);
         if (error) throw error;
+        // On successful cloud delete: keep local read-cache snapshot in sync
+        this.deleteFromFallbackStore(storeName, id);
+        if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
+        return true;
       } catch (e) {
-        console.warn(`Supabase delete sync error:`, e);
+        console.error(`Supabase delete sync error on ${storeName}:`, e);
+        if (this.lastQueryErrors) {
+          this.lastQueryErrors[storeName] = {
+            table: STORE_TABLE_MAP[storeName],
+            timestamp: Date.now(),
+            message: e.message || String(e),
+            error: e
+          };
+        }
         if (storeName === "offices" || (e && (e.code === "42P01" || (e.message && e.message.includes("does not exist"))))) {
           console.info(`Deleted ${storeName} from fallback store due to pending cloud migration.`);
           this.deleteFromFallbackStore(storeName, id);
@@ -1529,8 +1613,6 @@ class DBEngine {
         }
         throw e;
       }
-
-      if (STRICT_CLOUD_ONLY && storeName !== "offices") return true;
     }
 
     const isFallbackNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || window.__SDI_TEST_ENV__;

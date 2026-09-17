@@ -491,6 +491,7 @@ class Application {
     let countAvailable = 0;
     let countInStore = 0;
     let countInTransit = 0;
+    let countInstalled = 0;
     let countMaintenance = 0;
     let countDamaged = 0;
     let countLost = 0;
@@ -508,6 +509,7 @@ class Application {
       else if (st === "Available") countAvailable++;
       else if (st === "In Store") countInStore++;
       else if (st === "In Transit" || st === "Pending Installation") countInTransit++;
+      else if (st === "Installed") countInstalled++;
       else if (st === "Under Maintenance") countMaintenance++;
       else if (st === "Damaged") countDamaged++;
       else if (st === "Lost") countLost++;
@@ -525,11 +527,18 @@ class Application {
       if (el) el.textContent = val;
     };
 
+    // Error-to-Zero protection: distinguish between true zero and query failure
+    const hasAssetsErr = Boolean(db.getLastError && db.getLastError("assets") && assets.length === 0);
+    const hasEmpErr = Boolean(db.getLastError && db.getLastError("employees") && employees.length === 0);
+    const hasDeptErr = Boolean(db.getLastError && db.getLastError("departments") && departments.length === 0);
+    const hasLocErr = Boolean(db.getLastError && db.getLastError("locations") && locations.length === 0);
+    const hasMaintErr = Boolean(db.getLastError && db.getLastError("maintenance") && maintenance.length === 0);
+
     // Set 4 Institutional Overview Indicators
-    setElem("dashCountEmployees", countEmployees);
-    setElem("dashCountDepartments", countDepartments);
-    setElem("dashCountLocations", countLocations);
-    setElem("dashCountActiveMaint", countActiveMaint);
+    setElem("dashCountEmployees", hasEmpErr ? "—" : countEmployees);
+    setElem("dashCountDepartments", hasDeptErr ? "—" : countDepartments);
+    setElem("dashCountLocations", hasLocErr ? "—" : countLocations);
+    setElem("dashCountActiveMaint", hasMaintErr ? "—" : countActiveMaint);
 
     // Set Projects Metrics, Follow-Up Notifications & Overall Progress
     const countProjects = (projects || []).length;
@@ -718,16 +727,18 @@ class Application {
     this.renderDashboardWarrantyAlerts();
 
     // Set Operational Status Indicators
-    setElem("dashCountTotal", countTotal);
-    setElem("dashCountAssigned", countAssigned);
-    setElem("dashCountAvailable", countAvailable);
-    setElem("dashCountInStore", countInStore);
-    setElem("dashCountPendingInstall", countInTransit);
-    setElem("dashCountMaintenance", countMaintenance);
-    setElem("dashCountDamaged", countDamaged);
-    setElem("dashCountLost", countLost);
-    setElem("dashCountRetired", countRetired);
-    setElem("dashCountDisposed", countDisposed);
+    setElem("dashCountTotal", hasAssetsErr ? "—" : countTotal);
+    setElem("dashCountAssigned", hasAssetsErr ? "—" : countAssigned);
+    setElem("dashCountAvailable", hasAssetsErr ? "—" : countAvailable);
+    setElem("dashCountInStore", hasAssetsErr ? "—" : countInStore);
+    setElem("dashCountPendingInstall", hasAssetsErr ? "—" : countInTransit);
+    setElem("dashCountInTransit", hasAssetsErr ? "—" : countInTransit);
+    setElem("dashCountInstalled", hasAssetsErr ? "—" : countInstalled);
+    setElem("dashCountMaintenance", hasAssetsErr ? "—" : countMaintenance);
+    setElem("dashCountDamaged", hasAssetsErr ? "—" : countDamaged);
+    setElem("dashCountLost", hasAssetsErr ? "—" : countLost);
+    setElem("dashCountRetired", hasAssetsErr ? "—" : countRetired);
+    setElem("dashCountDisposed", hasAssetsErr ? "—" : countDisposed);
 
     // 2. Summary by Asset Type
     const typeBox = document.getElementById("dashSummaryByType");
@@ -2247,6 +2258,8 @@ class Application {
           <option value="" data-i18n="filterAllStatuses">${I18N[lang].filterAllStatuses || "جميع الحالات"}</option>
           <option value="Available" data-i18n="statusAvailable">${I18N[lang].statusAvailable || "متاح"}</option>
           <option value="Assigned" data-i18n="statusAssigned">${I18N[lang].statusAssigned || "مسند"}</option>
+          <option value="Installed" data-i18n="statusInstalled">${I18N[lang].statusInstalled || "مركب / مثبت"}</option>
+          <option value="In Transit" data-i18n="statusInTransit">${I18N[lang].statusInTransit || "قيد النقل / بانتظار التركيب"}</option>
           <option value="In Store" data-i18n="statusInStore">${I18N[lang].statusInStore || "في المستودع"}</option>
           <option value="Under Maintenance" data-i18n="statusUnderMaint">${I18N[lang].statusUnderMaint || "تحت الصيانة"}</option>
           <option value="Damaged" data-i18n="statusDamaged">${I18N[lang].statusDamaged || "تالف"}</option>
