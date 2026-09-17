@@ -2455,6 +2455,12 @@ textarea.form-control {
   transform: translateY(-1px);
 }
 
+#btnAddNewProjectTask:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 5px var(--sdi-blue), 0 0 12px rgba(11, 60, 104, 0.4);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
 .btn-info {
   background: var(--accent-cyan);
   color: #0f172a;
