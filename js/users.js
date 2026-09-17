@@ -531,12 +531,22 @@ class OrganizationalManager {
       notes
     };
 
-    await db.put("employees", empData);
-    App.closeModal("employeeModal");
-    App.showToast(I18N[AppState.lang].saveSuccess, "success");
-    await this.renderEmployees();
-    if (window.AssetManager && typeof AssetManager.populateDropdowns === "function") {
-      await AssetManager.populateDropdowns();
+    try {
+      await db.put("employees", empData);
+      App.closeModal("employeeModal");
+      App.showToast(I18N[AppState.lang].saveSuccess, "success");
+      await this.renderEmployees();
+      if (window.AssetManager && typeof AssetManager.populateDropdowns === "function") {
+        await AssetManager.populateDropdowns();
+      }
+    } catch (err) {
+      console.error("Employee save error:", err);
+      App.showToast(
+        AppState.lang === "ar"
+          ? ("فشل حفظ الموظف في السحابة: " + (err.message || "خطأ غير متوقع"))
+          : ("Failed to save employee to Cloud: " + (err.message || "Unexpected error")),
+        "error"
+      );
     }
   }
 

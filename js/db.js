@@ -138,10 +138,9 @@ function toCloudRecord(storeName, item) {
       due_date: row.dueDate || row.due_date || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       contractor_id: row.contractorId || row.contractor_id || null,
-      priority: row.priority || "Medium",
       progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Pending",
-      notes: row.notes || row.remarks || null
+      notes: row.notes || row.remarks || (row.priority ? `Priority: ${row.priority}` : null)
     };
   }
   if (storeName === "licenses") {
@@ -192,14 +191,13 @@ function toCloudRecord(storeName, item) {
   if (storeName === "employees") {
     return {
       id: row.id,
-      employee_id: row.employeeId || row.employeeNumber || row.employee_id || null,
+      employee_id: row.employeeId || row.employeeNumber || row.employee_id || row.id || null,
       name_ar: row.nameAr || row.name_ar || "",
       name_en: row.nameEn || row.name_en || null,
       email: row.email || null,
       phone: row.phone || null,
       job_title: row.jobTitle || row.job_title || null,
       department_id: row.departmentId || row.department_id || null,
-      office_id: row.officeId || row.office_id || null,
       status: row.status || "Active"
     };
   }
