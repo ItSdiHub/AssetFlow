@@ -3807,13 +3807,14 @@ class AssetOperationsController {
     if (!tableBody) return;
     const lang = AppState.lang;
     try {
-      const [assets, locations, departments, types, projects, employees] = await Promise.all([
+      const [assets, locations, departments, types, projects, employees, offices] = await Promise.all([
         db.getAll("assets"),
         db.getAll("locations"),
         db.getAll("departments"),
         db.getAll("assetTypes"),
         db.getAll("projects"),
-        db.getAll("employees")
+        db.getAll("employees"),
+        db.getAll("offices").catch(() => [])
       ]);
 
       const locMap = Object.fromEntries(locations.map(l => [l.id, lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
@@ -3821,6 +3822,7 @@ class AssetOperationsController {
       const typeMap = Object.fromEntries(types.map(t => [t.id, lang === "ar" ? t.nameAr : (t.nameEn || t.nameAr)]));
       const prjMap = Object.fromEntries(projects.map(p => [p.id, lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr)]));
       const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+      const officeMap = Object.fromEntries((offices || []).map(o => [o.id, lang === "ar" ? o.nameAr : (o.nameEn || o.nameAr)]));
 
       // Filter assets that are installed on-site (status === "Installed", or status === "In Use", or has installation metadata)
       const installedAssets = assets.filter(a => 
@@ -3911,7 +3913,8 @@ class AssetOperationsController {
         const assetName = `${a.brand || ''} ${a.model || a.name || ''}`.trim() || "-";
         const locName = locMap[a.locationId] || "-";
         const deptName = deptMap[a.departmentId] || "-";
-        const areaRoom = locMap[a.office] || a.office || a.room || locMap[a.specs?.office] || a.specs?.office || "-";
+        const curOfficeId = a.officeId || a.office;
+        const areaRoom = officeMap[curOfficeId] || curOfficeId || a.room || a.specs?.office || "-";
         const prjName = prjMap[a.projectId] || "-";
         const instDate = a.installationDate || a.assignmentDate || "-";
         const installedBy = empMap[a.installedBy] || a.installedBy || "-";
@@ -4005,7 +4008,7 @@ class AssetOperationsController {
     const deptName = deptMap[asset.departmentId] || "-";
     const prjName = prjMap[asset.projectId] || "-";
     const curOffId = asset.officeId || asset.office;
-    const areaRoom = officeMap[curOffId] || curOffId || asset.room || locMap[asset.specs?.office] || asset.specs?.office || "-";
+    const areaRoom = officeMap[curOffId] || curOffId || asset.room || asset.specs?.office || "-";
     const instDate = asset.installationDate || asset.assignmentDate || "-";
     
     // Resolve Technician who installed the device
