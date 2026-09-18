@@ -662,7 +662,7 @@ class DBEngine {
     } catch (e) {}
   }
 
-  saveFallbackStore(storeName, items) {
+  saveFallbackSnapshot(storeName, items) {
     if (!Array.isArray(items)) return;
     this.memoryStore[storeName] = [...items];
     try {
@@ -670,38 +670,52 @@ class DBEngine {
     } catch (e) {}
   }
 
+  saveFallbackStore(storeName, items) {
+    if (Array.isArray(items)) {
+      this.saveFallbackSnapshot(storeName, items);
+    } else if (items && typeof items === 'object') {
+      this.saveToFallbackStore(storeName, items);
+    }
+  }
+
   isCloudReadUnavailable() {
     if (!this.supabase) return true;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
     if (this.isCloudOnline === false) return true;
     if (this.isOperationalReady === false) return true;
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
     return false;
   }
 
   isTransportError(err) {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
     if (!err) return false;
-    
+
+    if (err.code || (err.message && (err.message.includes("PGRST") || err.message.includes("42501") || err.message.includes("permission") || err.message.includes("denied")))) {
+      return false;
+    }
+
     const msg = (err.message || String(err)).toLowerCase();
     const name = (err.name || "").toLowerCase();
-    
-    if (name === "fetcherror" || name === "typeerror") {
-      if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed")) {
+
+    if (name === "fetcherror" || name === "typeerror" || name === "aborterror") {
+      if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed") || msg.includes("user aborted") || msg.includes("aborted")) {
         return true;
       }
     }
-    
-    if (msg.includes("failed to fetch") ||
-        msg.includes("networkerror") ||
-        msg.includes("network request failed") ||
-        msg.includes("failed to connect") ||
-        msg.includes("connection refused") ||
-        msg.includes("enotfound") ||
-        msg.includes("econnrefused") ||
-        msg.includes("offline")) {
+
+    if (
+      msg.includes("failed to fetch") ||
+      msg.includes("networkerror") ||
+      msg.includes("network request failed") ||
+      msg.includes("failed to connect") ||
+      msg.includes("connection refused") ||
+      msg.includes("enotfound") ||
+      msg.includes("econnrefused") ||
+      msg.includes("offline")
+    ) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -1186,7 +1200,7 @@ class DBEngine {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         const cloudItems = data.map(r => fromCloudRecord(storeName, r));
         try {
-          this.saveFallbackStore(storeName, cloudItems);
+          this.saveFallbackSnapshot(storeName, cloudItems);
         } catch (e) {}
         return cloudItems;
       }
@@ -1202,8 +1216,7 @@ class DBEngine {
         }
         console.warn(`Supabase getAll(${storeName}) failed:`, error);
 
-        const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
-        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+        if (this.isTransportError(error)) {
           this.isCloudOnline = false;
           if (window.App && typeof window.App.updateCloudStatus === "function") {
             window.App.updateCloudStatus();
@@ -1224,8 +1237,7 @@ class DBEngine {
       }
       console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
 
-      const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
-      if (this.isTransportError(cloudErr) || (isNodeTest && !cloudErr.message?.includes("PGRST") && !cloudErr.message?.includes("permission") && !cloudErr.message?.includes("denied"))) {
+      if (this.isTransportError(cloudErr)) {
         this.isCloudOnline = false;
         if (window.App && typeof window.App.updateCloudStatus === "function") {
           window.App.updateCloudStatus();
@@ -1260,7 +1272,6 @@ class DBEngine {
   }
 
   async getFiltered(storeName, filterColumn, filterValue) {
-    const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
     const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
 
     if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
@@ -1292,7 +1303,7 @@ class DBEngine {
         }
         console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
 
-        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+        if (this.isTransportError(error)) {
           this.isCloudOnline = false;
           if (window.App && typeof window.App.updateCloudStatus === "function") {
             window.App.updateCloudStatus();
@@ -1314,7 +1325,7 @@ class DBEngine {
       }
       console.warn(`Supabase getFiltered(${storeName}) catch:`, cloudErr);
 
-      if (this.isTransportError(cloudErr) || (isNodeTest && !cloudErr.message?.includes("PGRST") && !cloudErr.message?.includes("permission") && !cloudErr.message?.includes("denied"))) {
+      if (this.isTransportError(cloudErr)) {
         this.isCloudOnline = false;
         if (window.App && typeof window.App.updateCloudStatus === "function") {
           window.App.updateCloudStatus();
@@ -1402,7 +1413,6 @@ class DBEngine {
   async getById(storeName, id) {
     if (!id && id !== 0) return null;
     const strId = String(id).trim().toLowerCase();
-    const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
 
     const searchInList = (list) => {
       if (!Array.isArray(list)) return null;
@@ -1441,7 +1451,7 @@ class DBEngine {
         }
         console.warn(`Supabase getById(${storeName}) failed:`, error);
 
-        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+        if (this.isTransportError(error)) {
           this.isCloudOnline = false;
           if (window.App && typeof window.App.updateCloudStatus === "function") {
             window.App.updateCloudStatus();
@@ -1462,7 +1472,7 @@ class DBEngine {
       }
       console.warn(`Supabase getById(${storeName}) catch:`, e);
 
-      if (this.isTransportError(e) || (isNodeTest && !e.message?.includes("PGRST") && !e.message?.includes("permission") && !e.message?.includes("denied"))) {
+      if (this.isTransportError(e)) {
         this.isCloudOnline = false;
         if (window.App && typeof window.App.updateCloudStatus === "function") {
           window.App.updateCloudStatus();
