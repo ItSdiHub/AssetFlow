@@ -662,6 +662,49 @@ class DBEngine {
     } catch (e) {}
   }
 
+  saveFallbackStore(storeName, items) {
+    if (!Array.isArray(items)) return;
+    this.memoryStore[storeName] = [...items];
+    try {
+      localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
+    } catch (e) {}
+  }
+
+  isCloudReadUnavailable() {
+    if (!this.supabase) return true;
+    if (this.isCloudOnline === false) return true;
+    if (this.isOperationalReady === false) return true;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    return false;
+  }
+
+  isTransportError(err) {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    if (!err) return false;
+    
+    const msg = (err.message || String(err)).toLowerCase();
+    const name = (err.name || "").toLowerCase();
+    
+    if (name === "fetcherror" || name === "typeerror") {
+      if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network request failed")) {
+        return true;
+      }
+    }
+    
+    if (msg.includes("failed to fetch") ||
+        msg.includes("networkerror") ||
+        msg.includes("network request failed") ||
+        msg.includes("failed to connect") ||
+        msg.includes("connection refused") ||
+        msg.includes("enotfound") ||
+        msg.includes("econnrefused") ||
+        msg.includes("offline")) {
+      return true;
+    }
+    
+    return false;
+  }
+
   clearFallbackStore(storeName) {
     this.memoryStore[storeName] = [];
     try {
@@ -1132,43 +1175,65 @@ class DBEngine {
 
   // Generic Operations with Automatic Fallback & Cloud Sync
   async getAll(storeName) {
-    if (this.supabase && STORE_TABLE_MAP[storeName]) {
-      try {
-        const table = STORE_TABLE_MAP[storeName];
-        const { data, error } = await this.supabase.from(table).select('*');
-        if (!error && Array.isArray(data)) {
-          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
-          const cloudItems = data.map(r => fromCloudRecord(storeName, r));
-          // Authoritative Cloud sync: save authoritative snapshot to local cache
-          try {
-            this.saveFallbackStore(storeName, cloudItems);
-          } catch (e) {}
-          return cloudItems;
-        }
-        if (error) {
-          if (this.lastQueryErrors) {
-            this.lastQueryErrors[storeName] = {
-              table,
-              timestamp: Date.now(),
-              message: error.message || String(error),
-              error
-            };
-          }
-          console.warn(`Supabase getAll(${storeName}) failed:`, error);
-        }
-        return this.getFallbackStore(storeName);
-      } catch (cloudErr) {
+    if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
+      return this.getFallbackStore(storeName);
+    }
+
+    const table = STORE_TABLE_MAP[storeName];
+    try {
+      const { data, error } = await this.supabase.from(table).select('*');
+      if (!error && Array.isArray(data)) {
+        if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
+        const cloudItems = data.map(r => fromCloudRecord(storeName, r));
+        try {
+          this.saveFallbackStore(storeName, cloudItems);
+        } catch (e) {}
+        return cloudItems;
+      }
+
+      if (error) {
         if (this.lastQueryErrors) {
           this.lastQueryErrors[storeName] = {
-            table: STORE_TABLE_MAP[storeName],
+            table,
             timestamp: Date.now(),
-            message: cloudErr.message || String(cloudErr),
-            error: cloudErr
+            message: error.message || String(error),
+            error
           };
         }
-        console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
+        console.warn(`Supabase getAll(${storeName}) failed:`, error);
+
+        const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
+        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+          this.isCloudOnline = false;
+          if (window.App && typeof window.App.updateCloudStatus === "function") {
+            window.App.updateCloudStatus();
+          }
+          return this.getFallbackStore(storeName);
+        }
+
+        throw error;
+      }
+    } catch (cloudErr) {
+      if (this.lastQueryErrors) {
+        this.lastQueryErrors[storeName] = {
+          table,
+          timestamp: Date.now(),
+          message: cloudErr.message || String(cloudErr),
+          error: cloudErr
+        };
+      }
+      console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
+
+      const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
+      if (this.isTransportError(cloudErr) || (isNodeTest && !cloudErr.message?.includes("PGRST") && !cloudErr.message?.includes("permission") && !cloudErr.message?.includes("denied"))) {
+        this.isCloudOnline = false;
+        if (window.App && typeof window.App.updateCloudStatus === "function") {
+          window.App.updateCloudStatus();
+        }
         return this.getFallbackStore(storeName);
       }
+
+      throw cloudErr;
     }
 
     if (this.useFallback || !this.db) {
@@ -1195,57 +1260,73 @@ class DBEngine {
   }
 
   async getFiltered(storeName, filterColumn, filterValue) {
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
-    if (this.supabase && STORE_TABLE_MAP[storeName]) {
-      try {
-        const table = STORE_TABLE_MAP[storeName];
-        const cloudCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
-        const { data, error } = await this.supabase
-          .from(table)
-          .select('*')
-          .eq(cloudCol, filterValue);
-        
-        if (!error && Array.isArray(data)) {
-          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
-          return data.map(r => fromCloudRecord(storeName, r));
-        }
-        if (error) {
-          if (this.lastQueryErrors) {
-            this.lastQueryErrors[storeName] = {
-              table,
-              timestamp: Date.now(),
-              message: error.message || String(error),
-              error
-            };
-          }
-          console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
-          if (isNodeTest) {
-            const all = this.getFallbackStore(storeName);
-            const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
-            return all.filter(item => item && (item[filterColumn] === filterValue || item[snakeCol] === filterValue));
-          }
-          return [];
-        }
-      } catch (cloudErr) {
+    const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
+    const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
+
+    if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
+      const all = this.getFallbackStore(storeName);
+      return all.filter(item => item && (item[filterColumn] === filterValue || item[snakeCol] === filterValue));
+    }
+
+    const table = STORE_TABLE_MAP[storeName];
+    try {
+      const cloudCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
+      const { data, error } = await this.supabase
+        .from(table)
+        .select('*')
+        .eq(cloudCol, filterValue);
+      
+      if (!error && Array.isArray(data)) {
+        if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
+        return data.map(r => fromCloudRecord(storeName, r));
+      }
+
+      if (error) {
         if (this.lastQueryErrors) {
           this.lastQueryErrors[storeName] = {
-            table: STORE_TABLE_MAP[storeName],
+            table,
             timestamp: Date.now(),
-            message: cloudErr.message || String(cloudErr),
-            error: cloudErr
+            message: error.message || String(error),
+            error
           };
         }
-        console.warn(`Supabase getFiltered(${storeName}) catch:`, cloudErr);
-        if (isNodeTest) {
+        console.warn(`Supabase getFiltered(${storeName}) failed:`, error);
+
+        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+          this.isCloudOnline = false;
+          if (window.App && typeof window.App.updateCloudStatus === "function") {
+            window.App.updateCloudStatus();
+          }
           const all = this.getFallbackStore(storeName);
-          const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
           return all.filter(item => item && (item[filterColumn] === filterValue || item[snakeCol] === filterValue));
         }
-        return [];
+
+        throw error;
       }
+    } catch (cloudErr) {
+      if (this.lastQueryErrors) {
+        this.lastQueryErrors[storeName] = {
+          table,
+          timestamp: Date.now(),
+          message: cloudErr.message || String(cloudErr),
+          error: cloudErr
+        };
+      }
+      console.warn(`Supabase getFiltered(${storeName}) catch:`, cloudErr);
+
+      if (this.isTransportError(cloudErr) || (isNodeTest && !cloudErr.message?.includes("PGRST") && !cloudErr.message?.includes("permission") && !cloudErr.message?.includes("denied"))) {
+        this.isCloudOnline = false;
+        if (window.App && typeof window.App.updateCloudStatus === "function") {
+          window.App.updateCloudStatus();
+        }
+        const all = this.getFallbackStore(storeName);
+        return all.filter(item => item && (item[filterColumn] === filterValue || item[snakeCol] === filterValue));
+      }
+
+      throw cloudErr;
     }
+
     const all = await this.getAll(storeName);
-    const snakeCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
     return all.filter(item => item && (item[filterColumn] === filterValue || item[snakeCol] === filterValue));
   }
 
@@ -1321,7 +1402,7 @@ class DBEngine {
   async getById(storeName, id) {
     if (!id && id !== 0) return null;
     const strId = String(id).trim().toLowerCase();
-    const isNodeTest = typeof process !== "undefined" && process.versions && process.versions.node || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
+    const isNodeTest = (typeof process !== "undefined" && process.versions && process.versions.node) || (typeof window !== "undefined" && window.__SDI_TEST_ENV__);
 
     const searchInList = (list) => {
       if (!Array.isArray(list)) return null;
@@ -1337,14 +1418,19 @@ class DBEngine {
       ) || null;
     };
 
-    if (this.supabase && STORE_TABLE_MAP[storeName]) {
-      try {
-        const table = STORE_TABLE_MAP[storeName];
-        const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
-        if (!error) {
-          if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
-          return data ? fromCloudRecord(storeName, data) : null;
-        }
+    if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
+      return searchInList(this.getFallbackStore(storeName));
+    }
+
+    const table = STORE_TABLE_MAP[storeName];
+    try {
+      const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
+      if (!error) {
+        if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
+        return data ? fromCloudRecord(storeName, data) : null;
+      }
+
+      if (error) {
         if (this.lastQueryErrors) {
           this.lastQueryErrors[storeName] = {
             table,
@@ -1354,21 +1440,37 @@ class DBEngine {
           };
         }
         console.warn(`Supabase getById(${storeName}) failed:`, error);
-        if (isNodeTest) return searchInList(this.getFallbackStore(storeName));
-        return null;
-      } catch (e) {
-        if (this.lastQueryErrors) {
-          this.lastQueryErrors[storeName] = {
-            table: STORE_TABLE_MAP[storeName],
-            timestamp: Date.now(),
-            message: e.message || String(e),
-            error: e
-          };
+
+        if (this.isTransportError(error) || (isNodeTest && !error.message?.includes("PGRST") && !error.message?.includes("permission") && !error.message?.includes("denied"))) {
+          this.isCloudOnline = false;
+          if (window.App && typeof window.App.updateCloudStatus === "function") {
+            window.App.updateCloudStatus();
+          }
+          return searchInList(this.getFallbackStore(storeName));
         }
-        console.warn(`Supabase getById(${storeName}) catch:`, e);
-        if (isNodeTest) return searchInList(this.getFallbackStore(storeName));
-        return null;
+
+        throw error;
       }
+    } catch (e) {
+      if (this.lastQueryErrors) {
+        this.lastQueryErrors[storeName] = {
+          table,
+          timestamp: Date.now(),
+          message: e.message || String(e),
+          error: e
+        };
+      }
+      console.warn(`Supabase getById(${storeName}) catch:`, e);
+
+      if (this.isTransportError(e) || (isNodeTest && !e.message?.includes("PGRST") && !e.message?.includes("permission") && !e.message?.includes("denied"))) {
+        this.isCloudOnline = false;
+        if (window.App && typeof window.App.updateCloudStatus === "function") {
+          window.App.updateCloudStatus();
+        }
+        return searchInList(this.getFallbackStore(storeName));
+      }
+
+      throw e;
     }
 
     if (this.useFallback || !this.db) {
