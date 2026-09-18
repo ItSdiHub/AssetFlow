@@ -74,7 +74,7 @@ class Application {
       let cloudUser = null;
       const { data: directUser, error: queryError } = await db.supabase
         .from('users')
-        .select('*')
+        .select('id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
         .eq('auth_user_id', authUser.id)
         .maybeSingle();
 
@@ -84,7 +84,7 @@ class Application {
         // Self-healing fallback: match strictly by verified user email
         const { data: allUsers } = await db.supabase
           .from('users')
-          .select('*');
+          .select('id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active');
         if (allUsers && Array.isArray(allUsers)) {
           const matched = allUsers.find(u => 
             (u.email && authUser.email && u.email.toLowerCase() === authUser.email.toLowerCase())

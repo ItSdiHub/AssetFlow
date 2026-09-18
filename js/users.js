@@ -1385,17 +1385,6 @@ class OrganizationalManager {
       active
     };
 
-    // If we have a password and it's a new user or explicitly changing it, we could store it 
-    // but the request says: "Do not store password in plain text in User Profile".
-    // We only keep it for local/fallback if absolutely necessary, but let's follow the instruction.
-    // However, for the very first admin "admin/123", it's already there. 
-    // For new users created here, we'll rely on Supabase Auth.
-    if (!id && password) {
-      userData.password = "***"; // Placeholder indicating it's managed by Auth
-    } else if (existing && existing.password) {
-      userData.password = existing.password;
-    }
-
     await db.put("users", userData);
     App.closeModal("userModal");
     App.showToast(I18N[AppState.lang].saveSuccess, "success");

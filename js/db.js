@@ -38,6 +38,13 @@ const STORE_TABLE_MAP = {
 };
 const REQUIRED_CLOUD_TABLES = [...new Set(Object.values(STORE_TABLE_MAP))];
 
+function getCloudSelectColumns(storeName) {
+  if (storeName === "users") {
+    return "id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+  }
+  return "*";
+}
+
 function toCloudRecord(storeName, item) {
   if (!item) return item;
   const row = { ...item };
@@ -302,7 +309,7 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "users") {
-    const record = {
+    return {
       id: row.id,
       username: row.username || "",
       email: row.email || "",
@@ -314,10 +321,6 @@ function toCloudRecord(storeName, item) {
       auth_user_id: row.authUserId || row.auth_user_id || null,
       active: row.active !== false
     };
-    if (row.password && row.password !== "***") {
-      record.password = row.password;
-    }
-    return record;
   }
   if (storeName === "helpdeskRequests") {
     return {
@@ -549,8 +552,9 @@ function fromCloudRecord(storeName, row) {
     item.fullName = row.full_name || row.fullName;
     item.fullNameAr = row.full_name_ar || row.fullNameAr;
     item.fullNameEn = row.full_name_en || row.fullNameEn;
-    item.employeeId = row.employee_id || row.employeeId;
+    item.employeeId = row.employee_id || row.employeeId || null;
     item.authUserId = row.auth_user_id || item.authUserId || null;
+    item.active = row.active !== false;
     delete item.password;
   } else if (storeName === "helpdeskRequests") {
     item.requestId = row.request_number || row.requestId || row.id;
@@ -641,6 +645,10 @@ class DBEngine {
 
   saveToFallbackStore(storeName, item) {
     if (!item || !item.id) return;
+    if (storeName === "users" && item.password) {
+      item = { ...item };
+      delete item.password;
+    }
     if (!this.memoryStore[storeName]) this.memoryStore[storeName] = this.getFallbackStore(storeName);
     const idx = this.memoryStore[storeName].findIndex(x => x && x.id === item.id);
     if (idx >= 0) {
@@ -664,7 +672,19 @@ class DBEngine {
 
   saveFallbackSnapshot(storeName, items) {
     if (!Array.isArray(items)) return;
-    this.memoryStore[storeName] = [...items];
+    let safeItems = items;
+    if (storeName === "users") {
+      safeItems = items.map(it => {
+        if (!it) return it;
+        if (it.password) {
+          const clone = { ...it };
+          delete clone.password;
+          return clone;
+        }
+        return it;
+      });
+    }
+    this.memoryStore[storeName] = [...safeItems];
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
@@ -1231,7 +1251,7 @@ class DBEngine {
 
     const table = STORE_TABLE_MAP[storeName];
     try {
-      const { data, error } = await this.supabase.from(table).select('*');
+      const { data, error } = await this.supabase.from(table).select(getCloudSelectColumns(storeName));
       if (!error && Array.isArray(data)) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         const cloudItems = data.map(r => fromCloudRecord(storeName, r));
@@ -1320,7 +1340,7 @@ class DBEngine {
       const cloudCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
       const { data, error } = await this.supabase
         .from(table)
-        .select('*')
+        .select(getCloudSelectColumns(storeName))
         .eq(cloudCol, filterValue);
       
       if (!error && Array.isArray(data)) {
@@ -1470,7 +1490,7 @@ class DBEngine {
 
     const table = STORE_TABLE_MAP[storeName];
     try {
-      const { data, error } = await this.supabase.from(table).select('*').eq('id', id).maybeSingle();
+      const { data, error } = await this.supabase.from(table).select(getCloudSelectColumns(storeName)).eq('id', id).maybeSingle();
       if (!error) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         return data ? fromCloudRecord(storeName, data) : null;
@@ -1709,6 +1729,9 @@ class DBEngine {
           const { error } = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
           if (error) throw error;
         } else {
+          if (storeName === "users" && !cloudRecord.password) {
+            cloudRecord.password = "***";
+          }
           const { error } = await this.supabase.from(table).insert(cloudRecord);
           if (error) throw error;
         }
