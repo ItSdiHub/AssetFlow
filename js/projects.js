@@ -3714,9 +3714,16 @@ class AssetOperationsController {
     if (instBranchId) asset.branchId = instBranchId;
     asset.locationId = instLocId;
     asset.departmentId = instDeptId;
-    asset.office = instOffice;
-    if (!asset.specs) asset.specs = {};
-    asset.specs.office = instOffice;
+    if (instOffice) {
+      asset.office = instOffice;
+      asset.officeId = instOffice;
+      if (!asset.specs) asset.specs = {};
+      asset.specs.office = instOffice;
+    } else {
+      asset.office = null;
+      asset.officeId = null;
+      if (asset.specs) asset.specs.office = null;
+    }
     asset.currentEmployeeId = instUserId || null;
     asset.condition = condition;
 
@@ -4196,6 +4203,7 @@ class AssetOperationsController {
       asset.locationId = newLocationId;
       asset.currentEmployeeId = null;
       asset.office = null;
+      asset.officeId = null;
       if (asset.specs) asset.specs.office = null;
       asset.updatedDate = new Date().toISOString().replace("T", " ").substring(0, 19);
       await db.put("assets", asset);

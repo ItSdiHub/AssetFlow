@@ -2255,7 +2255,7 @@ class AssetInventoryManager {
     const fromEmp = asset.currentEmployeeId;
     const fromDept = asset.departmentId;
     const fromLoc = asset.locationId;
-    const fromOffice = asset.office;
+    const fromOffice = asset.officeId || asset.office;
     const currentUserName = AppState.currentUser ? (AppState.currentUser.fullName || AppState.currentUser.username) : "admin";
 
     // 1. ATOMIC UPDATE OF ASSET CURRENT STATE (PART 7 & PART 20)
