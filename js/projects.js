@@ -3969,12 +3969,13 @@ class AssetOperationsController {
     const asset = await db.getById("assets", assetId);
     if (!asset) return;
 
-    const [locations, departments, types, projects, employees] = await Promise.all([
+    const [locations, departments, types, projects, employees, offices] = await Promise.all([
       db.getAll("locations"),
       db.getAll("departments"),
       db.getAll("assetTypes"),
       db.getAll("projects"),
-      db.getAll("employees")
+      db.getAll("employees"),
+      db.getAll("offices").catch(() => [])
     ]);
 
     const lang = AppState.lang;
@@ -3984,6 +3985,7 @@ class AssetOperationsController {
     const typeMap = Object.fromEntries(types.map(t => [t.id, isAr ? t.nameAr : (t.nameEn || t.nameAr)]));
     const prjMap = Object.fromEntries(projects.map(p => [p.id, isAr ? p.nameAr : (p.nameEn || p.nameAr)]));
     const empObjMap = Object.fromEntries(employees.map(e => [e.id, e]));
+    const officeMap = Object.fromEntries((offices || []).map(o => [o.id, isAr ? o.nameAr : (o.nameEn || o.nameAr)]));
 
     const assetCode = asset.assetId || asset.id;
     const typeName = typeMap[asset.assetTypeId || asset.typeId] || "-";
@@ -4002,7 +4004,8 @@ class AssetOperationsController {
 
     const deptName = deptMap[asset.departmentId] || "-";
     const prjName = prjMap[asset.projectId] || "-";
-    const areaRoom = locMap[asset.office] || asset.office || asset.room || locMap[asset.specs?.office] || asset.specs?.office || "-";
+    const curOffId = asset.officeId || asset.office;
+    const areaRoom = officeMap[curOffId] || curOffId || asset.room || locMap[asset.specs?.office] || asset.specs?.office || "-";
     const instDate = asset.installationDate || asset.assignmentDate || "-";
     
     // Resolve Technician who installed the device
@@ -4109,13 +4112,15 @@ class AssetOperationsController {
     const asset = await db.getById("assets", assetId);
     if (!asset) return;
 
-    const [locations, employees] = await Promise.all([
+    const [locations, employees, offices] = await Promise.all([
       db.getAll("locations"),
-      db.getAll("employees")
+      db.getAll("employees"),
+      db.getAll("offices").catch(() => [])
     ]);
     const lang = AppState.lang;
     const isAr = lang === "ar";
     const locMap = Object.fromEntries(locations.map(l => [l.id, isAr ? l.nameAr : (l.nameEn || l.nameAr)]));
+    const officeMap = Object.fromEntries((offices || []).map(o => [o.id, isAr ? o.nameAr : (o.nameEn || o.nameAr)]));
 
     document.getElementById("formRemoveAssetId").value = asset.id;
     
@@ -4137,9 +4142,12 @@ class AssetOperationsController {
       });
     }
 
+    const curOffId = asset.officeId || asset.office;
+    const offName = officeMap[curOffId] || curOffId || '-';
+
     const summaryHtml = `
       <strong>${isAr ? 'الجهاز' : 'Asset'}:</strong> <code class="serial-tag">${asset.assetId || asset.id}</code> - ${asset.brand || ''} ${asset.model || ''} (${asset.serial || '-'})<br>
-      <strong>${isAr ? 'الموقع الحالي' : 'Current Location'}:</strong> ${locMap[asset.locationId] || '-'} (${locMap[asset.office] || asset.office || '-'})
+      <strong>${isAr ? 'الموقع الحالي' : 'Current Location'}:</strong> ${locMap[asset.locationId] || '-'} (${offName})
     `;
     document.getElementById("removeAssetSummaryDisplay").innerHTML = summaryHtml;
 

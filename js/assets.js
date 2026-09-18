@@ -1252,15 +1252,29 @@ class AssetInventoryManager {
     if (!body) return;
 
     const lang = AppState.lang;
-    const employees = await db.getAll("employees");
-    const departments = await db.getAll("departments");
-    const locations = await db.getAll("locations");
-    const types = await db.getAll("assetTypes");
+    const [employees, departments, locations, types, offices] = await Promise.all([
+      db.getAll("employees"),
+      db.getAll("departments"),
+      db.getAll("locations"),
+      db.getAll("assetTypes"),
+      db.getAll("offices")
+    ]);
 
     const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
     const deptMap = Object.fromEntries(departments.map(d => [d.id, lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)]));
     const locMap = Object.fromEntries(locations.map(l => [l.id, lang === "ar" ? l.nameAr : (l.nameEn || l.nameAr)]));
+    const officeMap = Object.fromEntries(offices.map(o => [o.id, o]));
     const typeObj = types.find(t => t.id === asset.assetTypeId);
+
+    const curOfficeId = asset.officeId || asset.office;
+    const officeObj = curOfficeId ? officeMap[curOfficeId] : null;
+    let officeName = "-";
+    if (officeObj) {
+      officeName = lang === "ar" ? officeObj.nameAr : (officeObj.nameEn || officeObj.nameAr);
+      if (officeObj.code) officeName += ` (${officeObj.code})`;
+    } else if (curOfficeId) {
+      officeName = curOfficeId;
+    }
 
     let html = "";
 
@@ -1320,7 +1334,7 @@ class AssetInventoryManager {
                 <i class="fas fa-user-check text-success"></i> <strong>${lang === 'ar' ? currentEmp.nameAr : (currentEmp.nameEn || currentEmp.nameAr)}</strong> 
                 <span class="text-muted">(${currentEmp.employeeNumber}) - ${currentEmp.phone || ''}</span>
               ` : (asset.status === "Installed" ? `
-                <span class="text-success"><i class="fas fa-network-wired"></i> <strong>${lang === 'ar' ? 'مركب في موقع' : 'Installed on Location'}</strong> (${locMap[asset.office] || asset.office || locMap[asset.locationId] || '-'})</span>
+                <span class="text-success"><i class="fas fa-network-wired"></i> <strong>${lang === 'ar' ? 'مركب في موقع' : 'Installed on Location'}</strong> (${officeName !== '-' ? officeName : (locMap[asset.locationId] || '-')})</span>
               ` : `<span class="text-muted"><i class="fas fa-minus-circle"></i> ${lang === 'ar' ? 'غير مسند لأي موظف حالياً' : 'Not currently assigned to any employee'}</span>`)}
             </div>
           </div>
@@ -1328,6 +1342,7 @@ class AssetInventoryManager {
           <div class="spec-box"><label>${I18N[lang].assignedBy || "تم التسليم بواسطة"}</label><div>${asset.assignedBy || "IT"}</div></div>
           <div class="spec-box"><label>${I18N[lang].department}</label><div><i class="fas fa-building text-primary"></i> ${deptMap[asset.departmentId] || "-"}</div></div>
           <div class="spec-box"><label>${I18N[lang].location}</label><div><i class="fas fa-map-marker-alt text-warning"></i> ${locMap[asset.locationId] || "-"}</div></div>
+          <div class="spec-box"><label>${lang === 'ar' ? 'المكتب / القاعة' : 'Office / Room'}</label><div><i class="fas fa-door-open text-info"></i> ${officeName}</div></div>
           <div class="spec-box full-width">
             <label>${I18N[lang].handoverStatus || "حالة استلام العهدة"}</label>
             <div class="d-flex items-center gap-2 mt-1">
