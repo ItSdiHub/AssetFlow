@@ -4485,7 +4485,7 @@ class Application {
           authUser = authData.user;
           const { data: cUser } = await db.supabase
             .from("users")
-            .select("*")
+            .select("id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active")
             .eq("auth_user_id", authUser.id)
             .maybeSingle();
 
@@ -4496,7 +4496,7 @@ class Application {
             // Check if profile exists by username or email and link auth_user_id
             const { data: matchedUsers } = await db.supabase
               .from("users")
-              .select("*");
+              .select("id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active");
             if (matchedUsers && Array.isArray(matchedUsers)) {
               const matched = matchedUsers.find(u => 
                 (u.username && u.username.toLowerCase() === cleanInput) ||
