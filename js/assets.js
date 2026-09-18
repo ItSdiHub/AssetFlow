@@ -351,35 +351,58 @@ class AssetInventoryManager {
 
   // Populate Dropdowns in Modals and Filters
   async populateDropdowns() {
-    const types = await db.getAll("assetTypes");
-    const departments = await db.getAll("departments");
-    const locations = await db.getAll("locations");
-    const employees = await db.getAll("employees");
+    const [typesRes, deptsRes, locsRes, empsRes] = await Promise.allSettled([
+      db.getAll("assetTypes"),
+      db.getAll("departments"),
+      db.getAll("locations"),
+      db.getAll("employees")
+    ]);
+
+    const types = (typesRes.status === "fulfilled" && Array.isArray(typesRes.value)) ? typesRes.value : [];
+    const departments = (deptsRes.status === "fulfilled" && Array.isArray(deptsRes.value)) ? deptsRes.value : [];
+    const locations = (locsRes.status === "fulfilled" && Array.isArray(locsRes.value)) ? locsRes.value : [];
+    const employees = (empsRes.status === "fulfilled" && Array.isArray(empsRes.value)) ? empsRes.value : [];
     const lang = AppState.lang;
 
     // Filter Dropdowns
     const filterType = document.getElementById("assetFilterType");
     if (filterType) {
+      const curVal = filterType.value;
       filterType.innerHTML = `<option value="">${I18N[lang].allTypes}</option>` +
         types.filter(t => t.active !== false).map(t => `<option value="${t.id}">${lang === 'ar' ? t.nameAr : (t.nameEn || t.nameAr)}</option>`).join("");
+      if (curVal && [...filterType.options].some(o => o.value === curVal)) {
+        filterType.value = curVal;
+      }
     }
 
     const filterDept = document.getElementById("assetFilterDept");
     if (filterDept) {
+      const curVal = filterDept.value;
       filterDept.innerHTML = `<option value="">${I18N[lang].allDepts}</option>` +
         departments.filter(d => d.active !== false).map(d => `<option value="${d.id}">${lang === 'ar' ? d.nameAr : (d.nameEn || d.nameAr)}</option>`).join("");
+      if (curVal && [...filterDept.options].some(o => o.value === curVal)) {
+        filterDept.value = curVal;
+      }
     }
 
     const filterLoc = document.getElementById("assetFilterLoc");
     if (filterLoc) {
+      const curVal = filterLoc.value;
       filterLoc.innerHTML = `<option value="">${I18N[lang].allLocs}</option>` +
         locations.filter(l => l.active !== false).map(l => `<option value="${l.id}">${lang === 'ar' ? l.nameAr : (l.nameEn || l.nameAr)}</option>`).join("");
+      if (curVal && [...filterLoc.options].some(o => o.value === curVal)) {
+        filterLoc.value = curVal;
+      }
     }
 
     const filterEmp = document.getElementById("assetFilterEmp");
     if (filterEmp) {
+      const curVal = filterEmp.value;
       filterEmp.innerHTML = `<option value="">${I18N[lang].allEmployees}</option>` +
         employees.filter(e => e.status === "Active").map(e => `<option value="${e.id}">${lang === 'ar' ? e.nameAr : (e.nameEn || e.nameAr)} (${e.employeeNumber})</option>`).join("");
+      if (curVal && [...filterEmp.options].some(o => o.value === curVal)) {
+        filterEmp.value = curVal;
+      }
     }
 
     // Modal Form Dropdowns
