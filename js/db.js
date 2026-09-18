@@ -681,8 +681,6 @@ class DBEngine {
   isCloudReadUnavailable() {
     if (!this.supabase) return true;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-    if (this.isCloudOnline === false) return true;
-    if (this.isOperationalReady === false) return true;
     return false;
   }
 
@@ -936,16 +934,34 @@ class DBEngine {
     }
     try {
       const cloudCheck = await this.checkRequiredCloudTables(force);
-      this.isCloudOnline = cloudCheck.success;
-      if (!cloudCheck.success) {
+      this.cloudCheckError = cloudCheck.error || null;
+      if (cloudCheck.success) {
+        this.isCloudOnline = true;
+        this.isOperationalReady = true;
+      } else {
         console.warn("Required cloud table check failed:", cloudCheck.table, cloudCheck.error);
+        if (cloudCheck.transport || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+          this.isCloudOnline = false;
+          this.isOperationalReady = false;
+        } else {
+          // Database/query/RLS/schema error during health check is NOT transport offline
+          this.isCloudOnline = true;
+          this.isOperationalReady = true;
+        }
       }
+      return cloudCheck.success;
     } catch (error) {
       console.warn("Cloud connection check failed:", error);
-      this.isCloudOnline = false;
+      const isTransport = this.isTransportError(error);
+      if (isTransport || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+        this.isCloudOnline = false;
+        this.isOperationalReady = false;
+      } else {
+        this.isCloudOnline = true;
+        this.isOperationalReady = true;
+      }
+      return false;
     }
-    this.isOperationalReady = this.isCloudOnline;
-    return this.isCloudOnline;
   }
 
   async checkRequiredCloudTables(force = false) {
@@ -961,22 +977,26 @@ class DBEngine {
         coreTables.map(async (table) => {
           try {
             const { error } = await this.supabase.from(table).select("id").limit(1);
-            return { table, error };
+            if (error) {
+              return { table, error, transport: this.isTransportError(error) };
+            }
+            return { table, error: null, transport: false };
           } catch (error) {
-            return { table, error };
+            return { table, error, transport: this.isTransportError(error) };
           }
         })
       );
 
       const failedCore = coreResults.find(r => r.error);
       if (failedCore) {
-        const result = { success: false, table: failedCore.table, error: failedCore.error };
+        const result = { success: false, table: failedCore.table, error: failedCore.error, transport: failedCore.transport };
         this._lastCloudCheckResult = result;
         this._lastCloudCheckTime = NOW;
         return result;
       }
     } catch (error) {
-      const result = { success: false, table: "core", error };
+      const isTransport = this.isTransportError(error);
+      const result = { success: false, table: "core", error, transport: isTransport };
       this._lastCloudCheckResult = result;
       this._lastCloudCheckTime = NOW;
       return result;
@@ -997,7 +1017,7 @@ class DBEngine {
       })
     ).catch(e => console.warn("Secondary cloud tables check error:", e));
 
-    const result = { success: true };
+    const result = { success: true, transport: false };
     this._lastCloudCheckResult = result;
     this._lastCloudCheckTime = NOW;
     return result;

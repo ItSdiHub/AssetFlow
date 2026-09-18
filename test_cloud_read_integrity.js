@@ -27,11 +27,11 @@ const dbCode = fs.readFileSync('js/db.js', 'utf8');
 
 async function runTests() {
   console.log("================================================================================");
-  console.log("STARTING SDI IT ASSET HUB - CLOUD READ INTEGRITY MANDATORY TESTS A-P");
+  console.log("STARTING SDI IT ASSET HUB - CLOUD READ INTEGRITY MANDATORY TESTS A-U");
   console.log("================================================================================");
 
   let passed = 0;
-  let total = 16;
+  let total = 21;
 
   // Setup DBEngine instance
   const db = new DBEngine();
@@ -382,6 +382,151 @@ async function runTests() {
     }
     assert.strictEqual(threw, true, "delete MUST throw on Cloud delete failure");
     console.log("✓ Test P: delete safety preserved (Cloud delete failure threw real error).");
+    passed++;
+  }
+
+  // TEST Q: Online + isCloudOnline=false must still attempt Cloud
+  {
+    global.navigator.onLine = true;
+    db.isCloudOnline = false;
+    db.isOperationalReady = false;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "STALE-Q", brand: "StaleQ" });
+
+    setMockSupabase(() => ({
+      select: async () => ({
+        data: [{ id: "CLOUD-Q", brand: "CloudQ" }],
+        error: null
+      })
+    }));
+
+    const res = await db.getAll("assets");
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, "CLOUD-Q");
+    console.log("✓ Test Q: Online + isCloudOnline=false attempted Cloud and returned Cloud data (stale cache ignored).");
+    passed++;
+  }
+
+  // TEST R: Online + RLS health-check failure must NOT activate cache mode
+  {
+    global.navigator.onLine = true;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "STALE-R", brand: "StaleR" });
+
+    const rlsErr = { message: "PGRST301: RLS policy violation on health check", code: "42501" };
+    setMockSupabase(() => ({
+      select: () => ({
+        limit: async () => ({ data: null, error: rlsErr })
+      })
+    }));
+
+    const checkRes = await db.checkRequiredCloudTables(true);
+    assert.strictEqual(checkRes.success, false);
+    assert.strictEqual(checkRes.transport, false);
+
+    await db.checkCloudConnection(true);
+
+    // Mock query error on actual read
+    setMockSupabase(() => ({
+      select: async () => ({ data: null, error: rlsErr })
+    }));
+
+    let threw = false;
+    try {
+      await db.getAll("assets");
+    } catch (err) {
+      threw = true;
+      assert.strictEqual(err.message, rlsErr.message);
+    }
+    assert.strictEqual(threw, true, "getAll MUST throw on RLS error even after health check failure");
+    console.log("✓ Test R: Online + RLS health-check failure did NOT activate cache mode (real error thrown).");
+    passed++;
+  }
+
+  // TEST S: Online + schema failure must NOT activate cache mode
+  {
+    global.navigator.onLine = true;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "STALE-S", brand: "StaleS" });
+
+    const schemaErr = { message: "PGRST204: Column 'nonexistent' does not exist", code: "42703" };
+    setMockSupabase(() => ({
+      select: () => ({
+        limit: async () => ({ data: null, error: schemaErr })
+      })
+    }));
+
+    const checkRes = await db.checkRequiredCloudTables(true);
+    assert.strictEqual(checkRes.success, false);
+    assert.strictEqual(checkRes.transport, false);
+
+    setMockSupabase(() => ({
+      select: async () => ({ data: null, error: schemaErr })
+    }));
+
+    let threw = false;
+    try {
+      await db.getAll("assets");
+    } catch (err) {
+      threw = true;
+      assert.strictEqual(err.message, schemaErr.message);
+    }
+    assert.strictEqual(threw, true, "getAll MUST throw on schema error");
+    console.log("✓ Test S: Online + schema failure did NOT activate cache mode (non-transport error thrown).");
+    passed++;
+  }
+
+  // TEST T: Actual transport failure may activate temporary offline state & recovery
+  {
+    global.navigator.onLine = true;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "CACHE-T", brand: "CacheT" });
+
+    const transportErr = new TypeError("Failed to fetch");
+    setMockSupabase(() => ({
+      select: async () => { throw transportErr; }
+    }));
+
+    // First read during transport failure -> returns cache
+    const res1 = await db.getAll("assets");
+    assert.strictEqual(res1.length, 1);
+    assert.strictEqual(res1[0].id, "CACHE-T");
+
+    // Network recovers
+    global.navigator.onLine = true;
+    setMockSupabase(() => ({
+      select: async () => ({
+        data: [{ id: "CLOUD-RECOVERED", brand: "CloudT" }],
+        error: null
+      })
+    }));
+
+    // Second read after recovery -> attempts Cloud and succeeds
+    const res2 = await db.getAll("assets");
+    assert.strictEqual(res2.length, 1);
+    assert.strictEqual(res2[0].id, "CLOUD-RECOVERED");
+    console.log("✓ Test T: Transport failure temporarily used cache, then automatically recovered Cloud read when back online.");
+    passed++;
+  }
+
+  // TEST U: Realtime offline does not block Cloud CRUD reads
+  {
+    global.navigator.onLine = true;
+    db.isRealtimeOnline = false;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "STALE-U", brand: "StaleU" });
+
+    setMockSupabase(() => ({
+      select: async () => ({
+        data: [{ id: "CLOUD-U", brand: "CloudU" }],
+        error: null
+      })
+    }));
+
+    const res = await db.getAll("assets");
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, "CLOUD-U");
+    console.log("✓ Test U: Realtime offline did not block Cloud CRUD reads (returned authoritative Cloud data).");
     passed++;
   }
 
