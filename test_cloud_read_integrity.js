@@ -10,7 +10,14 @@ global.window = {
   __SDI_TEST_ENV__: true,
   App: {
     updateCloudStatus: () => {}
-  }
+  },
+  addEventListener: () => {},
+  removeEventListener: () => {}
+};
+global.document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  visibilityState: 'visible'
 };
 global.navigator = { onLine: true };
 global.localStorage = {
@@ -27,11 +34,11 @@ const dbCode = fs.readFileSync('js/db.js', 'utf8');
 
 async function runTests() {
   console.log("================================================================================");
-  console.log("STARTING SDI IT ASSET HUB - CLOUD READ INTEGRITY MANDATORY TESTS A-U");
+  console.log("STARTING SDI IT ASSET HUB - CLOUD READ INTEGRITY MANDATORY TESTS A-X");
   console.log("================================================================================");
 
   let passed = 0;
-  let total = 21;
+  let total = 24;
 
   // Setup DBEngine instance
   const db = new DBEngine();
@@ -527,6 +534,89 @@ async function runTests() {
     assert.strictEqual(res.length, 1);
     assert.strictEqual(res[0].id, "CLOUD-U");
     console.log("✓ Test U: Realtime offline did not block Cloud CRUD reads (returned authoritative Cloud data).");
+    passed++;
+  }
+
+  // TEST V: Initial health-check failure MUST NOT disable later Cloud reads
+  {
+    global.navigator.onLine = true;
+    const initDb = new DBEngine();
+    const rlsErr = { message: "PGRST301: RLS policy violation on startup health check", code: "42501" };
+    initDb.supabase = {
+      from: () => ({
+        select: () => ({
+          limit: async () => ({ data: null, error: rlsErr })
+        })
+      })
+    };
+
+    // Health check fails on non-transport RLS
+    const checkRes = await initDb.checkRequiredCloudTables(true);
+    assert.strictEqual(checkRes.success, false);
+    assert.strictEqual(checkRes.transport, false);
+
+    // Mock subsequent read with successful Cloud data
+    initDb.supabase = {
+      from: () => ({
+        select: async () => ({
+          data: [{ id: "AST-INIT-001", brand: "Dell" }],
+          error: null
+        })
+      })
+    };
+
+    const res = await initDb.getAll("assets");
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, "AST-INIT-001");
+    console.log("✓ Test V: Initial health-check failure on RLS did NOT disable later Cloud reads.");
+    passed++;
+  }
+
+  // TEST W: Online listener exists after initial Cloud health-check failure
+  {
+    global.navigator.onLine = true;
+    const initDb = new DBEngine();
+    initDb.eventListenersAdded = false;
+    const rlsErr = { message: "PGRST301: Startup RLS error", code: "42501" };
+    initDb.supabase = {
+      from: () => ({
+        select: () => ({
+          limit: async () => ({ data: null, error: rlsErr })
+        })
+      }),
+      channel: () => ({
+        on: function() { return this; },
+        subscribe: function() { return this; }
+      })
+    };
+
+    // Run init
+    await initDb.init();
+    assert.strictEqual(initDb.eventListenersAdded, true, "online/offline listeners MUST be added even if initial health check failed");
+    console.log("✓ Test W: Online listeners were properly added even after initial Cloud health-check failure.");
+    passed++;
+  }
+
+  // TEST X: Realtime disconnected but operational Cloud available
+  {
+    global.navigator.onLine = true;
+    db.isRealtimeOnline = false;
+    db.isCloudOnline = false;
+    db.isOperationalReady = false;
+    db.clearFallbackStore("assets");
+    db.saveToFallbackStore("assets", { id: "STALE-X", brand: "StaleX" });
+
+    setMockSupabase(() => ({
+      select: async () => ({
+        data: [{ id: "CLOUD-X", brand: "CloudX" }],
+        error: null
+      })
+    }));
+
+    const res = await db.getAll("assets");
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, "CLOUD-X");
+    console.log("✓ Test X: Realtime disconnected + stale status flags did not block Cloud CRUD reads.");
     passed++;
   }
 

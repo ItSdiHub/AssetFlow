@@ -736,43 +736,59 @@ class DBEngine {
         if (this.supabase) {
           try {
             const cloudCheck = await this.checkRequiredCloudTables();
+            this.cloudCheckError = cloudCheck.error || null;
             if (cloudCheck.success) {
               this.isCloudOnline = true;
               this.isOperationalReady = true;
               console.log("SDI IT Asset Hub: Connected to Supabase Cloud Database!");
-
               this.subscribeRealtime();
-              
-              if (!this.eventListenersAdded) {
-                window.addEventListener("online", async () => {
-                  await this.checkCloudConnection();
-                  this.subscribeRealtime();
-                  if (window.App && typeof window.App.refreshAllCloudViews === "function") {
-                    window.App.refreshAllCloudViews();
-                  }
-                });
-                window.addEventListener("offline", () => {
-                  this.isCloudOnline = false;
-                  this.isRealtimeOnline = false;
-                  this.isOperationalReady = false;
-                  this.realtimeStatus = "OFFLINE";
-                  if (window.App && typeof window.App.updateCloudStatus === "function") {
-                    window.App.updateCloudStatus();
-                  }
-                });
-                document.addEventListener("visibilitychange", () => {
-                  if (document.visibilityState === "visible") {
-                    if (!this.isRealtimeOnline) this.subscribeRealtime();
-                    if (window.App && typeof window.App.refreshAllCloudViews === "function") {
-                      window.App.refreshAllCloudViews();
-                    }
-                  }
-                });
-                this.eventListenersAdded = true;
+            } else {
+              console.warn("Required cloud table check failed on init:", cloudCheck.table, cloudCheck.error);
+              if (cloudCheck.transport || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+                this.isCloudOnline = false;
+                this.isOperationalReady = false;
+              } else {
+                this.isCloudOnline = true;
+                this.isOperationalReady = true;
               }
             }
           } catch (err) {
             console.warn("Could not init Supabase client check:", err);
+            if (this.isTransportError(err) || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+              this.isCloudOnline = false;
+              this.isOperationalReady = false;
+            } else {
+              this.isCloudOnline = true;
+              this.isOperationalReady = true;
+            }
+          }
+
+          if (typeof window !== "undefined" && typeof window.addEventListener === "function" && !this.eventListenersAdded) {
+            window.addEventListener("online", async () => {
+              await this.checkCloudConnection();
+              this.subscribeRealtime();
+              if (window.App && typeof window.App.refreshAllCloudViews === "function") {
+                window.App.refreshAllCloudViews();
+              }
+            });
+            window.addEventListener("offline", () => {
+              this.isCloudOnline = false;
+              this.isRealtimeOnline = false;
+              this.isOperationalReady = false;
+              this.realtimeStatus = "OFFLINE";
+              if (window.App && typeof window.App.updateCloudStatus === "function") {
+                window.App.updateCloudStatus();
+              }
+            });
+            document.addEventListener("visibilitychange", () => {
+              if (document.visibilityState === "visible") {
+                if (!this.isRealtimeOnline) this.subscribeRealtime();
+                if (window.App && typeof window.App.refreshAllCloudViews === "function") {
+                  window.App.refreshAllCloudViews();
+                }
+              }
+            });
+            this.eventListenersAdded = true;
           }
         }
 
