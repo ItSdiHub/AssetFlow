@@ -85,13 +85,13 @@ DROP POLICY IF EXISTS "Admin_Delete_Users" ON public.users;
 CREATE POLICY "Admin_Delete_Users" ON public.users FOR DELETE TO authenticated 
 USING (public.get_auth_role() = 'Administrator');
 
--- 5. Master Data & Offices Policies (Admin/IT Write, Viewer/Employee Read where permitted, Viewer No Write)
+-- 5. Master Data Policies (Admin/IT Write, Authenticated Read for general taxonomy)
 DO $$ 
 DECLARE 
     t text;
 BEGIN
     FOR t IN 
-        SELECT unnest(ARRAY['departments', 'locations', 'asset_types', 'contractors', 'projects', 'project_tasks', 'licenses']) 
+        SELECT unnest(ARRAY['departments', 'locations', 'asset_types']) 
     LOOP
         EXECUTE format('DROP POLICY IF EXISTS "Auth_Read_%I" ON public.%I', t, t);
         EXECUTE format('CREATE POLICY "Auth_Read_%I" ON public.%I FOR SELECT TO authenticated USING (true)', t, t);
@@ -106,6 +106,74 @@ BEGIN
         EXECUTE format('CREATE POLICY "Admin_IT_Delete_%I" ON public.%I FOR DELETE TO authenticated USING (public.get_auth_role() IN (''Administrator'', ''IT User''))', t, t);
     END LOOP;
 END $$;
+
+-- Contractors: Explicit restricted access (Admin, IT User, Viewer)
+DROP POLICY IF EXISTS "Auth_Read_contractors" ON public.contractors;
+CREATE POLICY "Auth_Read_contractors" ON public.contractors FOR SELECT TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer'));
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_contractors" ON public.contractors;
+CREATE POLICY "Admin_IT_Insert_contractors" ON public.contractors FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_contractors" ON public.contractors;
+CREATE POLICY "Admin_IT_Update_contractors" ON public.contractors FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_contractors" ON public.contractors;
+CREATE POLICY "Admin_IT_Delete_contractors" ON public.contractors FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- Projects: Explicit restricted access (Admin, IT User, Viewer)
+DROP POLICY IF EXISTS "Auth_Read_projects" ON public.projects;
+CREATE POLICY "Auth_Read_projects" ON public.projects FOR SELECT TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer'));
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_projects" ON public.projects;
+CREATE POLICY "Admin_IT_Insert_projects" ON public.projects FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_projects" ON public.projects;
+CREATE POLICY "Admin_IT_Update_projects" ON public.projects FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_projects" ON public.projects;
+CREATE POLICY "Admin_IT_Delete_projects" ON public.projects FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- Project Tasks: Explicit restricted access (Admin, IT User, Viewer)
+DROP POLICY IF EXISTS "Auth_Read_project_tasks" ON public.project_tasks;
+CREATE POLICY "Auth_Read_project_tasks" ON public.project_tasks FOR SELECT TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer'));
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_project_tasks" ON public.project_tasks;
+CREATE POLICY "Admin_IT_Insert_project_tasks" ON public.project_tasks FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_project_tasks" ON public.project_tasks;
+CREATE POLICY "Admin_IT_Update_project_tasks" ON public.project_tasks FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_project_tasks" ON public.project_tasks;
+CREATE POLICY "Admin_IT_Delete_project_tasks" ON public.project_tasks FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+-- Licenses: Explicit restricted access (Admin, IT User, Viewer)
+DROP POLICY IF EXISTS "Auth_Read_licenses" ON public.licenses;
+CREATE POLICY "Auth_Read_licenses" ON public.licenses FOR SELECT TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User', 'Viewer'));
+
+DROP POLICY IF EXISTS "Admin_IT_Insert_licenses" ON public.licenses;
+CREATE POLICY "Admin_IT_Insert_licenses" ON public.licenses FOR INSERT TO authenticated 
+WITH CHECK (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Update_licenses" ON public.licenses;
+CREATE POLICY "Admin_IT_Update_licenses" ON public.licenses FOR UPDATE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
+
+DROP POLICY IF EXISTS "Admin_IT_Delete_licenses" ON public.licenses;
+CREATE POLICY "Admin_IT_Delete_licenses" ON public.licenses FOR DELETE TO authenticated 
+USING (public.get_auth_role() IN ('Administrator', 'IT User'));
 
 -- Offices: Explicit restricted access
 ALTER TABLE public.offices ENABLE ROW LEVEL SECURITY;

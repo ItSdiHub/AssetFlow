@@ -205,7 +205,7 @@ function runTest(testId, description, fn) {
 }
 
 console.log('================================================================================');
-console.log('STARTING SDI IT ASSET HUB - RBAC / RLS SECURITY AUDIT TEST SUITE (A - X)');
+console.log('STARTING SDI IT ASSET HUB - RBAC / RLS SECURITY AUDIT TEST SUITE (A - AG)');
 console.log('================================================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -542,17 +542,24 @@ runTest('U', 'All 18 core tables have explicit SELECT, INSERT, UPDATE, and DELET
 runTest('V', 'All broad USING(true) policies are identified and verified strictly read-only', () => {
   const trueSelects = ALL_POLICIES.filter(p => p.command === 'SELECT' && p.using === 'true');
   const expectedBroadTables = [
-    'departments', 'locations', 'asset_types', 'contractors',
-    'projects', 'project_tasks', 'licenses', 'system_settings'
+    'departments', 'locations', 'asset_types', 'system_settings'
   ];
 
   if (trueSelects.length !== expectedBroadTables.length) {
-    throw new Error(`Expected ${expectedBroadTables.length} broad SELECT policies, found ${trueSelects.length}`);
+    throw new Error(`Expected ${expectedBroadTables.length} broad SELECT policies, found ${trueSelects.length}: ${trueSelects.map(p => p.table).join(', ')}`);
   }
 
   for (const t of expectedBroadTables) {
     if (!trueSelects.some(p => p.table === t)) {
       throw new Error(`Expected table ${t} to be in broad SELECT list`);
+    }
+  }
+
+  // Ensure contractors, projects, project_tasks, licenses are NOT in broad SELECT list
+  const restrictedMasterTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  for (const t of restrictedMasterTables) {
+    if (trueSelects.some(p => p.table === t)) {
+      throw new Error(`Table ${t} must NOT have a broad USING(true) SELECT policy`);
     }
   }
 
@@ -596,15 +603,140 @@ runTest('X', 'Anonymous unauthenticated access is completely blocked from all pr
 });
 
 // -----------------------------------------------------------------------------
+// TEST Y: Employee SELECT denied on contractors.
+// -----------------------------------------------------------------------------
+runTest('Y', 'Employee SELECT denied on contractors', () => {
+  const empCtx = { role: 'Employee', authUid: 'emp-uid-1', employeeId: 'emp-101', isAnon: false };
+  const pol = ALL_POLICIES.find(p => p.table === 'contractors' && p.command === 'SELECT');
+  if (!pol) throw new Error('Missing SELECT policy for contractors');
+  const allowed = evaluatePolicy(pol, empCtx);
+  if (allowed) throw new Error('Employee improperly allowed SELECT on contractors');
+});
+
+// -----------------------------------------------------------------------------
+// TEST Z: Employee SELECT denied on projects.
+// -----------------------------------------------------------------------------
+runTest('Z', 'Employee SELECT denied on projects', () => {
+  const empCtx = { role: 'Employee', authUid: 'emp-uid-1', employeeId: 'emp-101', isAnon: false };
+  const pol = ALL_POLICIES.find(p => p.table === 'projects' && p.command === 'SELECT');
+  if (!pol) throw new Error('Missing SELECT policy for projects');
+  const allowed = evaluatePolicy(pol, empCtx);
+  if (allowed) throw new Error('Employee improperly allowed SELECT on projects');
+});
+
+// -----------------------------------------------------------------------------
+// TEST AA: Employee SELECT denied on project_tasks.
+// -----------------------------------------------------------------------------
+runTest('AA', 'Employee SELECT denied on project_tasks', () => {
+  const empCtx = { role: 'Employee', authUid: 'emp-uid-1', employeeId: 'emp-101', isAnon: false };
+  const pol = ALL_POLICIES.find(p => p.table === 'project_tasks' && p.command === 'SELECT');
+  if (!pol) throw new Error('Missing SELECT policy for project_tasks');
+  const allowed = evaluatePolicy(pol, empCtx);
+  if (allowed) throw new Error('Employee improperly allowed SELECT on project_tasks');
+});
+
+// -----------------------------------------------------------------------------
+// TEST AB: Employee SELECT denied on licenses.
+// -----------------------------------------------------------------------------
+runTest('AB', 'Employee SELECT denied on licenses', () => {
+  const empCtx = { role: 'Employee', authUid: 'emp-uid-1', employeeId: 'emp-101', isAnon: false };
+  const pol = ALL_POLICIES.find(p => p.table === 'licenses' && p.command === 'SELECT');
+  if (!pol) throw new Error('Missing SELECT policy for licenses');
+  const allowed = evaluatePolicy(pol, empCtx);
+  if (allowed) throw new Error('Employee improperly allowed SELECT on licenses');
+});
+
+// -----------------------------------------------------------------------------
+// TEST AC: Administrator SELECT allowed on contractors/projects/project_tasks/licenses.
+// -----------------------------------------------------------------------------
+runTest('AC', 'Administrator SELECT allowed on contractors, projects, project_tasks, licenses', () => {
+  const adminCtx = { role: 'Administrator', authUid: 'admin-uid-1', employeeId: 'emp-admin', isAnon: false };
+  const targetTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  for (const t of targetTables) {
+    const pol = ALL_POLICIES.find(p => p.table === t && p.command === 'SELECT');
+    if (!pol) throw new Error(`Missing SELECT policy for ${t}`);
+    const allowed = evaluatePolicy(pol, adminCtx);
+    if (!allowed) throw new Error(`Administrator unexpectedly denied SELECT on ${t}`);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// TEST AD: IT User SELECT allowed on contractors/projects/project_tasks/licenses.
+// -----------------------------------------------------------------------------
+runTest('AD', 'IT User SELECT allowed on contractors, projects, project_tasks, licenses', () => {
+  const itCtx = { role: 'IT User', authUid: 'it-uid-1', employeeId: 'emp-it', isAnon: false };
+  const targetTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  for (const t of targetTables) {
+    const pol = ALL_POLICIES.find(p => p.table === t && p.command === 'SELECT');
+    if (!pol) throw new Error(`Missing SELECT policy for ${t}`);
+    const allowed = evaluatePolicy(pol, itCtx);
+    if (!allowed) throw new Error(`IT User unexpectedly denied SELECT on ${t}`);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// TEST AE: Viewer SELECT allowed on contractors/projects/project_tasks/licenses.
+// -----------------------------------------------------------------------------
+runTest('AE', 'Viewer SELECT allowed on contractors, projects, project_tasks, licenses', () => {
+  const viewerCtx = { role: 'Viewer', authUid: 'viewer-uid-1', employeeId: 'emp-view', isAnon: false };
+  const targetTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  for (const t of targetTables) {
+    const pol = ALL_POLICIES.find(p => p.table === t && p.command === 'SELECT');
+    if (!pol) throw new Error(`Missing SELECT policy for ${t}`);
+    const allowed = evaluatePolicy(pol, viewerCtx);
+    if (!allowed) throw new Error(`Viewer unexpectedly denied SELECT on ${t}`);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// TEST AF: No USING(true) SELECT policy remains for these four tables.
+// -----------------------------------------------------------------------------
+runTest('AF', 'No USING(true) SELECT policy remains for contractors, projects, project_tasks, licenses', () => {
+  const targetTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  for (const t of targetTables) {
+    const truePol = ALL_POLICIES.find(p => p.table === t && p.command === 'SELECT' && p.using === 'true');
+    if (truePol) {
+      throw new Error(`Found disallowed USING(true) SELECT policy for ${t}: ${truePol.name}`);
+    }
+  }
+});
+
+// -----------------------------------------------------------------------------
+// TEST AG: Their INSERT/UPDATE/DELETE policies remain restricted to Administrator + IT User.
+// -----------------------------------------------------------------------------
+runTest('AG', 'Write policies for contractors, projects, project_tasks, licenses remain restricted to Administrator + IT User', () => {
+  const targetTables = ['contractors', 'projects', 'project_tasks', 'licenses'];
+  const adminCtx = { role: 'Administrator', authUid: 'admin-uid-1', employeeId: 'emp-admin', isAnon: false };
+  const itCtx = { role: 'IT User', authUid: 'it-uid-1', employeeId: 'emp-it', isAnon: false };
+  const empCtx = { role: 'Employee', authUid: 'emp-uid-1', employeeId: 'emp-101', isAnon: false };
+  const viewerCtx = { role: 'Viewer', authUid: 'viewer-uid-1', employeeId: 'emp-view', isAnon: false };
+
+  for (const t of targetTables) {
+    for (const cmd of ['INSERT', 'UPDATE', 'DELETE']) {
+      const pol = ALL_POLICIES.find(p => p.table === t && p.command === cmd);
+      if (!pol) throw new Error(`Missing ${cmd} policy on ${t}`);
+      
+      // Allowed: Admin, IT User
+      if (!evaluatePolicy(pol, adminCtx)) throw new Error(`Admin denied ${cmd} on ${t}`);
+      if (!evaluatePolicy(pol, itCtx)) throw new Error(`IT User denied ${cmd} on ${t}`);
+      
+      // Denied: Employee, Viewer
+      if (evaluatePolicy(pol, empCtx)) throw new Error(`Employee improperly allowed ${cmd} on ${t}`);
+      if (evaluatePolicy(pol, viewerCtx)) throw new Error(`Viewer improperly allowed ${cmd} on ${t}`);
+    }
+  }
+});
+
+// -----------------------------------------------------------------------------
 // Summary & Exit
 // -----------------------------------------------------------------------------
 console.log('\n================================================================================');
-if (passCount === 24 && failCount === 0) {
-  console.log(`ALL ${passCount}/24 RBAC / RLS SECURITY AUDIT TESTS (A-X) PASSED!`);
+if (passCount === 33 && failCount === 0) {
+  console.log(`ALL ${passCount}/33 RBAC / RLS SECURITY AUDIT TESTS (A-AG) PASSED!`);
   console.log('================================================================================');
   process.exit(0);
 } else {
-  console.error(`AUDIT FAILED: ${passCount} passed, ${failCount} failed out of 24 tests.`);
+  console.error(`AUDIT FAILED: ${passCount} passed, ${failCount} failed out of 33 tests.`);
   console.log('================================================================================');
   process.exit(1);
 }
