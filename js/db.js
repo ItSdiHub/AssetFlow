@@ -38,6 +38,8 @@ const STORE_TABLE_MAP = {
 };
 const REQUIRED_CLOUD_TABLES = [...new Set(Object.values(STORE_TABLE_MAP))];
 
+let usersTableHasEmail = null;
+
 function getCloudSelectColumns(storeName) {
   if (storeName === "users") {
     return "id, username, email, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
@@ -309,18 +311,21 @@ function toCloudRecord(storeName, item) {
     };
   }
   if (storeName === "users") {
-    return {
+    const rec = {
       id: row.id,
       username: row.username || "",
-      email: row.email || "",
-      full_name: row.fullName || row.full_name || "",
+      full_name: (row.fullName || row.full_name || "").trim(),
       full_name_ar: row.fullNameAr || row.full_name_ar || null,
       full_name_en: row.fullNameEn || row.full_name_en || null,
-      role: row.role || "Viewer",
+      role: (row.role || "Viewer").trim(),
       employee_id: row.employeeId || row.employee_id || null,
       auth_user_id: row.authUserId || row.auth_user_id || null,
       active: row.active !== false
     };
+    if (usersTableHasEmail !== false) {
+      rec.email = row.email || "";
+    }
+    return rec;
   }
   if (storeName === "helpdeskRequests") {
     return {
@@ -548,10 +553,11 @@ function fromCloudRecord(storeName, row) {
     item.orgNameEn = row.org_name_en || row.orgNameEn;
     item.logoDataUrl = row.logo_data_url || row.logoDataUrl;
   } else if (storeName === "users") {
-    item.email = row.email || item.email || "";
-    item.fullName = row.full_name || row.fullName;
+    item.email = row.email || (row.username && row.username.includes('@') ? row.username : "") || item.email || "";
+    item.fullName = (row.full_name || row.fullName || "").trim();
     item.fullNameAr = row.full_name_ar || row.fullNameAr;
     item.fullNameEn = row.full_name_en || row.fullNameEn;
+    item.role = (row.role || item.role || "Viewer").trim();
     item.employeeId = row.employee_id || row.employeeId || null;
     item.authUserId = row.auth_user_id || item.authUserId || null;
     item.active = row.active !== false;
@@ -1251,7 +1257,20 @@ class DBEngine {
 
     const table = STORE_TABLE_MAP[storeName];
     try {
-      const { data, error } = await this.supabase.from(table).select(getCloudSelectColumns(storeName));
+      let selectCols = getCloudSelectColumns(storeName);
+      if (storeName === "users" && usersTableHasEmail === false) {
+        selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+      }
+      let { data, error } = await this.supabase.from(table).select(selectCols);
+      if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
+        usersTableHasEmail = false;
+        const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+        const retryRes = await this.supabase.from(table).select(retryCols);
+        if (!retryRes.error && Array.isArray(retryRes.data)) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
       if (!error && Array.isArray(data)) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         const cloudItems = data.map(r => fromCloudRecord(storeName, r));
@@ -1338,10 +1357,24 @@ class DBEngine {
     const table = STORE_TABLE_MAP[storeName];
     try {
       const cloudCol = filterColumn.replace(/([A-Z])/g, "_$1").toLowerCase();
-      const { data, error } = await this.supabase
+      let selectCols = getCloudSelectColumns(storeName);
+      if (storeName === "users" && usersTableHasEmail === false) {
+        selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+      }
+      let { data, error } = await this.supabase
         .from(table)
-        .select(getCloudSelectColumns(storeName))
+        .select(selectCols)
         .eq(cloudCol, filterValue);
+      
+      if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
+        usersTableHasEmail = false;
+        const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+        const retryRes = await this.supabase.from(table).select(retryCols).eq(cloudCol, filterValue);
+        if (!retryRes.error && Array.isArray(retryRes.data)) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
       
       if (!error && Array.isArray(data)) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
@@ -1490,7 +1523,20 @@ class DBEngine {
 
     const table = STORE_TABLE_MAP[storeName];
     try {
-      const { data, error } = await this.supabase.from(table).select(getCloudSelectColumns(storeName)).eq('id', id).maybeSingle();
+      let selectCols = getCloudSelectColumns(storeName);
+      if (storeName === "users" && usersTableHasEmail === false) {
+        selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+      }
+      let { data, error } = await this.supabase.from(table).select(selectCols).eq('id', id).maybeSingle();
+      if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
+        usersTableHasEmail = false;
+        const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+        const retryRes = await this.supabase.from(table).select(retryCols).eq('id', id).maybeSingle();
+        if (!retryRes.error) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
       if (!error) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         return data ? fromCloudRecord(storeName, data) : null;
@@ -1723,16 +1769,33 @@ class DBEngine {
     if (this.supabase && STORE_TABLE_MAP[storeName] && !isTestProbe) {
       try {
         const table = STORE_TABLE_MAP[storeName];
-        const cloudRecord = toCloudRecord(storeName, item);
+        let cloudRecord = toCloudRecord(storeName, item);
+        if (storeName === "users" && usersTableHasEmail === false && cloudRecord && cloudRecord.email !== undefined) {
+          delete cloudRecord.email;
+        }
         const { data: existing } = await this.supabase.from(table).select('id').eq('id', cloudRecord.id).maybeSingle();
         if (existing) {
-          const { error } = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+          let { error } = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+          if (error && storeName === "users" && (error.code === 'PGRST204' || error.code === '42703') && String(error.message || '').includes('email')) {
+            console.warn("Supabase users table does not have 'email' column in schema cache. Adapting payload and retrying update...");
+            usersTableHasEmail = false;
+            delete cloudRecord.email;
+            const retry = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+            error = retry.error;
+          }
           if (error) throw error;
         } else {
           if (storeName === "users" && !cloudRecord.password) {
             cloudRecord.password = "***";
           }
-          const { error } = await this.supabase.from(table).insert(cloudRecord);
+          let { error } = await this.supabase.from(table).insert(cloudRecord);
+          if (error && storeName === "users" && (error.code === 'PGRST204' || error.code === '42703') && String(error.message || '').includes('email')) {
+            console.warn("Supabase users table does not have 'email' column in schema cache. Adapting payload and retrying insert...");
+            usersTableHasEmail = false;
+            delete cloudRecord.email;
+            const retry = await this.supabase.from(table).insert(cloudRecord);
+            error = retry.error;
+          }
           if (error) throw error;
         }
         // Authoritative write successful: update local temporary read cache snapshot

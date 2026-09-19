@@ -309,6 +309,9 @@ ON public.users (auth_user_id)
 WHERE active = true
 AND auth_user_id IS NOT NULL;
 
+-- Ensure email column exists on existing deployments
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
+
 -- 16. Notifications Table
 CREATE TABLE IF NOT EXISTS public.notifications (
     id TEXT PRIMARY KEY,
