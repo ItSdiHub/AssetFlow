@@ -384,7 +384,7 @@ ON public.warehouse_issues (asset_id)
 WHERE status IN ('Issued', 'In Transit', 'Awaiting Installation');
 
 -- ========================================================================
--- Enable Row Level Security (RLS) & Allow Anonymous Read/Write with anon key
+-- Enable Row Level Security (RLS)
 -- ========================================================================
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
