@@ -181,10 +181,12 @@ class HelpdeskManager {
   // 3. EMPLOYEE PORTAL
   // =========================================================================
   async renderEmployeePortal() {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const pane = document.getElementById("tab-employeePortal");
     if (!pane) return;
 
-    const user = AppState.currentUser;
     const employee = user.employeeId ? await db.getById("employees", user.employeeId) : null;
     const lang = AppState.lang;
 
@@ -223,10 +225,12 @@ class HelpdeskManager {
 
   // SubTab: My Devices
   async renderEmployeeDevices() {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const container = document.getElementById("epDevicesContainer") || document.getElementById("portalDevicesContainer");
     if (!container) return;
 
-    const user = AppState.currentUser;
     const lang = AppState.lang;
 
     if (!user.employeeId) {
@@ -297,10 +301,12 @@ class HelpdeskManager {
 
   // SubTab: My Requests
   async renderEmployeeRequests() {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const container = document.getElementById("epRequestsContainer") || document.getElementById("portalRequestsContainer");
     if (!container) return;
 
-    const user = AppState.currentUser;
     const allRequests = await db.getAll("helpdeskRequests");
     const myRequests = allRequests.filter(r => r.employeeId === user.employeeId).sort((a, b) => new Date(b.createdDate || 0) - new Date(a.createdDate || 0));
     const lang = AppState.lang;
@@ -356,10 +362,12 @@ class HelpdeskManager {
 
   // SubTab: Notifications
   async renderEmployeeNotifications() {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const container = document.getElementById("epNotificationsContainer") || document.getElementById("portalNotificationsContainer");
     if (!container) return;
 
-    const user = AppState.currentUser;
     const notifs = await db.getNotifications({ employeeId: user.employeeId, userId: user.id });
     const lang = AppState.lang;
 
@@ -409,10 +417,12 @@ class HelpdeskManager {
 
   // SubTab: Profile
   async renderEmployeeProfile() {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const container = document.getElementById("epProfileContainer");
     if (!container) return;
 
-    const user = AppState.currentUser;
     const employee = user.employeeId ? await db.getById("employees", user.employeeId) : null;
     const lang = AppState.lang;
 
@@ -451,12 +461,14 @@ class HelpdeskManager {
   // 4. REQUEST DETAILS MODAL & IN-REQUEST MESSAGING
   // =========================================================================
   async openRequestDetails(requestId) {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const req = await db.getById("helpdeskRequests", requestId);
     if (!req) return;
 
     this.currentRequestId = req.id;
     const lang = AppState.lang;
-    const user = AppState.currentUser;
     const isIT = user ? (user.role === "Administrator" || user.role === "IT User") : false;
 
     const employee = req.employeeId ? await db.getById("employees", req.employeeId) : null;
@@ -589,6 +601,8 @@ class HelpdeskManager {
   // Send Reply inside Request
   async handleSendReply(event) {
     if (event && event.preventDefault) event.preventDefault();
+    const user = AppState.currentUser;
+    if (!user) return;
     if (!this.currentRequestId) return;
 
     const input = document.getElementById("reqModalReplyInput") || document.getElementById("hdReplyInput");
@@ -598,7 +612,6 @@ class HelpdeskManager {
     const req = await db.getById("helpdeskRequests", this.currentRequestId);
     if (!req) return;
 
-    const user = AppState.currentUser;
     const isIT = user ? (user.role === "Administrator" || user.role === "IT User") : false;
     const lang = AppState.lang;
 
@@ -704,6 +717,10 @@ class HelpdeskManager {
 
   // Direct Maintenance Bridging (REQ-9)
   async handleCreateMaintenanceFromRequest(requestId) {
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(AppState.lang === "ar" ? "غير مصرح لك بإنشاء صيانة من الطلب." : "Unauthorized to create maintenance from request.", "error");
+      return;
+    }
     const req = await db.getById("helpdeskRequests", requestId);
     if (!req) return;
 
@@ -762,6 +779,8 @@ class HelpdeskManager {
   // =========================================================================
   async openNewSupportRequestModal(preselectedAssetId = null) {
     const user = AppState.currentUser;
+    if (!user) return;
+
     const lang = AppState.lang;
     const form = document.getElementById("newSupportRequestForm");
     if (form) form.reset();
@@ -905,8 +924,10 @@ class HelpdeskManager {
   }
 
   async handleNewSupportRequestSubmit(event) {
-    event.preventDefault();
+    if (event && event.preventDefault) event.preventDefault();
     const user = AppState.currentUser;
+    if (!user) return;
+
     const lang = AppState.lang;
 
     const deviceSelect = document.getElementById("formReqAssetId") || document.getElementById("nsrDeviceSelect");
@@ -1010,10 +1031,12 @@ class HelpdeskManager {
   // 6. ASSET HANDOVER ACKNOWLEDGEMENT (REQ-1, REQ-2)
   // =========================================================================
   async confirmHandover(assetId) {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     const asset = await db.getById("assets", assetId);
     if (!asset) return;
 
-    const user = AppState.currentUser;
     const lang = AppState.lang;
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
 
@@ -1069,6 +1092,9 @@ class HelpdeskManager {
   }
 
   async handleNotificationClick(notifId, relatedId, type) {
+    const user = AppState.currentUser;
+    if (!user) return;
+
     await db.markNotificationRead(notifId);
     if (relatedId && (type === "it_reply" || type === "request_update" || type === "request_completed" || type === "new_request" || type === "employee_reply")) {
       await this.openRequestDetails(relatedId);
@@ -1161,6 +1187,8 @@ class HelpdeskManager {
 
   // Modal Actions
   async openLinkedMaintenance() {
+    const user = AppState.currentUser;
+    if (!user) return;
     if (!this.currentRequestId) return;
     const req = await db.getById("helpdeskRequests", this.currentRequestId);
     if (!req || !req.maintenanceId) {

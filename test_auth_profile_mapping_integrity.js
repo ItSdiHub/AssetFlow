@@ -11,7 +11,7 @@ const path = require('path');
 const assert = require('assert');
 
 console.log('================================================================================');
-console.log('STARTING SDI IT ASSET HUB - AUTH & PROFILE MAPPING INTEGRITY TESTS (A-X)');
+console.log('STARTING SDI IT ASSET HUB - AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AL) - 38 TESTS');
 console.log('================================================================================');
 
 // Read app.js source for static verification
@@ -23,10 +23,29 @@ const mockWindow = {
   addEventListener: () => {},
   document: {
     addEventListener: () => {},
+    documentElement: {
+      setAttribute: () => {},
+      getAttribute: () => null,
+      classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+      style: {}
+    },
+    body: {
+      setAttribute: () => {},
+      getAttribute: () => null,
+      classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+      appendChild: () => {},
+      removeChild: () => {},
+      style: {}
+    },
     getElementById: (id) => {
       if (id === 'loginEmail') return { value: 'testuser', focus: () => {} };
       if (id === 'loginPassword') return { value: 'ValidPass123!' };
-      if (id === 'loginModal') return { classList: { add: () => {}, remove: () => {} }, style: {}, setAttribute: () => {}, removeAttribute: () => {} };
+      if (id === 'loginModal') return {
+        classList: { add: () => {}, remove: () => {} },
+        style: { setProperty: () => {}, removeProperty: () => {} },
+        setAttribute: () => {},
+        removeAttribute: () => {}
+      };
       return null;
     },
     querySelectorAll: () => [],
@@ -47,7 +66,8 @@ global.sessionStorage = {
   setItem: () => {},
   removeItem: () => {}
 };
-global.navigator = { userAgent: 'node', onLine: true };
+Object.defineProperty(global, 'navigator', { value: { userAgent: 'node', onLine: true }, configurable: true, writable: true });
+mockWindow.navigator = global.navigator;
 
 // Load modules in order
 require('./js/i18n.js');
@@ -703,8 +723,442 @@ async function runAllTests() {
     console.log('✓ Test Y: Boot session verified to set AppState.currentUser with null-safe role guard.');
   }
 
+  // --------------------------------------------------------------------------
+  // TEST Z: Caller with allowSelfHealing: true cannot self-heal a non-Administrator profile.
+  // --------------------------------------------------------------------------
+  {
+    let updateTriggered = false;
+    const employeeProfile = {
+      id: 'usr-emp-z',
+      username: 'emp_z',
+      email: 'emp_z@sdi.ae',
+      role: 'Employee',
+      auth_user_id: null,
+      active: true
+    };
+
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [employeeProfile], error: null });
+            }
+          }),
+          update: () => {
+            updateTriggered = true;
+            return { eq: () => Promise.resolve({ data: null, error: null }) };
+          }
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'emp-auth-z', email: 'emp_z@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser, { allowSelfHealing: true });
+
+    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
+    assert.strictEqual(updateTriggered, false, 'options.allowSelfHealing: true must NOT bypass Administrator check');
+    console.log('✓ Test Z: Caller with allowSelfHealing: true cannot self-heal non-Administrator profile.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AA: Administrator self-healing is rejected if target profile is deactivated.
+  // --------------------------------------------------------------------------
+  {
+    let updateTriggered = false;
+    const deactivatedAdminProfile = {
+      id: 'usr-admin-aa',
+      username: 'deactivated_admin',
+      email: 'deact_admin@sdi.ae',
+      role: 'Administrator',
+      auth_user_id: null,
+      active: false
+    };
+
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [deactivatedAdminProfile], error: null });
+            }
+          }),
+          update: () => {
+            updateTriggered = true;
+            return { eq: () => Promise.resolve({ data: null, error: null }) };
+          }
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'admin-auth-aa', email: 'deact_admin@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser);
+
+    assert.strictEqual(res.status, 'ACCOUNT_DEACTIVATED');
+    assert.strictEqual(updateTriggered, false, 'Deactivated admin profile must not be updated or healed');
+    console.log('✓ Test AA: Administrator self-healing rejected when target profile is deactivated.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AB: Administrator self-healing fails safely if Cloud update fails.
+  // --------------------------------------------------------------------------
+  {
+    const adminProfile = {
+      id: 'usr-admin-ab',
+      username: 'admin_ab',
+      email: 'admin_ab@sdi.ae',
+      role: 'Administrator',
+      auth_user_id: null,
+      active: true
+    };
+
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [adminProfile], error: null });
+            }
+          }),
+          update: () => ({
+            eq: () => Promise.resolve({ data: null, error: { message: 'Cloud DB update failure (RLS or Network)' } })
+          })
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'admin-auth-ab', email: 'admin_ab@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser);
+
+    assert.strictEqual(res.status, 'PROFILE_LINK_ERROR');
+    assert.strictEqual(adminProfile.auth_user_id, null, 'Local profile must NOT be mutated when Cloud update fails');
+    console.log('✓ Test AB: Administrator self-healing fails safely with PROFILE_LINK_ERROR if Cloud update fails.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AC: Administrator self-healing fails safely if post-update verification read fails or mismatches.
+  // --------------------------------------------------------------------------
+  {
+    const adminProfile = {
+      id: 'usr-admin-ac',
+      username: 'admin_ac',
+      email: 'admin_ac@sdi.ae',
+      role: 'Administrator',
+      auth_user_id: null,
+      active: true
+    };
+
+    let postUpdateReadCount = 0;
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                postUpdateReadCount++;
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [adminProfile], error: null });
+            }
+          }),
+          update: () => ({
+            eq: () => Promise.resolve({ data: null, error: null })
+          })
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'admin-auth-ac', email: 'admin_ac@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser);
+
+    assert.strictEqual(res.status, 'PROFILE_LINK_ERROR');
+    assert.ok(postUpdateReadCount >= 2, 'Fresh cloud read verification must have run after update');
+    console.log('✓ Test AC: Administrator self-healing fails safely with PROFILE_LINK_ERROR if post-update verification mismatches.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AD: Unlinked Employee profile cannot self-heal under any option flags.
+  // --------------------------------------------------------------------------
+  {
+    let updateTriggered = false;
+    const empProfile = {
+      id: 'usr-emp-ad',
+      username: 'emp_ad',
+      email: 'emp_ad@sdi.ae',
+      role: 'Employee',
+      auth_user_id: null,
+      active: true
+    };
+
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [empProfile], error: null });
+            }
+          }),
+          update: () => {
+            updateTriggered = true;
+            return { eq: () => Promise.resolve({ data: null, error: null }) };
+          }
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'emp-auth-ad', email: 'emp_ad@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser, {
+      allowSelfHealing: true,
+      allowAdminSelfHealing: true,
+      force: true
+    });
+
+    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
+    assert.strictEqual(updateTriggered, false, 'Employee profile must NEVER self-heal under any option flags');
+    console.log('✓ Test AD: Unlinked Employee profile cannot self-heal under any option flags.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AE: Unlinked IT User profile cannot self-heal under any option flags.
+  // --------------------------------------------------------------------------
+  {
+    let updateTriggered = false;
+    const itProfile = {
+      id: 'usr-it-ae',
+      username: 'it_ae',
+      email: 'it_ae@sdi.ae',
+      role: 'IT User',
+      auth_user_id: null,
+      active: true
+    };
+
+    const mockDb = {
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: (field) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              return Promise.resolve({ data: [itProfile], error: null });
+            }
+          }),
+          update: () => {
+            updateTriggered = true;
+            return { eq: () => Promise.resolve({ data: null, error: null }) };
+          }
+        })
+      }
+    };
+
+    global.db = mockDb;
+    const authUser = { id: 'it-auth-ae', email: 'it_ae@sdi.ae' };
+    const res = await App.resolveAuthenticatedProfile(authUser, {
+      allowSelfHealing: true,
+      allowAdminSelfHealing: true,
+      adminOverride: true
+    });
+
+    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
+    assert.strictEqual(updateTriggered, false, 'IT User profile must NEVER self-heal under any option flags');
+    console.log('✓ Test AE: Unlinked IT User profile cannot self-heal under any option flags.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AF: Login flow revokes Auth session and clears user state on mapping failure.
+  // --------------------------------------------------------------------------
+  {
+    let signOutCalled = false;
+    const originalShowToast = App.showToast;
+
+    App.showToast = () => {};
+    AppState.currentUser = { id: 'stale-user' };
+
+    document.getElementById('loginEmail').value = 'testuser@sdi.ae';
+    document.getElementById('loginPassword').value = 'SecretPass123!';
+
+    const mockSupabase = {
+      auth: {
+        signInWithPassword: async () => ({
+          data: { user: { id: 'auth-fail-af', email: 'unknown@sdi.ae' }, session: { access_token: 'fake-jwt' } },
+          error: null
+        }),
+        signOut: async () => { signOutCalled = true; }
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null })
+          }),
+          ilike: () => Promise.resolve({ data: [], error: null })
+        })
+      })
+    };
+
+    global.db = {
+      supabase: mockSupabase,
+      isCloudOnline: true,
+      init: async () => {}
+    };
+
+    const mockEvent = { preventDefault: () => {} };
+    await App.handleLoginSubmit(mockEvent);
+
+    assert.strictEqual(signOutCalled, true, 'db.supabase.auth.signOut must be called on mapping failure');
+    assert.notStrictEqual(AppState.currentUser?.id, 'auth-fail-af', 'AppState.currentUser must not be assigned unverified identity');
+    App.showToast = originalShowToast;
+    console.log('✓ Test AF: Login flow revokes Auth session and clears user state on mapping failure.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AG: Boot flow revokes Auth session and keeps user state null on mapping failure.
+  // --------------------------------------------------------------------------
+  {
+    let bootSignOutCalled = false;
+    AppState.currentUser = null;
+
+    const mockSupabaseBoot = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: 'boot-auth-ag', email: 'unmapped@sdi.ae' } } },
+          error: null
+        }),
+        signOut: async () => { bootSignOutCalled = true; },
+        onAuthStateChange: () => {}
+      },
+      from: () => ({
+        select: () => ({
+          eq: (field) => {
+            if (field === 'auth_user_id') {
+              return { maybeSingle: async () => ({ data: null, error: null }) };
+            }
+            return Promise.resolve({ data: [], error: null });
+          },
+          ilike: () => Promise.resolve({ data: [], error: null })
+        })
+      })
+    };
+
+    global.db = {
+      supabase: mockSupabaseBoot,
+      isCloudOnline: false,
+      init: async () => {},
+      getSystemSettings: async () => ({})
+    };
+
+    await App.init();
+
+    assert.strictEqual(bootSignOutCalled, true, 'Boot session failure must immediately sign out session');
+    assert.strictEqual(AppState.currentUser, null, 'AppState.currentUser must remain null after mapping failure');
+    console.log('✓ Test AG: Boot flow revokes Auth session and keeps user state null on mapping failure.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AH: Helpdesk render() with null user does not throw.
+  // --------------------------------------------------------------------------
+  {
+    AppState.currentUser = null;
+    let didThrow = false;
+    try {
+      await Helpdesk.render();
+    } catch (e) {
+      didThrow = true;
+    }
+    assert.strictEqual(didThrow, false, 'Helpdesk.render() must not throw when AppState.currentUser is null');
+    console.log('✓ Test AH: Helpdesk render() with null user executes safely without throwing.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AI: Helpdesk openRequestDetails() with null user does not throw.
+  // --------------------------------------------------------------------------
+  {
+    AppState.currentUser = null;
+    let didThrow = false;
+    try {
+      await Helpdesk.openRequestDetails('REQ-9999');
+    } catch (e) {
+      didThrow = true;
+    }
+    assert.strictEqual(didThrow, false, 'Helpdesk.openRequestDetails() must not throw when AppState.currentUser is null');
+    console.log('✓ Test AI: Helpdesk openRequestDetails() with null user executes safely without throwing.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AJ: Helpdesk openNewSupportRequestModal() with null user does not throw.
+  // --------------------------------------------------------------------------
+  {
+    AppState.currentUser = null;
+    let didThrow = false;
+    try {
+      await Helpdesk.openNewSupportRequestModal('AST-1234');
+    } catch (e) {
+      didThrow = true;
+    }
+    assert.strictEqual(didThrow, false, 'Helpdesk.openNewSupportRequestModal() must not throw when AppState.currentUser is null');
+    console.log('✓ Test AJ: Helpdesk openNewSupportRequestModal() with null user executes safely without throwing.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AK: Helpdesk handleNewSupportRequestSubmit() with null user does not perform a write.
+  // --------------------------------------------------------------------------
+  {
+    AppState.currentUser = null;
+    let writePerformed = false;
+    global.db.put = async (store) => {
+      if (store === 'helpdeskRequests') writePerformed = true;
+    };
+    global.db.createNotification = async () => {
+      writePerformed = true;
+    };
+
+    let didThrow = false;
+    try {
+      await Helpdesk.handleNewSupportRequestSubmit({ preventDefault: () => {} });
+    } catch (e) {
+      didThrow = true;
+    }
+
+    assert.strictEqual(didThrow, false, 'handleNewSupportRequestSubmit must not throw with null user');
+    assert.strictEqual(writePerformed, false, 'handleNewSupportRequestSubmit must NOT write records when AppState.currentUser is null');
+    console.log('✓ Test AK: Helpdesk handleNewSupportRequestSubmit() with null user performs zero writes and does not throw.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AL: Helpdesk notification functions with null user do not throw.
+  // --------------------------------------------------------------------------
+  {
+    AppState.currentUser = null;
+    let didThrow = false;
+    try {
+      await Helpdesk.markAllNotificationsRead();
+      await Helpdesk.handleNotificationClick('notif-101', 'req-101', 'it_reply');
+    } catch (e) {
+      didThrow = true;
+    }
+
+    assert.strictEqual(didThrow, false, 'Helpdesk notification actions must not throw when AppState.currentUser is null');
+    console.log('✓ Test AL: Helpdesk notification functions with null user execute safely without throwing.');
+  }
+
   console.log('================================================================================');
-  console.log('ALL 25/25 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-Y) PASSED!');
+  console.log('ALL 38/38 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AL) PASSED!');
   console.log('================================================================================');
 }
 

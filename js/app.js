@@ -190,16 +190,26 @@ class Application {
     }
 
     // STEP 5 — SAFE ADMIN SELF-HEALING
-    // Conditions from Part 5:
+    // Strict conditions:
     // 1. Auth succeeded (authUser.id exists)
     // 2. authUser.email exists
     // 3. Exactly one profile matches the Auth email
     // 4. Profile is active
     // 5. Profile auth_user_id is NULL
     // 6. Profile is not already associated with another Auth UID
-    // 7. Approved admin self-healing: candidate role is Administrator or explicit option passed
+    // 7. Approved admin self-healing: candidate role is strictly "Administrator" and allowAdminSelfHealing !== false
+    // Note: Generic callers must NOT be able to set allowSelfHealing: true to bypass Administrator check.
+    if (candidate.auth_user_id != null && candidate.auth_user_id !== "") {
+      return {
+        status: "AUTH_SUCCESS_MAPPING_CONFLICT",
+        profile: candidate,
+        error: new Error("Profile already has an associated auth_user_id")
+      };
+    }
+
     const isCandidateAdmin = String(candidate.role || "").trim() === "Administrator";
-    const approvedSelfHealing = (options.allowAdminSelfHealing !== false && isCandidateAdmin) || options.allowSelfHealing === true;
+    const isCandidateActive = candidate.active !== false;
+    const approvedSelfHealing = options.allowAdminSelfHealing !== false && isCandidateAdmin && isCandidateActive;
 
     if (!approvedSelfHealing) {
       return {
