@@ -1262,6 +1262,14 @@ class DBEngine {
         selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
       }
       let { data, error } = await this.supabase.from(table).select(selectCols);
+      if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
+        await new Promise(r => setTimeout(r, 800));
+        const retryRes = await this.supabase.from(table).select(selectCols);
+        if (!retryRes.error) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
       if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
         usersTableHasEmail = false;
         const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
@@ -1366,6 +1374,15 @@ class DBEngine {
         .select(selectCols)
         .eq(cloudCol, filterValue);
       
+      if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
+        await new Promise(r => setTimeout(r, 800));
+        const retryRes = await this.supabase.from(table).select(selectCols).eq(cloudCol, filterValue);
+        if (!retryRes.error) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
+
       if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
         usersTableHasEmail = false;
         const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
@@ -1528,6 +1545,14 @@ class DBEngine {
         selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
       }
       let { data, error } = await this.supabase.from(table).select(selectCols).eq('id', id).maybeSingle();
+      if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
+        await new Promise(r => setTimeout(r, 800));
+        const retryRes = await this.supabase.from(table).select(selectCols).eq('id', id).maybeSingle();
+        if (!retryRes.error) {
+          data = retryRes.data;
+          error = null;
+        }
+      }
       if (error && storeName === "users" && (error.code === '42703' || error.code === 'PGRST204') && String(error.message || '').includes('email')) {
         usersTableHasEmail = false;
         const retryCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";

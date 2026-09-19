@@ -118,11 +118,29 @@ class Application {
 
     // STEP 1 — EXACT AUTH UID LOOKUP
     try {
-      const { data: directUser, error: queryError } = await db.supabase
+      let { data: directUser, error: queryError } = await db.supabase
         .from('users')
         .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
         .eq('auth_user_id', authUser.id)
         .maybeSingle();
+
+      // Handle clock skew / "JWT issued at future" (PGRST303) gracefully with retries
+      if (queryError && (queryError.code === 'PGRST303' || String(queryError.message || '').includes('issued at future'))) {
+        console.warn("[PGRST303] JWT issued at future detected. Retrying direct auth_user_id query after clock catch-up...");
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          await new Promise(r => setTimeout(r, 800 * attempt));
+          const retryRes = await db.supabase
+            .from('users')
+            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+            .eq('auth_user_id', authUser.id)
+            .maybeSingle();
+          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
+            directUser = retryRes.data;
+            queryError = retryRes.error;
+            break;
+          }
+        }
+      }
 
       if (queryError) {
         console.error("Direct auth_user_id lookup query error:", queryError);
@@ -168,10 +186,27 @@ class Application {
 
     let emailMatches = null;
     try {
-      const { data: matchedUsers, error: emailError } = await db.supabase
+      let { data: matchedUsers, error: emailError } = await db.supabase
           .from('users')
           .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
           .eq('email', authEmail);
+
+      // Handle clock skew / "JWT issued at future" (PGRST303) gracefully with retries
+      if (emailError && (emailError.code === 'PGRST303' || String(emailError.message || '').includes('issued at future'))) {
+        console.warn("[PGRST303] JWT issued at future detected on email query. Retrying after clock catch-up...");
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          await new Promise(r => setTimeout(r, 800 * attempt));
+          const retryRes = await db.supabase
+            .from('users')
+            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+            .eq('email', authEmail);
+          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
+            matchedUsers = retryRes.data;
+            emailError = retryRes.error;
+            break;
+          }
+        }
+      }
 
       if (emailError) {
         console.error("Email-based profile lookup error:", emailError);
@@ -296,11 +331,27 @@ class Application {
       }
 
       // STEP 6 — VERIFY CLOUD UPDATE WITH FRESH READ
-      const { data: freshProfile, error: freshError } = await db.supabase
+      let { data: freshProfile, error: freshError } = await db.supabase
         .from("users")
         .select(safeColumns)
         .eq("auth_user_id", authUser.id)
         .maybeSingle();
+
+      if (freshError && (freshError.code === 'PGRST303' || String(freshError.message || '').includes('issued at future'))) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          await new Promise(r => setTimeout(r, 800 * attempt));
+          const retryRes = await db.supabase
+            .from("users")
+            .select(safeColumns)
+            .eq("auth_user_id", authUser.id)
+            .maybeSingle();
+          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
+            freshProfile = retryRes.data;
+            freshError = retryRes.error;
+            break;
+          }
+        }
+      }
 
       if (freshError) {
         console.error("Fresh profile read after link failed:", freshError);
