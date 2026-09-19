@@ -8,7 +8,7 @@
     "dev": "node server.js",
     "build": "node -e \"['server.js', ...fs.readdirSync('js').filter(f=>f.endsWith('.js')).map(f=>'js/'+f)].forEach(f => require('child_process').execSync('node --check ' + f, {stdio: 'inherit'}))\"",
     "lint": "node -e \"['server.js', ...fs.readdirSync('js').filter(f=>f.endsWith('.js')).map(f=>'js/'+f)].forEach(f => require('child_process').execSync('node --check ' + f, {stdio: 'inherit'}))\"",
-    "test": "node test_e2e_simulation.js"
+    "test": "node test_auth_profile_mapping_integrity.js && node test_user_password_security.js && node test_e2e_simulation.js"
   },
   "keywords": [
     "asset-management",

@@ -457,7 +457,7 @@ class HelpdeskManager {
     this.currentRequestId = req.id;
     const lang = AppState.lang;
     const user = AppState.currentUser;
-    const isIT = user.role === "Administrator" || user.role === "IT User";
+    const isIT = user ? (user.role === "Administrator" || user.role === "IT User") : false;
 
     const employee = req.employeeId ? await db.getById("employees", req.employeeId) : null;
     const empName = employee ? getEntityName(employee, lang) : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee");
@@ -599,7 +599,7 @@ class HelpdeskManager {
     if (!req) return;
 
     const user = AppState.currentUser;
-    const isIT = user.role === "Administrator" || user.role === "IT User";
+    const isIT = user ? (user.role === "Administrator" || user.role === "IT User") : false;
     const lang = AppState.lang;
 
     if (!req.messages) req.messages = [];
@@ -773,7 +773,7 @@ class HelpdeskManager {
     
     const allAssets = await db.getAll("assets");
 
-    if (user.role === "Administrator" || user.role === "IT User") {
+    if (user && (user.role === "Administrator" || user.role === "IT User")) {
       // Show Employee selection for admins/IT users
       if (empGroup) empGroup.style.display = "block";
       if (empDetails) empDetails.style.display = "none"; // hidden until an employee is selected
@@ -925,7 +925,7 @@ class HelpdeskManager {
 
     // Determine target employee ID based on user role and selection
     let employeeId = null;
-    if (user.role === "Administrator" || user.role === "IT User") {
+    if (user && (user.role === "Administrator" || user.role === "IT User")) {
       const empSelect = document.getElementById("formReqEmployeeId");
       if (empSelect && empSelect.value) {
         employeeId = empSelect.value;
@@ -933,7 +933,7 @@ class HelpdeskManager {
         employeeId = null; // General Request
       }
     } else {
-      employeeId = user.employeeId || null;
+      employeeId = user ? (user.employeeId || null) : null;
     }
 
     const targetAssetId = deviceId || null;
@@ -968,7 +968,7 @@ class HelpdeskManager {
       messages: [
         {
           id: "msg-" + Date.now(),
-          senderType: user.role === "Employee" ? "Employee" : "IT",
+          senderType: (user && user.role === "Employee") ? "Employee" : "IT",
           senderName: getUserDisplayName(user, "ar"),
           senderNameEn: getUserDisplayName(user, "en"),
           text: description || subject,
@@ -1046,7 +1046,7 @@ class HelpdeskManager {
 
     App.showToast(I18N[lang].handoverConfirmedSuccess || "تم تأكيد استلام الجهاز بنجاح.", "success");
 
-    if (user.role === "Employee") {
+    if (user && user.role === "Employee") {
       await this.renderEmployeeDevices();
     }
     if (AssetManager.currentDetailAssetId === assetId) {
@@ -1060,6 +1060,7 @@ class HelpdeskManager {
   // =========================================================================
   async markAllNotificationsRead() {
     const user = AppState.currentUser;
+    if (!user) return;
     await db.markAllNotificationsRead({ employeeId: user.employeeId, userId: user.id });
     App.showToast(AppState.lang === "ar" ? "تم تحديد جميع الإشعارات كمقروءة" : "All notifications marked as read", "info");
     if (user.role === "Employee") {

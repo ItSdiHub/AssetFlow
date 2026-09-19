@@ -28,6 +28,250 @@ class Application {
     this.pendingNavTarget = null;
   }
 
+  /**
+   * SHARED DETERMINISTIC AUTHENTICATED PROFILE RESOLVER
+   * Used identically for interactive login and boot session restoration.
+   * Resolves Supabase Auth identity strictly to authoritative public.users profile.
+   *
+   * @param {Object} authUser - Supabase Auth User object
+   * @param {Object} options - Resolution options (e.g. allowAdminSelfHealing)
+   * @returns {Promise<{status: string, profile: Object|null, error: Error|null, resolutionMethod?: string}>}
+   */
+  async resolveAuthenticatedProfile(authUser, options = {}) {
+    if (!authUser || !authUser.id) {
+      return {
+        status: "AUTH_INVALID_CREDENTIALS",
+        profile: null,
+        error: new Error("No authenticated user identity provided")
+      };
+    }
+
+    if (!db || !db.supabase) {
+      return {
+        status: "PROFILE_QUERY_ERROR",
+        profile: null,
+        error: new Error("Database client not available")
+      };
+    }
+
+    const safeColumns = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
+
+    // STEP 1 — EXACT AUTH UID LOOKUP
+    try {
+      const { data: directUser, error: queryError } = await db.supabase
+        .from('users')
+        .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+        .eq('auth_user_id', authUser.id)
+        .maybeSingle();
+
+      if (queryError) {
+        console.error("Direct auth_user_id lookup query error:", queryError);
+        return {
+          status: "PROFILE_QUERY_ERROR",
+          profile: null,
+          error: queryError
+        };
+      }
+
+      if (directUser) {
+        if (directUser.active === false) {
+          return {
+            status: "ACCOUNT_DEACTIVATED",
+            profile: directUser,
+            error: new Error("User account is deactivated")
+          };
+        }
+        return {
+          status: "SUCCESS",
+          profile: directUser,
+          resolutionMethod: "EXACT_AUTH_UID"
+        };
+      }
+    } catch (err) {
+      console.error("Exception during direct auth_user_id query:", err);
+      return {
+        status: "PROFILE_QUERY_ERROR",
+        profile: null,
+        error: err
+      };
+    }
+
+    // STEP 2 — VERIFIED AUTH EMAIL LOOKUP
+    const authEmail = (authUser.email || "").trim().toLowerCase();
+    if (!authEmail) {
+      return {
+        status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
+        profile: null,
+        error: new Error("Authenticated identity has no verified email")
+      };
+    }
+
+    let emailMatches = null;
+    try {
+      const { data: matchedUsers, error: emailError } = await db.supabase
+          .from('users')
+          .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+          .eq('email', authEmail);
+
+      if (emailError) {
+        console.error("Email-based profile lookup error:", emailError);
+        const isRls = emailError.code === "42501" || 
+                      emailError.code === "PGRST301" || 
+                      String(emailError.message || "").toLowerCase().includes("policy") ||
+                      String(emailError.message || "").toLowerCase().includes("permission");
+        if (isRls) {
+          return {
+            status: "PROFILE_LINK_REQUIRES_SECURE_RESOLUTION",
+            profile: null,
+            error: emailError
+          };
+        }
+        return {
+          status: "PROFILE_QUERY_ERROR",
+          profile: null,
+          error: emailError
+        };
+      }
+      emailMatches = matchedUsers;
+    } catch (err) {
+      console.error("Exception during email profile query:", err);
+      return {
+        status: "PROFILE_QUERY_ERROR",
+        profile: null,
+        error: err
+      };
+    }
+
+    if (!emailMatches || emailMatches.length === 0) {
+      return {
+        status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
+        profile: null,
+        error: new Error("No registered application profile found for verified email")
+      };
+    }
+
+    // STEP 3 — AMBIGUITY CHECK
+    if (emailMatches.length > 1) {
+      return {
+        status: "PROFILE_AMBIGUOUS",
+        profile: null,
+        error: new Error("Multiple user profiles found matching this email"),
+        matchesCount: emailMatches.length
+      };
+    }
+
+    const candidate = emailMatches[0];
+
+    // Check if candidate is active
+    if (candidate.active === false) {
+      return {
+        status: "ACCOUNT_DEACTIVATED",
+        profile: candidate,
+        error: new Error("User account is deactivated")
+      };
+    }
+
+    // STEP 4 — IDENTITY CONFLICT PROTECTION
+    if (candidate.auth_user_id && candidate.auth_user_id !== authUser.id) {
+      return {
+        status: "AUTH_SUCCESS_MAPPING_CONFLICT",
+        profile: candidate,
+        error: new Error("Profile is already linked to a different authentication identity")
+      };
+    }
+
+    // If candidate is already linked to this authUser.id
+    if (candidate.auth_user_id === authUser.id) {
+      return {
+        status: "SUCCESS",
+        profile: candidate,
+        resolutionMethod: "VERIFIED_EMAIL_MATCH"
+      };
+    }
+
+    // STEP 5 — SAFE ADMIN SELF-HEALING
+    // Conditions from Part 5:
+    // 1. Auth succeeded (authUser.id exists)
+    // 2. authUser.email exists
+    // 3. Exactly one profile matches the Auth email
+    // 4. Profile is active
+    // 5. Profile auth_user_id is NULL
+    // 6. Profile is not already associated with another Auth UID
+    // 7. Approved admin self-healing: candidate role is Administrator or explicit option passed
+    const isCandidateAdmin = String(candidate.role || "").trim() === "Administrator";
+    const approvedSelfHealing = (options.allowAdminSelfHealing !== false && isCandidateAdmin) || options.allowSelfHealing === true;
+
+    if (!approvedSelfHealing) {
+      return {
+        status: "AUTH_SUCCESS_MAPPING_MISSING",
+        profile: candidate,
+        error: new Error("User profile exists but auth_user_id mapping is unlinked")
+      };
+    }
+
+    // Execute Cloud update
+    try {
+      const { data: updateRes, error: updateError } = await db.supabase
+        .from("users")
+        .update({ auth_user_id: authUser.id })
+        .eq("id", candidate.id);
+
+      if (updateError) {
+        console.error("Admin self-healing update failed:", updateError);
+        return {
+          status: "PROFILE_LINK_ERROR",
+          profile: candidate,
+          error: updateError
+        };
+      }
+
+      // STEP 6 — VERIFY CLOUD UPDATE WITH FRESH READ
+      const { data: freshProfile, error: freshError } = await db.supabase
+        .from("users")
+        .select(safeColumns)
+        .eq("auth_user_id", authUser.id)
+        .maybeSingle();
+
+      if (freshError) {
+        console.error("Fresh profile read after link failed:", freshError);
+        return {
+          status: "PROFILE_LINK_ERROR",
+          profile: candidate,
+          error: freshError
+        };
+      }
+
+      if (!freshProfile || freshProfile.auth_user_id !== authUser.id) {
+        return {
+          status: "PROFILE_LINK_ERROR",
+          profile: candidate,
+          error: new Error("Profile auth_user_id link verification mismatch")
+        };
+      }
+
+      if (freshProfile.active === false) {
+        return {
+          status: "ACCOUNT_DEACTIVATED",
+          profile: freshProfile,
+          error: new Error("User account is deactivated")
+        };
+      }
+
+      return {
+        status: "SUCCESS",
+        profile: freshProfile,
+        resolutionMethod: "ADMIN_SELF_HEALED"
+      };
+    } catch (e) {
+      console.error("Exception during profile link update:", e);
+      return {
+        status: "PROFILE_LINK_ERROR",
+        profile: candidate,
+        error: e
+      };
+    }
+  }
+
   async init() {
     console.log("Initializing SDI IT Asset Hub...");
 
@@ -69,163 +313,62 @@ class Application {
         return;
       }
 
-      // Session exists - Verify Authoritative Role from Cloud Database
+      // Session exists - Verify Authoritative Profile via Shared Resolver
       const authUser = session.user;
-      let cloudUser = null;
-      const { data: directUser, error: queryError } = await db.supabase
-        .from('users')
-        .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-        .eq('auth_user_id', authUser.id)
-        .maybeSingle();
+      const resolution = await this.resolveAuthenticatedProfile(authUser);
 
-      if (directUser && !queryError && directUser.active !== false) {
-        directUser.role = (directUser.role || "Viewer").trim();
-        directUser.email = directUser.email || authUser.email || (directUser.username && directUser.username.includes('@') ? directUser.username : (directUser.username + '@sdi.ae'));
-        cloudUser = directUser;
-      } else {
-        // Self-healing fallback: match strictly by verified user email or username/role
-        const { data: allUsers } = await db.supabase
-          .from('users')
-          .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active');
-        
-        let candidateList = Array.isArray(allUsers) && allUsers.length > 0 ? allUsers : [];
-        if (candidateList.length === 0) {
-          try {
-            const localUsers = await db.getAll('users');
-            if (Array.isArray(localUsers) && localUsers.length > 0) {
-              candidateList = localUsers;
-            }
-          } catch (e) {
-            console.warn("Local users fallback fetch error on boot:", e);
-          }
-        }
-
-        const authEmailLower = (authUser.email || "").toLowerCase();
-        const authUserPrefix = authEmailLower.split('@')[0];
-
-        let matched = candidateList.find(u => {
-          if (!u || u.active === false) return false;
-          const uRole = (u.role || "").trim();
-          const uEmailLower = (u.email || (u.username && u.username.includes('@') ? u.username : "")).toLowerCase();
-          const uUsernameLower = (u.username || "").toLowerCase();
-
-          if (authEmailLower && uEmailLower && uEmailLower === authEmailLower) return true;
-          if (authEmailLower && uUsernameLower && (uUsernameLower === authEmailLower || uUsernameLower === authUserPrefix)) return true;
-          if (authEmailLower && uEmailLower && uEmailLower.split('@')[0] === authUserPrefix) return true;
-
-          if (authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud")) {
-            if (uRole === "Administrator" || uUsernameLower === "admin" || uUsernameLower === "mahmoud.m" || uUsernameLower === "mahmoud" || uEmailLower === "mahmoud.m@sdi.ae" || uEmailLower === "admin@sdi.ae") {
-              return true;
-            }
-          }
-
-          if (authEmailLower === "ituser@sdi.ae" || authEmailLower === "it@sdi.ae" || authEmailLower.startsWith("ituser")) {
-            if (uRole === "IT User" || uUsernameLower === "ituser") return true;
-          }
-
-          return false;
-        });
-
-        if (!matched && (authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud"))) {
-          matched = candidateList.find(u => u && u.active !== false && (u.role || "").trim() === "Administrator");
-        }
-
-        if (matched && matched.active !== false) {
-          matched.role = (matched.role || "Viewer").trim();
-          matched.email = matched.email || authUser.email || (matched.username && matched.username.includes('@') ? matched.username : (matched.username + '@sdi.ae'));
-          cloudUser = matched;
-          if (!matched.auth_user_id) {
-            await db.supabase
-              .from('users')
-              .update({ auth_user_id: authUser.id })
-              .eq('id', matched.id)
-              .catch(e => console.warn("Failed to self-heal auth_user_id on boot:", e));
-            matched.auth_user_id = authUser.id;
-          }
-        } else if (authUser) {
-          // Self-healing profile creation if user was successfully authenticated via Supabase Auth
-          let defaultRole = (authUser.user_metadata && authUser.user_metadata.role) ? authUser.user_metadata.role : "Viewer";
-          let defaultUsername = (authUser.user_metadata && authUser.user_metadata.username) ? authUser.user_metadata.username : (authUserPrefix || "user");
-          let defaultFullName = (authUser.user_metadata && (authUser.user_metadata.full_name || authUser.user_metadata.fullName)) ? (authUser.user_metadata.full_name || authUser.user_metadata.fullName) : defaultUsername;
-
-          if (authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud")) {
-            defaultRole = "Administrator";
-            defaultUsername = "admin";
-            defaultFullName = "System Administrator";
-          } else if (authEmailLower === "ituser@sdi.ae" || authEmailLower === "it@sdi.ae" || authEmailLower.startsWith("ituser")) {
-            defaultRole = "IT User";
-            defaultUsername = "ituser";
-            defaultFullName = "IT Support Technician";
-          }
-
-          const newProfile = {
-            id: defaultUsername === "admin" ? "USR-001" : defaultUsername === "ituser" ? "USR-002" : ("USR-" + (authUser.id || "001").slice(0, 6)),
-            username: defaultUsername,
-            email: authUser.email || (defaultUsername + "@sdi.ae"),
-            fullName: defaultFullName,
-            role: defaultRole,
-            auth_user_id: authUser.id,
-            active: true
-          };
-
-          cloudUser = {
-            id: newProfile.id,
-            username: newProfile.username,
-            email: newProfile.email,
-            full_name: newProfile.fullName,
-            role: newProfile.role,
-            auth_user_id: authUser.id,
-            active: true
-          };
-
-          try {
-            await db.put("users", newProfile);
-          } catch (e) {
-            console.warn("Failed to create self-healing profile in public.users on boot:", e);
-          }
-        }
-      }
-
-      if (!cloudUser && authUser) {
-        // Fallback emergency profile construct from authUser so authenticated session is never discarded
-        const emailLower = (authUser.email || "").toLowerCase();
-        const isAdminEmail = emailLower === "m_hamed@msn.com" || emailLower === "mahmoud.m@sdi.ae" || emailLower === "admin@sdi.ae" || emailLower.startsWith("admin") || emailLower.startsWith("mahmoud");
-        const isITEmail = emailLower === "ituser@sdi.ae" || emailLower === "it@sdi.ae" || emailLower.startsWith("ituser");
-        cloudUser = {
-          id: isAdminEmail ? "USR-001" : isITEmail ? "USR-002" : ("USR-" + (authUser.id || "001").slice(0, 6)),
-          username: isAdminEmail ? "admin" : isITEmail ? "ituser" : (emailLower.split('@')[0] || "user"),
-          email: authUser.email || "user@sdi.ae",
-          full_name: isAdminEmail ? "System Administrator" : isITEmail ? "IT Support Technician" : (emailLower.split('@')[0] || "User"),
-          role: isAdminEmail ? "Administrator" : isITEmail ? "IT User" : "Viewer",
-          auth_user_id: authUser.id,
-          active: true
-        };
-      }
-
-      if (!cloudUser) {
-        console.error("Auth mapping error or user not found in public.users");
-        await db.supabase.auth.signOut();
+      if (resolution.status !== "SUCCESS" || !resolution.profile) {
+        console.error("Auth mapping error or user profile not resolved on boot:", resolution.status, resolution.error);
+        await db.supabase.auth.signOut().catch(() => {});
         this.openLoginModal();
+        if (resolution.status === "ACCOUNT_DEACTIVATED") {
+          this.showToast(
+            AppState.lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated",
+            "error"
+          );
+        } else if (resolution.status === "AUTH_SUCCESS_PROFILE_NOT_FOUND") {
+          this.showToast(
+            AppState.lang === "ar"
+              ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
+              : "Authentication succeeded, but no registered user profile was found.",
+            "error"
+          );
+        } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
+          this.showToast(
+            AppState.lang === "ar"
+              ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
+              : "Identity mapping conflict: account is linked to a different identity.",
+            "error"
+          );
+        } else if (resolution.status === "PROFILE_QUERY_ERROR") {
+          this.showToast(
+            AppState.lang === "ar"
+              ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
+              : "Database query error during profile verification.",
+            "error"
+          );
+        } else if (resolution.status === "PROFILE_LINK_ERROR") {
+          this.showToast(
+            AppState.lang === "ar"
+              ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
+              : "Failed to link user profile. Please contact administrator.",
+            "error"
+          );
+        }
         return;
       }
 
-      if (cloudUser.active === false) {
-        console.warn("User account is deactivated.");
-        await db.supabase.auth.signOut();
-        this.openLoginModal();
-        return;
-      }
+      const cloudUser = resolution.profile;
 
-      // Set User State from Authoritative Cloud Source
-      const normalizedRole = String(cloudUser.role || "Viewer").trim();
+      // Authoritative Profile Mapping to AppState
       AppState.currentUser = {
         id: cloudUser.id,
         username: cloudUser.username,
         email: authUser.email || (cloudUser.username + "@sdi.ae"),
         fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
-        fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name,
+        fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
         fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-        role: normalizedRole,
+        role: String(cloudUser.role || "Viewer").trim(),
         employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
         active: cloudUser.active !== false
       };
@@ -246,6 +389,7 @@ class Application {
       localStorage.removeItem("sdi_user");
       sessionStorage.removeItem("sdi_user");
       sessionStorage.removeItem("sdi_session_user");
+      localStorage.removeItem("sdi_session_user");
 
       // Set up auth state change listener
       if (db.supabase && !window.__SDI_AUTH_LISTENER_BOUND__) {
@@ -261,6 +405,10 @@ class Application {
 
       // Apply permissions and navigate to initial view
       this.applyUserRolePermissions();
+      if (!AppState.currentUser) {
+        this.openLoginModal();
+        return;
+      }
       if (AppState.currentUser.role === "Employee") {
         await this.switchTab("employeePortal", true);
       } else {
@@ -4515,40 +4663,29 @@ class Application {
     if (!db.supabase) {
       this.showToast(
         lang === "ar"
-          ? "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة"
-          : "Cannot login while cloud is offline",
+          ? "خدمة قاعدة البيانات غير متوفرة"
+          : "Database service unavailable",
         "error"
       );
       return;
     }
 
-    if (!db.isCloudOnline) {
-      if (typeof db.checkCloudConnection === "function") {
-        await db.checkCloudConnection();
-      }
-    }
-
-    if (!db.isCloudOnline) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       this.showToast(
         lang === "ar"
-          ? "لا يمكن تسجيل الدخول عندما تكون السحابة غير متصلة"
-          : "Cannot login while cloud is offline",
+          ? "لا يمكن تسجيل الدخول عندما تكون غير متصل بالإنترنت"
+          : "Cannot login while offline",
         "error"
       );
       return;
     }
 
     let authenticatedUser = null;
-    let authUser = null;
-    let cloudUser = null;
-    let authSuccess = false;
 
     // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
-    const cleanInput = loginInput.toLowerCase();
-    if (cleanInput === "admin" || cleanInput === "admin@sdi.ae" || cleanInput === "mahmoud.m@sdi.ae" || cleanInput === "m_hamed@msn.com") {
-      emailToAuth = "m_hamed@msn.com";
-    } else if (!emailToAuth.includes("@")) {
+    const cleanInput = loginInput.trim().toLowerCase();
+    if (!emailToAuth.includes("@")) {
       try {
         const { data: userRec } = await db.supabase
           .from("users")
@@ -4569,171 +4706,40 @@ class Application {
       } catch (e) {
         console.warn("Username to email resolution warning:", e);
       }
-    }
-
-    // 2. Execute Supabase GoTrue Authentication to acquire valid JWT session for RLS
-    if (emailToAuth && emailToAuth.includes("@")) {
-      try {
-        let { data: authData, error: authError } = await db.supabase.auth.signInWithPassword({
-          email: emailToAuth,
-          password: pass
-        });
-
-        if ((authError || !authData || !authData.user) && cleanInput !== emailToAuth && cleanInput.includes("@")) {
-          const fallbackRes = await db.supabase.auth.signInWithPassword({
-            email: cleanInput,
-            password: pass
-          });
-          if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.user) {
-            authData = fallbackRes.data;
-            authError = null;
-          }
-        }
-
-        if (!authError && authData && authData.user && authData.session) {
-          authUser = authData.user;
-          const { data: cUser } = await db.supabase
-            .from("users")
-            .select("id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active")
-            .eq("auth_user_id", authUser.id)
-            .maybeSingle();
-
-          if (cUser && cUser.active !== false) {
-            cUser.role = (cUser.role || "Viewer").trim();
-            cUser.email = cUser.email || authUser.email || (cUser.username && cUser.username.includes('@') ? cUser.username : (cUser.username + '@sdi.ae'));
-            cloudUser = cUser;
-            authSuccess = true;
-          } else {
-            // Check if profile exists by username or email and link auth_user_id
-            const { data: matchedUsers } = await db.supabase
-              .from("users")
-              .select("id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active");
-            
-            let candidateList = Array.isArray(matchedUsers) && matchedUsers.length > 0 ? matchedUsers : [];
-            if (candidateList.length === 0) {
-              try {
-                const localUsers = await db.getAll('users');
-                if (Array.isArray(localUsers) && localUsers.length > 0) {
-                  candidateList = localUsers;
-                }
-              } catch (e) {
-                console.warn("Local users fallback fetch error in login:", e);
-              }
-            }
-
-            const authEmailLower = (authUser.email || emailToAuth || cleanInput).toLowerCase();
-            const authUserPrefix = authEmailLower.split('@')[0];
-
-            let matched = candidateList.find(u => {
-              if (!u || u.active === false) return false;
-              const uRole = (u.role || "").trim();
-              const uEmailLower = (u.email || (u.username && u.username.includes('@') ? u.username : "")).toLowerCase();
-              const uUsernameLower = (u.username || "").toLowerCase();
-
-              if (cleanInput && (uUsernameLower === cleanInput || uEmailLower === cleanInput)) return true;
-              if (authEmailLower && uEmailLower && uEmailLower === authEmailLower) return true;
-              if (authEmailLower && uUsernameLower && (uUsernameLower === authEmailLower || uUsernameLower === authUserPrefix)) return true;
-              if (authEmailLower && uEmailLower && uEmailLower.split('@')[0] === authUserPrefix) return true;
-
-              if (emailToAuth === "m_hamed@msn.com" || authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud")) {
-                if (uRole === "Administrator" || uUsernameLower === "admin" || uUsernameLower === "mahmoud.m" || uUsernameLower === "mahmoud" || uEmailLower === "mahmoud.m@sdi.ae" || uEmailLower === "admin@sdi.ae") {
-                  return true;
-                }
-              }
-
-              if (authEmailLower === "ituser@sdi.ae" || authEmailLower === "it@sdi.ae" || authEmailLower.startsWith("ituser")) {
-                if (uRole === "IT User" || uUsernameLower === "ituser") return true;
-              }
-
-              return false;
-            });
-
-            if (!matched && (emailToAuth === "m_hamed@msn.com" || authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud"))) {
-              matched = candidateList.find(u => u && u.active !== false && (u.role || "").trim() === "Administrator");
-            }
-
-            if (matched && matched.active !== false) {
-              matched.role = (matched.role || "Viewer").trim();
-              matched.email = matched.email || authUser.email || (matched.username && matched.username.includes('@') ? matched.username : (matched.username + '@sdi.ae'));
-              cloudUser = matched;
-              authSuccess = true;
-              if (!matched.auth_user_id) {
-                await db.supabase
-                  .from("users")
-                  .update({ auth_user_id: authUser.id })
-                  .eq("id", matched.id)
-                  .catch(e => console.warn("Failed to link auth_user_id:", e));
-                matched.auth_user_id = authUser.id;
-              }
-            } else if (authUser) {
-              // Self-healing profile creation on login if authenticated via Supabase Auth
-              let defaultRole = (authUser.user_metadata && authUser.user_metadata.role) ? authUser.user_metadata.role : "Viewer";
-              let defaultUsername = (authUser.user_metadata && authUser.user_metadata.username) ? authUser.user_metadata.username : (authUserPrefix || "user");
-              let defaultFullName = (authUser.user_metadata && (authUser.user_metadata.full_name || authUser.user_metadata.fullName)) ? (authUser.user_metadata.full_name || authUser.user_metadata.fullName) : defaultUsername;
-
-              if (emailToAuth === "m_hamed@msn.com" || authEmailLower === "m_hamed@msn.com" || authEmailLower === "mahmoud.m@sdi.ae" || authEmailLower === "admin@sdi.ae" || authEmailLower.startsWith("admin") || authEmailLower.startsWith("mahmoud")) {
-                defaultRole = "Administrator";
-                defaultUsername = "admin";
-                defaultFullName = "System Administrator";
-              } else if (authEmailLower === "ituser@sdi.ae" || authEmailLower === "it@sdi.ae" || authEmailLower.startsWith("ituser")) {
-                defaultRole = "IT User";
-                defaultUsername = "ituser";
-                defaultFullName = "IT Support Technician";
-              }
-
-              const newProfile = {
-                id: defaultUsername === "admin" ? "USR-001" : defaultUsername === "ituser" ? "USR-002" : ("USR-" + (authUser.id || "001").slice(0, 6)),
-                username: defaultUsername,
-                email: authUser.email || (defaultUsername + "@sdi.ae"),
-                fullName: defaultFullName,
-                role: defaultRole,
-                auth_user_id: authUser.id,
-                active: true
-              };
-
-              cloudUser = {
-                id: newProfile.id,
-                username: newProfile.username,
-                email: newProfile.email,
-                full_name: newProfile.fullName,
-                role: newProfile.role,
-                auth_user_id: authUser.id,
-                active: true
-              };
-              authSuccess = true;
-
-              try {
-                await db.put("users", newProfile);
-              } catch (e) {
-                console.warn("Failed to create self-healing profile in public.users during login:", e);
-              }
-            }
-          }
-
-          if (!cloudUser && authUser) {
-            const emailLower = (authUser.email || emailToAuth || cleanInput).toLowerCase();
-            const isAdminEmail = emailLower === "m_hamed@msn.com" || emailLower === "mahmoud.m@sdi.ae" || emailLower === "admin@sdi.ae" || emailLower.startsWith("admin") || emailLower.startsWith("mahmoud");
-            const isITEmail = emailLower === "ituser@sdi.ae" || emailLower === "it@sdi.ae" || emailLower.startsWith("ituser");
-            cloudUser = {
-              id: isAdminEmail ? "USR-001" : isITEmail ? "USR-002" : ("USR-" + (authUser.id || "001").slice(0, 6)),
-              username: isAdminEmail ? "admin" : isITEmail ? "ituser" : (emailLower.split('@')[0] || "user"),
-              email: authUser.email || emailToAuth || "user@sdi.ae",
-              full_name: isAdminEmail ? "System Administrator" : isITEmail ? "IT Support Technician" : (emailLower.split('@')[0] || "User"),
-              role: isAdminEmail ? "Administrator" : isITEmail ? "IT User" : "Viewer",
-              auth_user_id: authUser.id,
-              active: true
-            };
-            authSuccess = true;
-          }
-        }
-      } catch (err) {
-        console.warn("Supabase GoTrue sign-in error:", err);
+      if (!emailToAuth.includes("@")) {
+        emailToAuth = cleanInput + "@sdi.ae";
       }
     }
 
-    // 3. Strict Session Verification: Reject login if no valid Supabase Auth session exists
-    const { data: { session: activeSession } } = await db.supabase.auth.getSession();
-    if (!authSuccess || !activeSession || !activeSession.access_token || !cloudUser) {
+    // 2. Execute Supabase GoTrue Authentication to acquire valid JWT session for RLS
+    let authUser = null;
+    let authData = null;
+    let authError = null;
+
+    try {
+      const res = await db.supabase.auth.signInWithPassword({
+        email: emailToAuth,
+        password: pass
+      });
+      authData = res.data;
+      authError = res.error;
+
+      if ((authError || !authData || !authData.user) && cleanInput !== emailToAuth && cleanInput.includes("@")) {
+        const fallbackRes = await db.supabase.auth.signInWithPassword({
+          email: cleanInput,
+          password: pass
+        });
+        if (!fallbackRes.error && fallbackRes.data && fallbackRes.data.user) {
+          authData = fallbackRes.data;
+          authError = null;
+        }
+      }
+    } catch (err) {
+      authError = err;
+    }
+
+    if (authError || !authData || !authData.user || !authData.session) {
+      console.warn("Authentication failed:", authError);
       this.showToast(
         lang === "ar"
           ? "اسم المستخدم أو كلمة المرور غير صحيحة"
@@ -4743,11 +4749,55 @@ class Application {
       return;
     }
 
-    // 4. Derive AppState.currentUser strictly from Cloud User and Session
+    authUser = authData.user;
+
+    // 3. Resolve Application Profile via Shared Deterministic Resolver
+    const resolution = await this.resolveAuthenticatedProfile(authUser);
+
+    if (resolution.status !== "SUCCESS" || !resolution.profile) {
+      console.error("Profile resolution failed after authentication:", resolution.status, resolution.error);
+      // Revoke authenticated Supabase session immediately
+      await db.supabase.auth.signOut().catch(() => {});
+
+      let errorMsg = lang === "ar"
+        ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
+        : "Authentication succeeded, but no registered user profile was found.";
+
+      if (resolution.status === "ACCOUNT_DEACTIVATED") {
+        errorMsg = lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated";
+      } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
+        errorMsg = lang === "ar"
+          ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
+          : "Identity mapping conflict: account is linked to a different identity.";
+      } else if (resolution.status === "PROFILE_AMBIGUOUS") {
+        errorMsg = lang === "ar"
+          ? "تم العثور على عدة ملفات تعريف مطابقة لهذا البريد الإلكتروني."
+          : "Multiple user profiles found matching this email.";
+      } else if (resolution.status === "PROFILE_QUERY_ERROR") {
+        errorMsg = lang === "ar"
+          ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
+          : "Database query error during profile verification.";
+      } else if (resolution.status === "PROFILE_LINK_ERROR") {
+        errorMsg = lang === "ar"
+          ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
+          : "Failed to link user profile. Please contact administrator.";
+      } else if (resolution.status === "AUTH_SUCCESS_MAPPING_MISSING") {
+        errorMsg = lang === "ar"
+          ? "الملف الشخصي غير مرتبط بحساب الدخول. يرجى مراجعة مسؤول النظام."
+          : "User profile exists but is not linked to this login account. Please contact administrator.";
+      }
+
+      this.showToast(errorMsg, "error");
+      return;
+    }
+
+    const cloudUser = resolution.profile;
+
+    // 4. Derive AppState.currentUser strictly from Authoritative Cloud Profile
     authenticatedUser = {
       id: cloudUser.id,
       username: cloudUser.username,
-      email: (authUser && authUser.email) || cloudUser.email || (cloudUser.username + "@sdi.ae"),
+      email: authUser.email || (cloudUser.username + "@sdi.ae"),
       fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
@@ -4786,6 +4836,10 @@ class Application {
 
     // Final navigation and view rendering
     try {
+      if (!AppState.currentUser) {
+        this.openLoginModal();
+        return;
+      }
       if (AppState.currentUser.role === "Employee") {
         await this.switchTab("employeePortal", true);
       } else {
@@ -4798,8 +4852,8 @@ class Application {
 
     const welcomeName = typeof getUserDisplayName === "function"
       ? getUserDisplayName(AppState.currentUser, lang)
-      : (AppState.currentUser.fullName || AppState.currentUser.username);
-    this.showToast(`${lang === "ar" ? "مرحباً بك:" : "Welcome:"} ${welcomeName} (${AppState.currentUser.role})`, "success");
+      : (AppState.currentUser ? (AppState.currentUser.fullName || AppState.currentUser.username) : "");
+    this.showToast(`${lang === "ar" ? "مرحباً بك:" : "Welcome:"} ${welcomeName} (${AppState.currentUser ? AppState.currentUser.role : ""})`, "success");
   }
 
   async handleForgotPassword(event) {
@@ -4820,25 +4874,21 @@ class Application {
 
     if (!email.includes("@")) {
       const cleanUsername = email.toLowerCase();
-      if (cleanUsername === "admin") {
-        email = "m_hamed@msn.com";
-      } else {
-        try {
-          const { data: userRec } = await db.supabase
-            .from("users")
-            .select("id, employee_id")
-            .ilike("username", cleanUsername)
+      try {
+        const { data: userRec } = await db.supabase
+          .from("users")
+          .select("id, employee_id")
+          .ilike("username", cleanUsername)
+          .maybeSingle();
+        if (userRec && userRec.employee_id) {
+          const { data: empRec } = await db.supabase
+            .from("employees")
+            .select("email")
+            .eq("id", userRec.employee_id)
             .maybeSingle();
-          if (userRec && userRec.employee_id) {
-            const { data: empRec } = await db.supabase
-              .from("employees")
-              .select("email")
-              .eq("id", userRec.employee_id)
-              .maybeSingle();
-            if (empRec && empRec.email) email = empRec.email;
-          }
-        } catch (e) {}
-      }
+          if (empRec && empRec.email) email = empRec.email;
+        }
+      } catch (e) {}
     }
 
     if (!email.includes("@")) {
@@ -6133,3 +6183,12 @@ if (typeof window !== "undefined" && typeof document !== "undefined" && !window.
     App.init();
   }
 }
+
+if (typeof window !== "undefined") {
+  window.resolveAuthenticatedProfile = (authUser, options) => App.resolveAuthenticatedProfile(authUser, options);
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { Application, App, resolveAuthenticatedProfile: (authUser, options) => App.resolveAuthenticatedProfile(authUser, options) };
+}
+
