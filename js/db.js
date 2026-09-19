@@ -211,6 +211,7 @@ function toCloudRecord(storeName, item) {
       phone: row.phone || null,
       job_title: row.jobTitle || row.job_title || null,
       department_id: row.departmentId || row.department_id || null,
+      office_id: row.officeId || row.office_id || null,
       status: row.status || "Active"
     };
   }
@@ -259,6 +260,7 @@ function toCloudRecord(storeName, item) {
       installed_by: row.installedBy || row.installed_by || null,
       project_id: row.projectId || row.project_id || null,
       office: row.office || row.officeId || row.office_id || (row.specs ? row.specs.office : null) || null,
+      office_id: row.officeId || row.office_id || null,
       branch_id: row.branchId || row.branch_id || null,
       condition: row.condition || null,
       handover_status: row.handoverStatus || row.handover_status || null,
