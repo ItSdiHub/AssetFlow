@@ -4503,6 +4503,25 @@ body[data-theme="dark"] #assetDetailsModal .spec-box div {
   padding: 0 1px;
 }
 
+mark.search-highlight,
+.search-highlight {
+  background-color: rgba(243, 112, 33, 0.22);
+  color: #9a3412;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 4px;
+  box-shadow: 0 0 0 1px rgba(243, 112, 33, 0.35);
+  display: inline-block;
+  line-height: 1.2;
+}
+
+body[data-theme="dark"] mark.search-highlight,
+body[data-theme="dark"] .search-highlight {
+  background-color: rgba(243, 112, 33, 0.35);
+  color: #fdba74;
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.45);
+}
+
 .combobox-empty {
   padding: 14px 12px;
   font-size: 12px;

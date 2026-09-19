@@ -29,6 +29,66 @@ class Application {
   }
 
   /**
+   * Universal search result text highlighter.
+   * Safely escapes HTML and wraps matching search terms in <mark class="search-highlight">.
+   *
+   * @param {string|number|null|undefined} text - The text to be highlighted
+   * @param {string} query - Filter query term(s)
+   * @returns {string} Safe HTML string with highlighted terms
+   */
+  highlightText(text, query) {
+    if (text === null || text === undefined) return "";
+    const str = String(text);
+    if (!str) return "";
+
+    const escapeHtml = (s) =>
+      String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    if (!query || typeof query !== "string") {
+      return escapeHtml(str);
+    }
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return escapeHtml(str);
+    }
+
+    // Split search terms by whitespace, escape regex special characters
+    const terms = trimmed
+      .split(/\s+/)
+      .filter((t) => t.length > 0)
+      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+    if (terms.length === 0) {
+      return escapeHtml(str);
+    }
+
+    try {
+      const safeStr = escapeHtml(str);
+
+      // Escape special HTML characters in terms so they match safeStr
+      const escapedTerms = terms.map((t) =>
+        t
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;")
+      );
+
+      const pattern = new RegExp(`(${escapedTerms.join("|")})`, "gi");
+      return safeStr.replace(pattern, '<mark class="search-highlight">$1</mark>');
+    } catch (e) {
+      return escapeHtml(str);
+    }
+  }
+
+  /**
    * SHARED DETERMINISTIC AUTHENTICATED PROFILE RESOLVER
    * Used identically for interactive login and boot session restoration.
    * Resolves Supabase Auth identity strictly to authoritative public.users profile.
@@ -4660,6 +4720,18 @@ class Application {
     const pass = document.getElementById("loginPassword")?.value || "";
     const lang = AppState.lang;
 
+    // Client-side Throttling & Cooldown Check
+    if (this.loginCooldownUntil && Date.now() < this.loginCooldownUntil) {
+      const remainingSec = Math.ceil((this.loginCooldownUntil - Date.now()) / 1000);
+      this.showToast(
+        lang === "ar"
+          ? `تم تعليق المحاولات المؤقت. يرجى الانتظار ${remainingSec} ثانية.`
+          : `Login temporarily throttled. Please wait ${remainingSec} seconds.`,
+        "error"
+      );
+      return;
+    }
+
     if (!loginInput || !pass) {
       this.showToast(
         lang === "ar"
@@ -4689,6 +4761,22 @@ class Application {
       );
       return;
     }
+
+    const recordFailedAttempt = () => {
+      const now = Date.now();
+      this.failedLoginAttempts = (this.failedLoginAttempts || []).filter(t => now - t < 60000);
+      this.failedLoginAttempts.push(now);
+      if (this.failedLoginAttempts.length >= 5) {
+        this.loginCooldownUntil = now + 30000; // 30-second cooldown
+        this.failedLoginAttempts = [];
+        this.showToast(
+          lang === "ar"
+            ? "تجاوزت عدد محاولات الدخول المسموح بها (5 محاولات). تم تعليق تسجيل الدخول لمدة 30 ثانية."
+            : "Too many failed login attempts (5 attempts). Login suspended for 30 seconds.",
+          "error"
+        );
+      }
+    };
 
     let authenticatedUser = null;
 
@@ -4750,14 +4838,21 @@ class Application {
 
     if (authError || !authData || !authData.user || !authData.session) {
       console.warn("Authentication failed:", authError);
-      this.showToast(
-        lang === "ar"
-          ? "اسم المستخدم أو كلمة المرور غير صحيحة"
-          : "Invalid username or password",
-        "error"
-      );
+      recordFailedAttempt();
+      if (!this.loginCooldownUntil) {
+        this.showToast(
+          lang === "ar"
+            ? "اسم المستخدم أو كلمة المرور غير صحيحة"
+            : "Invalid username or password",
+          "error"
+        );
+      }
       return;
     }
+
+    // Reset failed attempts counter on successful password auth
+    this.failedLoginAttempts = [];
+    this.loginCooldownUntil = null;
 
     authUser = authData.user;
 
@@ -6151,6 +6246,7 @@ window.RelationalHelper = RelationalHelper;
 const App = new Application();
 App.RelationalHelper = RelationalHelper;
 window.App = App;
+window.highlightText = (text, query) => App.highlightText(text, query);
 
 // Global Searchable Combobox Exports & Event Listeners
 window.enhanceSelectWithSearch = (sel, def, ph) => App.enhanceSelectWithSearch(sel, def, ph);

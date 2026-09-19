@@ -123,6 +123,16 @@ class HelpdeskManager {
         deptName = typeof req.department === "object" ? (typeof getEntityName === "function" ? getEntityName(req.department, lang) : (req.department.nameAr || req.department.nameEn || "-")) : req.department;
       }
 
+      const q = this.filterSearch || "";
+      const reqIdHtml = highlightText(req.requestId || req.id, q);
+      const empNameHtml = highlightText(empName, q);
+      const assetDisplayHtml = highlightText(assetDisplay, q);
+      const deptNameHtml = highlightText(deptName, q);
+      const rawSubject = (lang === "en" && req.subjectEn) ? req.subjectEn : req.subject;
+      const rawDesc = (lang === "en" && req.descriptionEn) ? req.descriptionEn : (req.description || "");
+      const subjectHtml = highlightText(rawSubject, q);
+      const descHtml = rawDesc ? highlightText(rawDesc, q) : "";
+
       const statusBadge = this.getStatusBadge(req.status);
       const msgCount = (req.messages || []).length;
       const hasMaint = !!req.maintenanceId;
@@ -131,22 +141,22 @@ class HelpdeskManager {
         <tr>
           <td>
             <a href="javascript:void(0)" onclick="Helpdesk.openRequestDetails('${req.id}')" class="font-bold text-primary">
-              ${req.requestId || req.id}
+              ${reqIdHtml}
             </a>
           </td>
           <td>
-            <div class="font-bold">${empName}</div>
+            <div class="font-bold">${empNameHtml}</div>
           </td>
           <td>
-            <div class="text-xs ${asset ? 'text-primary' : 'text-muted'}">${assetDisplay}</div>
+            <div class="text-xs ${asset ? 'text-primary' : 'text-muted'}">${assetDisplayHtml}</div>
           </td>
           <td>
-            <div class="text-sm">${deptName}</div>
+            <div class="text-sm">${deptNameHtml}</div>
           </td>
           <td><span class="badge badge-secondary">${this.formatType(req.requestType)}</span></td>
           <td>
-            <div class="font-bold text-sm">${(lang === "en" && req.subjectEn) ? req.subjectEn : req.subject}</div>
-            <div class="text-muted text-xs truncate" style="max-width: 250px;">${(lang === "en" && req.descriptionEn) ? req.descriptionEn : (req.description || "")}</div>
+            <div class="font-bold text-sm">${subjectHtml}</div>
+            <div class="text-muted text-xs truncate" style="max-width: 250px;">${descHtml}</div>
           </td>
           <td>${statusBadge}</td>
           <td>

@@ -39,18 +39,24 @@ class ContractorManagementController {
 
     let html = "";
     filtered.forEach(c => {
-      const name = lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr);
+      const rawName = lang === "ar" ? c.companyNameAr : (c.companyNameEn || c.companyNameAr);
+      const codeHtml = highlightText(c.code || "-", searchVal);
+      const nameHtml = highlightText(rawName, searchVal);
+      const contactHtml = highlightText(c.contactPerson || "-", searchVal);
+      const phoneHtml = highlightText(c.phone || "-", searchVal);
+      const emailHtml = highlightText(c.email || "-", searchVal);
+
       const statusBadge = c.active !== false
         ? `<span class="badge badge-success">${lang === "ar" ? "نشط" : "Active"}</span>`
         : `<span class="badge badge-secondary">${lang === "ar" ? "غير نشط" : "Inactive"}</span>`;
 
       html += `
         <tr>
-          <td><code class="serial-tag">${c.code || "-"}</code></td>
-          <td><strong>${name}</strong></td>
-          <td>${c.contactPerson || "-"}</td>
-          <td>${c.phone || "-"}</td>
-          <td>${c.email || "-"}</td>
+          <td><code class="serial-tag">${codeHtml}</code></td>
+          <td><strong>${nameHtml}</strong></td>
+          <td>${contactHtml}</td>
+          <td>${phoneHtml}</td>
+          <td>${emailHtml}</td>
           <td>${statusBadge}</td>
           <td>
             <div class="table-actions">
@@ -691,9 +697,13 @@ class ProjectManagementController {
 
     let html = "";
     filtered.forEach(p => {
-      const name = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
-      const contractorName = contractorMap[p.contractorId] || "-";
-      const locName = locMap[p.locationId] || "-";
+      const rawName = lang === "ar" ? p.nameAr : (p.nameEn || p.nameAr);
+      const prjNoHtml = highlightText(p.projectNo || "-", searchVal);
+      const nameHtml = highlightText(rawName, searchVal);
+      const typeHtml = highlightText(p.projectType || "", searchVal);
+      const contractorHtml = highlightText(contractorMap[p.contractorId] || "-", searchVal);
+      const locHtml = highlightText(locMap[p.locationId] || "-", searchVal);
+
       const overdue = this.isOverdue(p);
       const statusBadge = this.getStatusBadge(p.status, overdue);
 
@@ -709,10 +719,10 @@ class ProjectManagementController {
 
       html += `
         <tr>
-          <td><code class="serial-tag">${p.projectNo || "-"}</code></td>
-          <td><strong>${name}</strong><br><small class="text-muted">${p.projectType || ""}</small></td>
-          <td>${contractorName}</td>
-          <td><i class="fas fa-map-marker-alt text-warning"></i> ${locName}</td>
+          <td><code class="serial-tag">${prjNoHtml}</code></td>
+          <td><strong>${nameHtml}</strong>${typeHtml ? `<br><small class="text-muted">${typeHtml}</small>` : ""}</td>
+          <td>${contractorHtml}</td>
+          <td><i class="fas fa-map-marker-alt text-warning"></i> ${locHtml}</td>
           <td>${p.startDate || "-"}</td>
           <td>${p.plannedEndDate || "-"}</td>
           <td>${progressBar}</td>
@@ -2564,11 +2574,19 @@ class AssetOperationsController {
     let html = "";
     filteredAssets.forEach(a => {
       const issue = pendingIssuesMap[a.id] || {};
-      const sourceLoc = locMap[issue.warehouseLocationId || a.locationId] || "-";
-      const receiver = empMap[issue.itEmployeeId || a.currentEmployeeId] || "-";
+      const rawSourceLoc = locMap[issue.warehouseLocationId || a.locationId] || "-";
+      const rawReceiver = empMap[issue.itEmployeeId || a.currentEmployeeId] || "-";
       const issueDate = issue.issueDate || a.assignmentDate || "-";
-      const typeName = typeMap[a.assetTypeId] || "-";
-      const issueNo = issue.issueNo || "-";
+      const rawTypeName = typeMap[a.assetTypeId] || "-";
+      const rawIssueNo = issue.issueNo || "-";
+
+      const assetIdHtml = highlightText(a.assetId, query);
+      const brandModelHtml = highlightText(`${a.brand || ""} ${a.model || ""}`.trim(), query);
+      const typeNameHtml = highlightText(rawTypeName, query);
+      const serialHtml = highlightText(a.serial || "-", query);
+      const issueNoHtml = highlightText(rawIssueNo, query);
+      const sourceLocHtml = highlightText(rawSourceLoc, query);
+      const receiverHtml = highlightText(rawReceiver, query);
 
       html += `
         <tr class="clickable-awaiting-row" onclick="OpsManager.handleAwaitingRowClick(event, '${a.id}')" title="${lang === 'ar' ? 'اضغط لعرض الشجرة التفاعلية للسجل وأمر الصرف' : 'Click to toggle lineage tree'}">
@@ -2576,14 +2594,14 @@ class AssetOperationsController {
             <span class="tree-toggle-icon" id="treeToggleIcon-${a.id}" onclick="event.stopPropagation(); OpsManager.toggleAwaitingTree('${a.id}')" title="${lang === 'ar' ? 'فتح / إغلاق الشجرة' : 'Toggle Tree'}">
               <i class="fas fa-chevron-down"></i>
             </span>
-            <code class="serial-tag font-bold">${a.assetId}</code>
+            <code class="serial-tag font-bold">${assetIdHtml}</code>
           </td>
-          <td><strong>${a.brand || ""} ${a.model || ""}</strong><br><small class="text-muted">${typeName}</small></td>
-          <td><code>${a.serial || "-"}</code></td>
-          <td><span class="badge badge-secondary">${issueNo}</span></td>
+          <td><strong>${brandModelHtml}</strong><br><small class="text-muted">${typeNameHtml}</small></td>
+          <td><code>${serialHtml}</code></td>
+          <td><span class="badge badge-secondary">${issueNoHtml}</span></td>
           <td>${issueDate}</td>
-          <td><i class="fas fa-warehouse text-warning"></i> ${sourceLoc}</td>
-          <td><i class="fas fa-user-cog text-primary"></i> ${receiver}</td>
+          <td><i class="fas fa-warehouse text-warning"></i> ${sourceLocHtml}</td>
+          <td><i class="fas fa-user-cog text-primary"></i> ${receiverHtml}</td>
           <td>
             <span class="badge badge-warning">${I18N[lang].statusInTransit || "قيد النقل / بانتظار التركيب"}</span>
             ${issue.installationStatus === 'Draft' ? `<br><small class="badge badge-info mt-1" style="font-size:10px;"><i class="fas fa-pencil-alt"></i> ${lang === 'ar' ? 'مسودة محفوظة' : 'Draft'}</small>` : ''}
@@ -2711,22 +2729,29 @@ class AssetOperationsController {
     let html = "";
     filteredIssues.forEach(i => {
       const asset = assetMap[i.assetId] || {};
-      const sourceLoc = locMap[i.warehouseLocationId] || "-";
-      const receiver = empMap[i.itEmployeeId] || "-";
-      const prjName = prjMap[i.projectId] || "-";
+      const rawSourceLoc = locMap[i.warehouseLocationId] || "-";
+      const rawReceiver = empMap[i.itEmployeeId] || "-";
+      const rawPrjName = prjMap[i.projectId] || "-";
       const isInstalled = i.status === "Installed";
       const statusText = isInstalled ? (lang === "ar" ? "تم التركيب" : "Installed") : (lang === "ar" ? "قيد النقل" : "In Transit");
       const statusBadge = isInstalled ? "badge-success" : "badge-warning";
 
+      const issueNoHtml = highlightText(i.issueNo || "-", query);
+      const assetCodeHtml = highlightText(asset.assetId || "-", query);
+      const assetNameHtml = highlightText(`${asset.brand || ""} ${asset.model || ""}`.trim(), query);
+      const sourceLocHtml = highlightText(rawSourceLoc, query);
+      const receiverHtml = highlightText(rawReceiver, query);
+      const prjNameHtml = highlightText(rawPrjName, query);
+
       html += `
         <tr>
-          <td><code class="serial-tag font-bold">${i.issueNo || "-"}</code></td>
+          <td><code class="serial-tag font-bold">${issueNoHtml}</code></td>
           <td>${i.issueDate || "-"}</td>
-          <td><strong>${asset.assetId || "-"}</strong></td>
-          <td>${asset.brand || ""} ${asset.model || ""}</td>
-          <td>${sourceLoc}</td>
-          <td>${receiver}</td>
-          <td>${prjName}</td>
+          <td><strong>${assetCodeHtml}</strong></td>
+          <td>${assetNameHtml}</td>
+          <td>${sourceLocHtml}</td>
+          <td>${receiverHtml}</td>
+          <td>${prjNameHtml}</td>
           <td><span class="badge ${statusBadge}">${statusText}</span></td>
           <td>
             <div class="table-actions" style="display: flex; gap: 4px;">
@@ -2833,21 +2858,27 @@ class AssetOperationsController {
     let html = "";
     filteredTransfers.forEach((t, idx) => {
       const asset = assetMap[t.assetId] || {};
-      const fromLoc = locMap[t.fromLocationId] || "-";
-      const toLoc = locMap[t.toLocationId] || "-";
+      const rawFromLoc = locMap[t.fromLocationId] || "-";
+      const rawToLoc = locMap[t.toLocationId] || "-";
       const cond = t.condition === "Working" ? (lang === "ar" ? "سليم" : "Working") : (lang === "ar" ? "معطل" : "Not Working");
       const statusClass = t.status === "Completed" ? "badge-success" : "badge-warning";
+
+      const assetCodeHtml = highlightText(asset.assetId || "-", query);
+      const assetNameHtml = highlightText(`${asset.brand || ""} ${asset.model || ""}`.trim(), query);
+      const fromLocHtml = highlightText(rawFromLoc, query);
+      const toLocHtml = highlightText(rawToLoc, query);
+      const notesHtml = highlightText(t.notes || "-", query);
 
       html += `
         <tr>
           <td>${idx + 1}</td>
           <td>${t.transferDate || "-"}</td>
-          <td><code>${asset.assetId || "-"}</code></td>
-          <td>${asset.brand || ""} ${asset.model || ""}</td>
+          <td><code>${assetCodeHtml}</code></td>
+          <td>${assetNameHtml}</td>
           <td>1</td>
-          <td>${fromLoc}</td>
-          <td><strong class="text-primary">${toLoc}</strong></td>
-          <td><small>${t.notes || "-"}</small></td>
+          <td>${fromLocHtml}</td>
+          <td><strong class="text-primary">${toLocHtml}</strong></td>
+          <td><small>${notesHtml}</small></td>
           <td><span class="badge ${statusClass}">${t.status || "Completed"}</span> <small>(${cond})</small></td>
         </tr>
       `;
@@ -3915,30 +3946,40 @@ class AssetOperationsController {
       let html = "";
 
       filtered.forEach(a => {
-        const assetCode = a.assetId || a.id;
-        const typeName = typeMap[a.assetTypeId || a.typeId] || "-";
-        const assetName = `${a.brand || ''} ${a.model || a.name || ''}`.trim() || "-";
-        const locName = locMap[a.locationId] || "-";
-        const deptName = deptMap[a.departmentId] || "-";
+        const rawCode = a.assetId || a.id;
+        const rawType = typeMap[a.assetTypeId || a.typeId] || "-";
+        const rawName = `${a.brand || ''} ${a.model || a.name || ''}`.trim() || "-";
+        const rawLoc = locMap[a.locationId] || "-";
+        const rawDept = deptMap[a.departmentId] || "-";
         const curOfficeId = a.officeId || a.office;
-        const areaRoom = officeMap[curOfficeId] || curOfficeId || a.room || a.specs?.office || "-";
-        const prjName = prjMap[a.projectId] || "-";
+        const rawAreaRoom = officeMap[curOfficeId] || curOfficeId || a.room || a.specs?.office || "-";
+        const rawPrj = prjMap[a.projectId] || "-";
         const instDate = a.installationDate || a.assignmentDate || "-";
-        const installedBy = empMap[a.installedBy] || a.installedBy || "-";
+        const rawInstalledBy = empMap[a.installedBy] || a.installedBy || "-";
         const statusText = lang === "ar" ? (a.status === "Installed" ? "مركب" : a.status) : a.status;
+
+        const codeHtml = highlightText(rawCode, query);
+        const typeHtml = highlightText(rawType, query);
+        const serialHtml = highlightText(a.serial || "-", query);
+        const nameHtml = highlightText(rawName, query);
+        const locHtml = highlightText(rawLoc, query);
+        const deptHtml = highlightText(rawDept, query);
+        const areaRoomHtml = highlightText(rawAreaRoom, query);
+        const prjHtml = highlightText(rawPrj, query);
+        const installedByHtml = highlightText(rawInstalledBy, query);
 
         html += `
           <tr>
-            <td><code class="serial-tag">${assetCode}</code></td>
-            <td>${typeName}</td>
-            <td>${a.serial || "-"}</td>
-            <td><strong>${assetName}</strong></td>
-            <td>${locName}</td>
-            <td>${deptName}</td>
-            <td>${areaRoom}</td>
-            <td>${prjName}</td>
+            <td><code class="serial-tag">${codeHtml}</code></td>
+            <td>${typeHtml}</td>
+            <td>${serialHtml}</td>
+            <td><strong>${nameHtml}</strong></td>
+            <td>${locHtml}</td>
+            <td>${deptHtml}</td>
+            <td>${areaRoomHtml}</td>
+            <td>${prjHtml}</td>
             <td>${instDate}</td>
-            <td>${installedBy}</td>
+            <td>${installedByHtml}</td>
             <td><span class="badge badge-success">${statusText}</span></td>
             <td>
               <div class="table-actions" style="display: flex; gap: 4px;">

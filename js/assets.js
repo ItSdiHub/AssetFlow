@@ -148,11 +148,21 @@ class AssetInventoryManager {
     let html = "";
     filtered.forEach(asset => {
       const typeObj = typeMap[asset.assetTypeId];
-      const typeName = typeObj ? (lang === "ar" ? typeObj.nameAr : (typeObj.nameEn || typeObj.nameAr)) : "-";
-      const empName = empMap[asset.currentEmployeeId] || "-";
-      const deptName = deptMap[asset.departmentId] || "-";
-      const locName = locMap[asset.locationId] || (asset.locationId ? asset.locationId : (lang === "ar" ? "غير محدد ⚠️" : "Unassigned ⚠️"));
+      const rawTypeName = typeObj ? (lang === "ar" ? typeObj.nameAr : (typeObj.nameEn || typeObj.nameAr)) : "-";
+      const rawEmpName = empMap[asset.currentEmployeeId] || "-";
+      const rawDeptName = deptMap[asset.departmentId] || "-";
+      const rawLocName = locMap[asset.locationId] || (asset.locationId ? asset.locationId : (lang === "ar" ? "غير محدد ⚠️" : "Unassigned ⚠️"));
       const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
+
+      const q = this.currentSearchText || "";
+      const assetIdHtml = highlightText(asset.assetId, q);
+      const typeNameHtml = highlightText(rawTypeName, q);
+      const brandHtml = highlightText(asset.brand || "-", q);
+      const modelHtml = highlightText(asset.model || "-", q);
+      const serialHtml = highlightText(asset.serial || "-", q);
+      const empNameHtml = highlightText(rawEmpName, q);
+      const deptNameHtml = highlightText(rawDeptName, q);
+      const locNameHtml = highlightText(rawLocName, q);
 
       // Status Badge Style
       const statusClass = this.getStatusBadgeClass(asset.status);
@@ -161,19 +171,19 @@ class AssetInventoryManager {
       html += `
         <tr class="asset-row" style="cursor: pointer;">
           <td onclick="AssetManager.openDetailsModal('${asset.id}')">
-            <span class="asset-id-tag">${asset.assetId}</span>
+            <span class="asset-id-tag">${assetIdHtml}</span>
           </td>
           <td onclick="AssetManager.openDetailsModal('${asset.id}')">
-            <span class="badge badge-secondary">${typeName}</span>
+            <span class="badge badge-secondary">${typeNameHtml}</span>
           </td>
-          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><strong>${asset.brand || "-"}</strong></td>
-          <td onclick="AssetManager.openDetailsModal('${asset.id}')">${asset.model || "-"}</td>
-          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><code class="serial-tag">${asset.serial || "-"}</code></td>
+          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><strong>${brandHtml}</strong></td>
+          <td onclick="AssetManager.openDetailsModal('${asset.id}')">${modelHtml}</td>
+          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><code class="serial-tag">${serialHtml}</code></td>
           <td onclick="AssetManager.openDetailsModal('${asset.id}')">
-            ${asset.currentEmployeeId ? `<span class="emp-name-tag"><i class="fas fa-user text-primary"></i> ${empName}</span>` : `<span class="text-muted">-</span>`}
+            ${asset.currentEmployeeId ? `<span class="emp-name-tag"><i class="fas fa-user text-primary"></i> ${empNameHtml}</span>` : `<span class="text-muted">-</span>`}
           </td>
-          <td onclick="AssetManager.openDetailsModal('${asset.id}')">${deptName}</td>
-          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><i class="fas fa-map-marker-alt ${asset.locationId ? 'text-warning' : 'text-danger'}"></i> ${locName}</td>
+          <td onclick="AssetManager.openDetailsModal('${asset.id}')">${deptNameHtml}</td>
+          <td onclick="AssetManager.openDetailsModal('${asset.id}')"><i class="fas fa-map-marker-alt ${asset.locationId ? 'text-warning' : 'text-danger'}"></i> ${locNameHtml}</td>
           <td onclick="AssetManager.openDetailsModal('${asset.id}')">
             <span class="badge ${statusClass}">${statusText}</span>
           </td>

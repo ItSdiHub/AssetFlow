@@ -57,8 +57,23 @@ class MaintenanceController {
     let html = "";
     filtered.forEach(t => {
       const asset = assetMap[t.assetId];
-      const assetTag = asset ? asset.assetId : "Unknown";
-      const assetName = asset ? `${asset.brand || ""} ${asset.model || ""}` : "-";
+      const rawAssetTag = asset ? asset.assetId : "Unknown";
+      const rawAssetName = asset ? `${asset.brand || ""} ${asset.model || ""}` : "-";
+      const rawEmpName = lang === 'ar' ? (t.employeeNameAr || t.employeeName) : (t.employeeNameEn || t.employeeName);
+      const rawProblem = (lang === 'en' && t.problemEn) ? t.problemEn : (t.problem || "-");
+      const rawAction = (lang === 'en' && t.actionTakenEn) ? t.actionTakenEn : t.actionTaken;
+      const rawTech = lang === 'en' ? (t.technicianEn || (t.technician && !/[\u0600-\u06FF]/.test(t.technician) ? t.technician : (t.vendor || "IT Support"))) : (t.technician || t.vendor || "-");
+
+      const ticketIdHtml = highlightText(t.id, searchVal);
+      const assetTagHtml = highlightText(rawAssetTag, searchVal);
+      const assetNameHtml = highlightText(rawAssetName, searchVal);
+      const empNameHtml = rawEmpName ? highlightText(rawEmpName, searchVal) : "";
+      const empIdHtml = t.employeeId ? highlightText(t.employeeId, searchVal) : "";
+      const deptNameHtml = t.departmentName ? highlightText(t.departmentName, searchVal) : "";
+      const locNameHtml = t.locationName ? highlightText(t.locationName, searchVal) : "";
+      const problemHtml = highlightText(rawProblem, searchVal);
+      const actionHtml = rawAction ? highlightText(rawAction, searchVal) : "";
+      const techHtml = highlightText(rawTech, searchVal);
 
       let statusBadge = "badge-danger";
       if (t.status === "Completed") statusBadge = "badge-success";
@@ -68,34 +83,34 @@ class MaintenanceController {
 
       html += `
         <tr>
-          <td><span class="emp-id-badge">${t.id}</span></td>
+          <td><span class="emp-id-badge">${ticketIdHtml}</span></td>
           <td>
             <a href="javascript:void(0)" onclick="AssetManager.openDetailsModal('${t.assetId}')" class="font-bold text-primary">
-              ${assetTag}
+              ${assetTagHtml}
             </a>
-            <div class="text-xs text-muted">${assetName}</div>
+            <div class="text-xs text-muted">${assetNameHtml}</div>
           </td>
           <td>
             ${t.employeeId || t.employeeName ? `
-              <div class="font-bold text-sm">${lang === 'ar' ? (t.employeeNameAr || t.employeeName) : (t.employeeNameEn || t.employeeName)}</div>
+              <div class="font-bold text-sm">${empNameHtml}</div>
               <div class="text-xs text-muted" style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
-                <span class="emp-id-badge" style="font-size: 11px; padding: 2px 6px;">${t.employeeId}</span>
+                <span class="emp-id-badge" style="font-size: 11px; padding: 2px 6px;">${empIdHtml}</span>
                 ${t.employeeNumber && t.employeeNumber !== t.employeeId ? `<span class="badge badge-secondary" style="font-size: 10px;">#${t.employeeNumber}</span>` : ''}
               </div>
             ` : `<span class="text-muted text-xs">-</span>`}
           </td>
           <td>
             ${t.departmentName || t.locationName ? `
-              <div class="text-sm font-semibold">${t.departmentName || '-'}</div>
-              <div class="text-xs text-muted"><i class="fas fa-map-marker-alt text-danger"></i> ${t.locationName || '-'}</div>
+              <div class="text-sm font-semibold">${deptNameHtml || '-'}</div>
+              <div class="text-xs text-muted"><i class="fas fa-map-marker-alt text-danger"></i> ${locNameHtml || '-'}</div>
             ` : `<span class="text-muted text-xs">-</span>`}
           </td>
           <td>${t.maintenanceDate || "-"}</td>
           <td>
-            <div class="font-bold">${(lang === 'en' && t.problemEn) ? t.problemEn : (t.problem || "-")}</div>
-            ${t.actionTaken ? `<div class="text-xs text-success"><i class="fas fa-check"></i> ${(lang === 'en' && t.actionTakenEn) ? t.actionTakenEn : t.actionTaken}</div>` : ''}
+            <div class="font-bold">${problemHtml}</div>
+            ${t.actionTaken ? `<div class="text-xs text-success"><i class="fas fa-check"></i> ${actionHtml}</div>` : ''}
           </td>
-          <td>${lang === 'en' ? (t.technicianEn || (t.technician && !/[\u0600-\u06FF]/.test(t.technician) ? t.technician : (t.vendor || "IT Support"))) : (t.technician || t.vendor || "-")}</td>
+          <td>${techHtml}</td>
           <td>${t.cost ? t.cost + ' AED' : '0'}</td>
           <td><span class="badge ${statusBadge}">${lang === 'ar' ? (t.status === 'Completed' ? 'مكتمل' : (t.status === 'In Progress' ? 'قيد المعالجة' : 'مفتوح')) : t.status}</span></td>
           <td>

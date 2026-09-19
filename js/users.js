@@ -62,27 +62,35 @@ class OrganizationalManager {
 
     let html = "";
     filtered.forEach(emp => {
-      const empName = lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr);
-      const deptName = deptMap[emp.departmentId] || "-";
+      const rawEmpName = lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr);
+      const rawDeptName = deptMap[emp.departmentId] || "-";
       const assetCount = assignedMap[emp.id] || 0;
       const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
 
+      const empIdHtml = highlightText(emp.id || "-", query);
+      const empNoHtml = highlightText(emp.employeeNumber || "-", query);
+      const empNameHtml = highlightText(rawEmpName, query);
+      const secNameHtml = emp.nameEn && lang === 'ar' ? highlightText(emp.nameEn, query) : '';
+      const deptNameHtml = highlightText(rawDeptName, query);
+      const phoneHtml = emp.phone ? highlightText(emp.phone, query) : '-';
+      const emailHtml = emp.email ? highlightText(emp.email, query) : '-';
+
       html += `
         <tr>
-          <td><span class="emp-id-badge">${emp.id || "-"}</span></td>
-          <td><span class="font-bold">${emp.employeeNumber || "-"}</span></td>
+          <td><span class="emp-id-badge">${empIdHtml}</span></td>
+          <td><span class="font-bold">${empNoHtml}</span></td>
           <td>
             <div class="staff-profile-cell">
               <div class="staff-avatar-circle"><i class="fas fa-user-tie"></i></div>
               <div>
-                <div class="font-bold">${empName}</div>
-                ${emp.nameEn && lang === 'ar' ? `<div class="text-muted text-xs">${emp.nameEn}</div>` : ''}
+                <div class="font-bold">${empNameHtml}</div>
+                ${secNameHtml ? `<div class="text-muted text-xs">${secNameHtml}</div>` : ''}
               </div>
             </div>
           </td>
-          <td><i class="fas fa-building text-primary"></i> ${deptName}</td>
-          <td>${emp.phone ? `<a href="tel:${emp.phone}">${emp.phone}</a>` : '-'}</td>
-          <td>${emp.email ? `<a href="mailto:${emp.email}">${emp.email}</a>` : '-'}</td>
+          <td><i class="fas fa-building text-primary"></i> ${deptNameHtml}</td>
+          <td>${emp.phone ? `<a href="tel:${emp.phone}">${phoneHtml}</a>` : '-'}</td>
+          <td>${emp.email ? `<a href="mailto:${emp.email}">${emailHtml}</a>` : '-'}</td>
           <td>
             <span class="badge ${assetCount > 0 ? 'badge-primary' : 'badge-secondary'}"
                   ${assetCount > 0 ? `style="cursor: pointer;" onclick="AssetManager.filterByEmpAndSwitch('${emp.id}')" title="${lang === 'ar' ? 'عرض العهد المخصصة لهذا الموظف' : 'View assigned assets'}"` : ''}>
@@ -1086,9 +1094,30 @@ class OrganizationalManager {
     const isAdmin = AppState.currentUser && AppState.currentUser.role === "Administrator";
 
     const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
+    const query = (document.getElementById("userSearchInput")?.value || "").trim().toLowerCase();
+
+    const filtered = users.filter(u => {
+      if (!query) return true;
+      const uname = (u.username || "").toLowerCase();
+      const fullname = (getUserDisplayName(u, lang) || "").toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      const linked = (u.employeeId && empMap[u.employeeId] ? empMap[u.employeeId] : "").toLowerCase();
+      return uname.includes(query) || fullname.includes(query) || email.includes(query) || linked.includes(query);
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" class="text-center py-4 text-muted">
+            ${I18N[lang].noResultsFound || "لا توجد نتائج مطابقة للبحث"}
+          </td>
+        </tr>
+      `;
+      return;
+    }
 
     let html = "";
-    users.forEach(u => {
+    filtered.forEach(u => {
       let roleBadge = "badge-secondary";
       let roleLabel = u.role;
       if (u.role === "Administrator") {
@@ -1102,16 +1131,22 @@ class OrganizationalManager {
         roleLabel = lang === "ar" ? "موظف" : "Employee";
       }
 
-      const linkedEmpText = u.employeeId && empMap[u.employeeId] ? `<br><small class="text-muted"><i class="fas fa-link"></i> ${empMap[u.employeeId]}</small>` : "";
-      const emailText = u.email ? `<div class="text-muted text-xs"><i class="fas fa-envelope"></i> ${u.email}</div>` : "";
+      const usernameHtml = highlightText(u.username, query);
+      const nameHtml = highlightText(getUserDisplayName(u, lang), query);
+      const emailHtml = u.email ? highlightText(u.email, query) : "";
+      const linkedName = u.employeeId && empMap[u.employeeId] ? empMap[u.employeeId] : "";
+      const linkedEmpHtml = linkedName ? highlightText(linkedName, query) : "";
+
+      const linkedEmpText = linkedEmpHtml ? `<br><small class="text-muted"><i class="fas fa-link"></i> ${linkedEmpHtml}</small>` : "";
+      const emailText = emailHtml ? `<div class="text-muted text-xs"><i class="fas fa-envelope"></i> ${emailHtml}</div>` : "";
 
       html += `
         <tr>
           <td>
-            <strong><i class="fas fa-user-circle"></i> ${u.username}</strong>
+            <strong><i class="fas fa-user-circle"></i> ${usernameHtml}</strong>
             ${emailText}
           </td>
-          <td>${getUserDisplayName(u, lang)}${linkedEmpText}</td>
+          <td>${nameHtml}${linkedEmpText}</td>
           <td><span class="badge ${roleBadge}">${roleLabel}</span></td>
           <td>
             <span class="badge ${u.active !== false ? 'badge-success' : 'badge-danger'}">

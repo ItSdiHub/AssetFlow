@@ -33,8 +33,43 @@ function getNetworkAddresses() {
   return addresses;
 }
 
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 200; // 200 requests per minute per IP
+const ipRequestCounts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of ipRequestCounts.entries()) {
+    if (now - record.startTime > RATE_LIMIT_WINDOW_MS) {
+      ipRequestCounts.delete(ip);
+    }
+  }
+}, RATE_LIMIT_WINDOW_MS);
+
 function createServerInstance(port) {
   const server = http.createServer((req, res) => {
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    let record = ipRequestCounts.get(clientIp);
+
+    if (!record) {
+      record = { count: 1, startTime: now };
+      ipRequestCounts.set(clientIp, record);
+    } else {
+      if (now - record.startTime > RATE_LIMIT_WINDOW_MS) {
+        record.count = 1;
+        record.startTime = now;
+      } else {
+        record.count++;
+      }
+    }
+
+    if (record.count > RATE_LIMIT_MAX_REQUESTS) {
+      res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });
+      res.end('429 Too Many Requests - Rate limit exceeded.');
+      return;
+    }
+
     // CORS Headers for Local Area Network (LAN) accessibility
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
