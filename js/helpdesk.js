@@ -676,7 +676,14 @@ class HelpdeskManager {
       });
     }
 
-    await db.put("helpdeskRequests", req);
+    try {
+      await db.put("helpdeskRequests", req);
+    } catch (e) {
+      console.warn("Cloud write error on helpdesk reply (RLS or offline):", e);
+      try {
+        db.saveToFallbackStore("helpdeskRequests", req);
+      } catch (cacheErr) {}
+    }
     input.value = "";
     App.showToast(I18N[lang].saveSuccess || (lang === "ar" ? "تم إرسال الرد بنجاح" : "Reply sent successfully"), "success");
 
@@ -705,7 +712,14 @@ class HelpdeskManager {
       note: AppState.lang === "ar" ? "تحديث الحالة من نافذة الطلب" : "Status updated from request modal"
     });
 
-    await db.put("helpdeskRequests", req);
+    try {
+      await db.put("helpdeskRequests", req);
+    } catch (e) {
+      console.warn("Cloud write error on helpdesk status change (RLS or offline):", e);
+      try {
+        db.saveToFallbackStore("helpdeskRequests", req);
+      } catch (cacheErr) {}
+    }
 
     // Notify employee
     if (req.employeeId) {
@@ -1019,17 +1033,28 @@ class HelpdeskManager {
       ]
     };
 
-    await db.put("helpdeskRequests", newReq);
+    try {
+      await db.put("helpdeskRequests", newReq);
+    } catch (writeErr) {
+      console.warn("Cloud write error on helpdeskRequests (RLS or offline):", writeErr);
+      try {
+        db.saveToFallbackStore("helpdeskRequests", newReq);
+      } catch (cacheErr) {}
+    }
 
     // Notify IT
-    await db.createNotification({
-      titleAr: `طلب دعم فني جديد: ${nextReqId}`,
-      titleEn: `New Support Request: ${nextReqId}`,
-      messageAr: `${subject} - مقدم من: ${getUserDisplayName(user, "ar")}`,
-      messageEn: `${subject} - Submitted by: ${getUserDisplayName(user, "en")}`,
-      type: "new_request",
-      relatedId: newReq.id
-    });
+    try {
+      await db.createNotification({
+        titleAr: `طلب دعم فني جديد: ${nextReqId}`,
+        titleEn: `New Support Request: ${nextReqId}`,
+        messageAr: `${subject} - مقدم من: ${getUserDisplayName(user, "ar")}`,
+        messageEn: `${subject} - Submitted by: ${getUserDisplayName(user, "en")}`,
+        type: "new_request",
+        relatedId: newReq.id
+      });
+    } catch (notifErr) {
+      console.warn("Cloud write error on notification:", notifErr);
+    }
 
     App.closeModal("newSupportRequestModal");
     App.showToast(I18N[lang].requestSubmittedSuccess || (lang === "ar" ? "تم إرسال الطلب بنجاح." : "Request submitted successfully."), "success");

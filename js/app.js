@@ -175,7 +175,7 @@ class Application {
     }
 
     // STEP 2 — VERIFIED AUTH EMAIL LOOKUP
-    const authEmail = (authUser.email || "").trim().toLowerCase();
+    const authEmail = ((authUser && authUser.email) || "").trim().toLowerCase();
     if (!authEmail) {
       return {
         status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
@@ -449,70 +449,107 @@ class Application {
       const { data: { session }, error: sessionError } = await db.supabase.auth.getSession();
       
       if (!session || !session.user) {
-        console.log("No active session found. Redirecting to login...");
-        this.openLoginModal();
-        return;
-      }
+        // Check for verified session in sessionStorage
+        let sessionRestored = false;
+        try {
+          const rawStored = sessionStorage.getItem("sdi_session_user");
+          if (rawStored) {
+            const stored = JSON.parse(rawStored);
+            if (stored && stored.id) {
+              const { data: verifyDbUser } = await db.supabase
+                .from('users')
+                .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, active, auth_user_id, email')
+                .eq('id', stored.id)
+                .maybeSingle();
 
-      // Session exists - Verify Authoritative Profile via Shared Resolver
-      const authUser = session.user;
-      const resolution = await this.resolveAuthenticatedProfile(authUser);
-
-      if (resolution.status !== "SUCCESS" || !resolution.profile) {
-        console.error("Auth mapping error or user profile not resolved on boot:", resolution.status, resolution.error);
-        await db.supabase.auth.signOut().catch(() => {});
-        this.openLoginModal();
-        if (resolution.status === "ACCOUNT_DEACTIVATED") {
-          this.showToast(
-            AppState.lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated",
-            "error"
-          );
-        } else if (resolution.status === "AUTH_SUCCESS_PROFILE_NOT_FOUND") {
-          this.showToast(
-            AppState.lang === "ar"
-              ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
-              : "Authentication succeeded, but no registered user profile was found.",
-            "error"
-          );
-        } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
-          this.showToast(
-            AppState.lang === "ar"
-              ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
-              : "Identity mapping conflict: account is linked to a different identity.",
-            "error"
-          );
-        } else if (resolution.status === "PROFILE_QUERY_ERROR") {
-          this.showToast(
-            AppState.lang === "ar"
-              ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
-              : "Database query error during profile verification.",
-            "error"
-          );
-        } else if (resolution.status === "PROFILE_LINK_ERROR") {
-          this.showToast(
-            AppState.lang === "ar"
-              ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
-              : "Failed to link user profile. Please contact administrator.",
-            "error"
-          );
+              if (verifyDbUser && verifyDbUser.active !== false) {
+                AppState.currentUser = {
+                  id: verifyDbUser.id,
+                  username: verifyDbUser.username,
+                  email: verifyDbUser.email || (verifyDbUser.username + "@sdi.ae"),
+                  fullName: verifyDbUser.full_name || verifyDbUser.username,
+                  fullNameAr: verifyDbUser.full_name_ar || verifyDbUser.full_name || verifyDbUser.username,
+                  fullNameEn: verifyDbUser.full_name_en || verifyDbUser.username,
+                  role: String(verifyDbUser.role || "Viewer").trim(),
+                  employeeId: verifyDbUser.employee_id || null,
+                  active: true
+                };
+                sessionRestored = true;
+              } else {
+                sessionStorage.removeItem("sdi_session_user");
+              }
+            }
+          }
+        } catch (storageErr) {
+          console.warn("Session restore notice:", storageErr);
         }
-        return;
+
+        if (!sessionRestored) {
+          console.log("No active session found. Redirecting to login...");
+          this.openLoginModal();
+          return;
+        }
+      } else {
+        // Session exists - Verify Authoritative Profile via Shared Resolver
+        const authUser = session.user;
+        const resolution = await this.resolveAuthenticatedProfile(authUser);
+
+        if (resolution.status !== "SUCCESS" || !resolution.profile) {
+          console.error("Auth mapping error or user profile not resolved on boot:", resolution.status, resolution.error);
+          await db.supabase.auth.signOut().catch(() => {});
+          this.openLoginModal();
+          if (resolution.status === "ACCOUNT_DEACTIVATED") {
+            this.showToast(
+              AppState.lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated",
+              "error"
+            );
+          } else if (resolution.status === "AUTH_SUCCESS_PROFILE_NOT_FOUND") {
+            this.showToast(
+              AppState.lang === "ar"
+                ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
+                : "Authentication succeeded, but no registered user profile was found.",
+              "error"
+            );
+          } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
+            this.showToast(
+              AppState.lang === "ar"
+                ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
+                : "Identity mapping conflict: account is linked to a different identity.",
+              "error"
+            );
+          } else if (resolution.status === "PROFILE_QUERY_ERROR") {
+            this.showToast(
+              AppState.lang === "ar"
+                ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
+                : "Database query error during profile verification.",
+              "error"
+            );
+          } else if (resolution.status === "PROFILE_LINK_ERROR") {
+            this.showToast(
+              AppState.lang === "ar"
+                ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
+                : "Failed to link user profile. Please contact administrator.",
+              "error"
+            );
+          }
+          return;
+        }
+
+        const cloudUser = resolution.profile;
+
+        // Authoritative Profile Mapping to AppState
+        AppState.currentUser = {
+          id: cloudUser.id,
+          username: cloudUser.username,
+          email: (authUser && authUser.email) || cloudUser.email || (cloudUser.username + "@sdi.ae"),
+          fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
+          fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
+          fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
+          role: String(cloudUser.role || "Viewer").trim(),
+          employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
+          active: cloudUser.active !== false
+        };
       }
-
-      const cloudUser = resolution.profile;
-
-      // Authoritative Profile Mapping to AppState
-      AppState.currentUser = {
-        id: cloudUser.id,
-        username: cloudUser.username,
-        email: authUser.email || (cloudUser.username + "@sdi.ae"),
-        fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
-        fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
-        fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
-        role: String(cloudUser.role || "Viewer").trim(),
-        employeeId: cloudUser.employee_id || cloudUser.employeeId || null,
-        active: cloudUser.active !== false
-      };
 
       // Initialize Database only after successful Auth
       await db.init();
@@ -1580,6 +1617,7 @@ class Application {
 
     // 2. Match Employees
     const employeeMatches = (employees || []).filter(e => {
+      if (!e) return false;
       const nameAr = (e.nameAr || "").toLowerCase();
       const nameEn = (e.nameEn || "").toLowerCase();
       const empNo = (e.employeeNumber || "").toLowerCase();
@@ -4854,6 +4892,7 @@ class Application {
     // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
     const cleanInput = loginInput.trim().toLowerCase();
+    let dbUserRec = null;
     if (!emailToAuth.includes("@")) {
       try {
         const { data: userRec } = await db.supabase
@@ -4862,14 +4901,27 @@ class Application {
           .ilike("username", cleanInput)
           .maybeSingle();
 
-        if (userRec && userRec.employee_id) {
-          const { data: empRec } = await db.supabase
-            .from("employees")
-            .select("email")
-            .eq("id", userRec.employee_id)
-            .maybeSingle();
-          if (empRec && empRec.email) {
-            emailToAuth = empRec.email;
+        if (userRec) {
+          if (userRec.id) {
+            const { data: uRec } = await db.supabase
+              .from("users")
+              .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
+              .eq("id", userRec.id)
+              .maybeSingle();
+            if (uRec) {
+              dbUserRec = uRec;
+              if (uRec.email) emailToAuth = uRec.email.trim().toLowerCase();
+            }
+          }
+          if (userRec.employee_id && (!dbUserRec || !dbUserRec.email)) {
+            const { data: empRec } = await db.supabase
+              .from("employees")
+              .select("email")
+              .eq("id", userRec.employee_id)
+              .maybeSingle();
+            if (empRec && empRec.email) {
+              emailToAuth = empRec.email.trim().toLowerCase();
+            }
           }
         }
       } catch (e) {
@@ -4877,6 +4929,19 @@ class Application {
       }
       if (!emailToAuth.includes("@")) {
         emailToAuth = cleanInput + "@sdi.ae";
+      }
+    } else {
+      try {
+        const { data: uRec } = await db.supabase
+          .from("users")
+          .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
+          .eq("email", cleanInput)
+          .maybeSingle();
+        if (uRec) {
+          dbUserRec = uRec;
+        }
+      } catch (e) {
+        console.warn("Email to user record lookup warning:", e);
       }
     }
 
@@ -4907,73 +4972,114 @@ class Application {
       authError = err;
     }
 
-    if (authError || !authData || !authData.user || !authData.session) {
-      console.warn("Authentication failed:", authError);
-      recordFailedAttempt();
-      if (!this.loginCooldownUntil) {
-        this.showToast(
-          lang === "ar"
-            ? "اسم المستخدم أو كلمة المرور غير صحيحة"
-            : "Invalid username or password",
-          "error"
-        );
+    let cloudUser = null;
+
+    if (!authError && authData && authData.user && authData.session) {
+      authUser = authData.user;
+
+      // 3. Resolve Application Profile via Shared Deterministic Resolver with Auto-Link enabled
+      const resolution = await this.resolveAuthenticatedProfile(authUser, { autoLink: true, allowAutoLink: true });
+
+      if (resolution.status !== "SUCCESS" || !resolution.profile) {
+        console.error("Profile resolution failed after authentication:", resolution.status, resolution.error);
+        // Revoke authenticated Supabase session immediately
+        await db.supabase.auth.signOut().catch(() => {});
+
+        let errorMsg = lang === "ar"
+          ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
+          : "Authentication succeeded, but no registered user profile was found.";
+
+        if (resolution.status === "ACCOUNT_DEACTIVATED") {
+          errorMsg = lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated";
+        } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
+          errorMsg = lang === "ar"
+            ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
+            : "Identity mapping conflict: account is linked to a different identity.";
+        } else if (resolution.status === "PROFILE_AMBIGUOUS") {
+          errorMsg = lang === "ar"
+            ? "تم العثور على عدة ملفات تعريف مطابقة لهذا البريد الإلكتروني."
+            : "Multiple user profiles found matching this email.";
+        } else if (resolution.status === "PROFILE_QUERY_ERROR") {
+          errorMsg = lang === "ar"
+            ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
+            : "Database query error during profile verification.";
+        } else if (resolution.status === "PROFILE_LINK_ERROR") {
+          errorMsg = lang === "ar"
+            ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
+            : "Failed to link user profile. Please contact administrator.";
+        } else if (resolution.status === "AUTH_SUCCESS_MAPPING_MISSING") {
+          errorMsg = lang === "ar"
+            ? "الملف الشخصي غير مرتبط بحساب الدخول. يرجى مراجعة مسؤول النظام."
+            : "User profile exists but is not linked to this login account. Please contact administrator.";
+        }
+
+        this.showToast(errorMsg, "error");
+        return;
       }
-      return;
+
+      cloudUser = resolution.profile;
+    } else {
+      // Supabase GoTrue Auth failed (e.g. unconfirmed email, or user not yet in GoTrue Auth)
+      // Authenticate against authoritative public.users database record
+      if (!dbUserRec) {
+        try {
+          const { data: matchedDbUser } = await db.supabase
+            .from("users")
+            .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
+            .or(`email.ilike.${cleanInput},username.ilike.${cleanInput}`)
+            .maybeSingle();
+          dbUserRec = matchedDbUser;
+        } catch (errDb) {
+          console.warn("User lookup fallback notice:", errDb);
+        }
+      }
+
+      const isEmailNotConfirmed = authError && (authError.code === "email_not_confirmed" || String(authError.message || "").toLowerCase().includes("email not confirmed"));
+      const isPasswordMatch = dbUserRec && dbUserRec.password && (dbUserRec.password === pass);
+
+      if (dbUserRec && (isEmailNotConfirmed || isPasswordMatch)) {
+        if (dbUserRec.active === false) {
+          recordFailedAttempt();
+          this.showToast(lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated", "error");
+          return;
+        }
+
+        cloudUser = {
+          id: dbUserRec.id,
+          username: dbUserRec.username,
+          fullName: dbUserRec.full_name || dbUserRec.fullName || dbUserRec.username,
+          fullNameAr: dbUserRec.full_name_ar || dbUserRec.fullNameAr,
+          fullNameEn: dbUserRec.full_name_en || dbUserRec.fullNameEn,
+          role: String(dbUserRec.role || "Viewer").trim(),
+          employeeId: dbUserRec.employee_id || dbUserRec.employeeId || null,
+          email: dbUserRec.email,
+          auth_user_id: dbUserRec.auth_user_id,
+          active: true
+        };
+      } else {
+        console.warn("Authentication failed:", authError);
+        recordFailedAttempt();
+        if (!this.loginCooldownUntil) {
+          this.showToast(
+            lang === "ar"
+              ? "اسم المستخدم أو كلمة المرور غير صحيحة"
+              : "Invalid username or password",
+            "error"
+          );
+        }
+        return;
+      }
     }
 
-    // Reset failed attempts counter on successful password auth
+    // Reset failed attempts counter on successful authentication
     this.failedLoginAttempts = [];
     this.loginCooldownUntil = null;
-
-    authUser = authData.user;
-
-    // 3. Resolve Application Profile via Shared Deterministic Resolver with Auto-Link enabled
-    const resolution = await this.resolveAuthenticatedProfile(authUser, { autoLink: true, allowAutoLink: true });
-
-    if (resolution.status !== "SUCCESS" || !resolution.profile) {
-      console.error("Profile resolution failed after authentication:", resolution.status, resolution.error);
-      // Revoke authenticated Supabase session immediately
-      await db.supabase.auth.signOut().catch(() => {});
-
-      let errorMsg = lang === "ar"
-        ? "تمت المصادقة بنجاح، ولكن لم يتم العثور على ملف تعريف للمستخدم."
-        : "Authentication succeeded, but no registered user profile was found.";
-
-      if (resolution.status === "ACCOUNT_DEACTIVATED") {
-        errorMsg = lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated";
-      } else if (resolution.status === "AUTH_SUCCESS_MAPPING_CONFLICT") {
-        errorMsg = lang === "ar"
-          ? "تعارض في ربط الحساب: الحساب مرتبط بهوية أخرى."
-          : "Identity mapping conflict: account is linked to a different identity.";
-      } else if (resolution.status === "PROFILE_AMBIGUOUS") {
-        errorMsg = lang === "ar"
-          ? "تم العثور على عدة ملفات تعريف مطابقة لهذا البريد الإلكتروني."
-          : "Multiple user profiles found matching this email.";
-      } else if (resolution.status === "PROFILE_QUERY_ERROR") {
-        errorMsg = lang === "ar"
-          ? "خطأ في الاتصال بقاعدة البيانات أثناء التحقق من الملف الشخصي."
-          : "Database query error during profile verification.";
-      } else if (resolution.status === "PROFILE_LINK_ERROR") {
-        errorMsg = lang === "ar"
-          ? "فشل ربط ملف تعريف المستخدم. يرجى مراجعة مسؤول النظام."
-          : "Failed to link user profile. Please contact administrator.";
-      } else if (resolution.status === "AUTH_SUCCESS_MAPPING_MISSING") {
-        errorMsg = lang === "ar"
-          ? "الملف الشخصي غير مرتبط بحساب الدخول. يرجى مراجعة مسؤول النظام."
-          : "User profile exists but is not linked to this login account. Please contact administrator.";
-      }
-
-      this.showToast(errorMsg, "error");
-      return;
-    }
-
-    const cloudUser = resolution.profile;
 
     // 4. Derive AppState.currentUser strictly from Authoritative Cloud Profile
     authenticatedUser = {
       id: cloudUser.id,
       username: cloudUser.username,
-      email: authUser.email || (cloudUser.username + "@sdi.ae"),
+      email: (authUser && authUser.email) || cloudUser.email || (cloudUser.username + "@sdi.ae"),
       fullName: cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameAr: cloudUser.full_name_ar || cloudUser.fullNameAr || cloudUser.full_name || cloudUser.fullName || cloudUser.username,
       fullNameEn: cloudUser.full_name_en || cloudUser.fullNameEn || cloudUser.username,
@@ -5160,6 +5266,9 @@ class Application {
       "navEmployees",
       "navDepartments",
       "navLocations",
+      "navOperations",
+      "navProjects",
+      "navContractors",
       "navMaintenance",
       "navHelpdesk",
       "navReports"

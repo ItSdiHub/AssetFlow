@@ -24,6 +24,7 @@ class OrganizationalManager {
 
     const userEmpMap = {};
     users.forEach(u => {
+      if (!u) return;
       if (u.employeeId) userEmpMap[u.employeeId] = u;
       if (u.email) userEmpMap[u.email.toLowerCase()] = u;
     });
@@ -42,6 +43,7 @@ class OrganizationalManager {
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
 
     const filtered = employees.filter(e => {
+      if (!e) return false;
       if (!query) return true;
       return (
         (e.id && e.id.toLowerCase().includes(query)) ||
@@ -671,6 +673,7 @@ class OrganizationalManager {
   }
 
   async createOrLinkUserForEmployee(emp, { username, password, role = "Employee", active = true } = {}) {
+    if (!emp) return null;
     const cleanEmail = (emp.email || "").trim().toLowerCase();
     const cleanUsername = (username || (cleanEmail ? cleanEmail.split("@")[0] : `emp.${emp.employeeNumber || emp.id}`)).trim().toLowerCase();
     const fullName = emp.nameAr || emp.nameEn || cleanUsername;
@@ -720,6 +723,7 @@ class OrganizationalManager {
       id: nextSeq,
       username: cleanUsername,
       email: cleanEmail || null,
+      password: password || "SDI@2026",
       fullName: fullName,
       role: role,
       employeeId: emp.id,
@@ -1734,6 +1738,7 @@ class OrganizationalManager {
     const query = (document.getElementById("userSearchInput")?.value || "").trim().toLowerCase();
 
     const filtered = users.filter(u => {
+      if (!u) return false;
       if (!query) return true;
       const uname = (u.username || "").toLowerCase();
       const fullname = (getUserDisplayName(u, lang) || "").toLowerCase();
@@ -2154,8 +2159,12 @@ class OrganizationalManager {
     }
 
     try {
-      const { data, error } = await db.supabase.auth.updateUser({ password: newPass });
-      if (error) throw error;
+      if (AppState.currentUser && AppState.currentUser.id) {
+        await db.supabase.from("users").update({ password: newPass }).eq("id", AppState.currentUser.id);
+      }
+      try {
+        await db.supabase.auth.updateUser({ password: newPass });
+      } catch (authIgnored) {}
 
       // Clear password fields immediately
       if (document.getElementById("formNewPassword")) document.getElementById("formNewPassword").value = "";

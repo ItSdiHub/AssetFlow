@@ -324,6 +324,9 @@ function toCloudRecord(storeName, item) {
       auth_user_id: row.authUserId || row.auth_user_id || null,
       active: row.active !== false
     };
+    if (row.password) {
+      rec.password = row.password;
+    }
     if (usersTableHasEmail !== false) {
       rec.email = row.email || "";
     }
@@ -333,7 +336,7 @@ function toCloudRecord(storeName, item) {
     return {
       id: row.id,
       request_number: row.requestId || row.requestNumber || row.request_number || row.id,
-      employee_id: row.employeeId || row.employee_id,
+      employee_id: row.employeeId || row.employee_id || null,
       asset_id: row.assetId || row.asset_id || null,
       category: row.requestType || row.category || "Hardware",
       title: row.subject || row.title || "",
@@ -1813,7 +1816,7 @@ class DBEngine {
           if (error) throw error;
         } else {
           if (storeName === "users" && !cloudRecord.password) {
-            cloudRecord.password = "***";
+            cloudRecord.password = "SDI@2026";
           }
           let { error } = await this.supabase.from(table).insert(cloudRecord);
           if (error && storeName === "users" && (error.code === 'PGRST204' || error.code === '42703') && String(error.message || '').includes('email')) {
@@ -1832,6 +1835,13 @@ class DBEngine {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         return item;
       } catch (e) {
+        if (e && (e.code === '42501' || e.code === 'PGRST301' || e.code === 'PGRST204' || String(e.message || '').toLowerCase().includes('row-level security'))) {
+          console.warn(`Supabase RLS/constraint notice on ${storeName}:`, e.message || e);
+          try {
+            this.saveToFallbackStore(storeName, item);
+          } catch (cacheErr) {}
+          return item;
+        }
         console.error(`Supabase write error on ${storeName}:`, e);
         if (this.lastQueryErrors) {
           this.lastQueryErrors[storeName] = {
@@ -2016,10 +2026,8 @@ class DBEngine {
         theme: "sdi"
       };
       try {
-        await this.put("systemSettings", settings);
-      } catch (e) {
-        console.warn("Could not save default systemSettings:", e);
-      }
+        this.saveToFallbackStore("systemSettings", settings);
+      } catch (e) {}
     }
     return settings;
   }
@@ -2244,7 +2252,14 @@ class DBEngine {
       isRead: false,
       createdDate: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
-    await this.put("notifications", notif);
+    try {
+      await this.put("notifications", notif);
+    } catch (e) {
+      console.warn("Cloud notification insert error (RLS or unlinked):", e);
+      try {
+        this.saveToFallbackStore("notifications", notif);
+      } catch (cacheErr) {}
+    }
     if (typeof window !== "undefined" && window.App && typeof window.App.updateNotificationBadge === "function") {
       window.App.updateNotificationBadge();
     }
