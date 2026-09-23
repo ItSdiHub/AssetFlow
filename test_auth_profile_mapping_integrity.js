@@ -1157,8 +1157,121 @@ async function runAllTests() {
     console.log('✓ Test AL: Helpdesk notification functions with null user execute safely without throwing.');
   }
 
+  // --------------------------------------------------------------------------
+  // TEST AM: Auto-link feature: unlinked active Employee profile auto-links when autoLink: true
+  // --------------------------------------------------------------------------
+  {
+    const authUser = { id: 'auth-emp-101', email: 'employee.autolink@sdi.ae' };
+    const unlinkedEmp = {
+      id: 'emp-user-101',
+      username: 'emp.autolink',
+      email: 'employee.autolink@sdi.ae',
+      role: 'Employee',
+      employee_id: 'EMP-1001',
+      auth_user_id: null,
+      active: true
+    };
+    let updateWritten = false;
+    const mockDb = {
+      supabase: {
+        from: (table) => ({
+          select: (cols) => ({
+            eq: (field, val) => {
+              if (field === 'auth_user_id') {
+                return {
+                  maybeSingle: async () => {
+                    if (val === 'auth-emp-101' && updateWritten) {
+                      return { data: { ...unlinkedEmp, auth_user_id: 'auth-emp-101' }, error: null };
+                    }
+                    return { data: null, error: null };
+                  }
+                };
+              }
+              if (field === 'email' && val === 'employee.autolink@sdi.ae') {
+                return Promise.resolve({ data: [unlinkedEmp], error: null });
+              }
+              return Promise.resolve({ data: [], error: null });
+            }
+          }),
+          update: (payload) => ({
+            eq: (field, val) => {
+              if (payload.auth_user_id === 'auth-emp-101' && val === 'emp-user-101') {
+                updateWritten = true;
+              }
+              return Promise.resolve({ data: [{ ...unlinkedEmp, ...payload }], error: null });
+            }
+          })
+        })
+      },
+      put: async () => {}
+    };
+    global.db = mockDb;
+
+    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
+    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active Employee when autoLink: true');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(res.profile.auth_user_id, 'auth-emp-101');
+    console.log('✓ Test AM: When autoLink: true is passed, unlinked active Employee profile auto-links safely.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AN: Auto-link feature: unlinked active IT User profile auto-links when autoLink: true
+  // --------------------------------------------------------------------------
+  {
+    const authUser = { id: 'auth-it-202', email: 'it.autolink@sdi.ae' };
+    const unlinkedIT = {
+      id: 'it-user-202',
+      username: 'it.autolink',
+      email: 'it.autolink@sdi.ae',
+      role: 'IT User',
+      auth_user_id: null,
+      active: true
+    };
+    let updateWritten = false;
+    const mockDb = {
+      supabase: {
+        from: (table) => ({
+          select: (cols) => ({
+            eq: (field, val) => {
+              if (field === 'auth_user_id') {
+                return {
+                  maybeSingle: async () => {
+                    if (val === 'auth-it-202' && updateWritten) {
+                      return { data: { ...unlinkedIT, auth_user_id: 'auth-it-202' }, error: null };
+                    }
+                    return { data: null, error: null };
+                  }
+                };
+              }
+              if (field === 'email' && val === 'it.autolink@sdi.ae') {
+                return Promise.resolve({ data: [unlinkedIT], error: null });
+              }
+              return Promise.resolve({ data: [], error: null });
+            }
+          }),
+          update: (payload) => ({
+            eq: (field, val) => {
+              if (payload.auth_user_id === 'auth-it-202' && val === 'it-user-202') {
+                updateWritten = true;
+              }
+              return Promise.resolve({ data: [{ ...unlinkedIT, ...payload }], error: null });
+            }
+          })
+        })
+      },
+      put: async () => {}
+    };
+    global.db = mockDb;
+
+    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
+    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active IT User when autoLink: true');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(res.profile.auth_user_id, 'auth-it-202');
+    console.log('✓ Test AN: When autoLink: true is passed, unlinked active IT User profile auto-links safely.');
+  }
+
   console.log('================================================================================');
-  console.log('ALL 38/38 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AL) PASSED!');
+  console.log('ALL 40/40 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AN) PASSED!');
   console.log('================================================================================');
 }
 

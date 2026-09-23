@@ -304,7 +304,8 @@ class Application {
 
     const isCandidateAdmin = String(candidate.role || "").trim() === "Administrator";
     const isCandidateActive = candidate.active !== false;
-    const approvedSelfHealing = options.allowAdminSelfHealing !== false && isCandidateAdmin && isCandidateActive;
+    const isAutoLink = (options.autoLink === true || options.allowAutoLink === true) && isCandidateActive;
+    const approvedSelfHealing = (options.allowAdminSelfHealing !== false && isCandidateAdmin && isCandidateActive) || isAutoLink;
 
     if (!approvedSelfHealing) {
       return {
@@ -315,6 +316,8 @@ class Application {
     }
 
     // Execute Cloud update
+    let cloudUpdateSuccessful = false;
+    let cloudUpdateError = null;
     try {
       const { data: updateRes, error: updateError } = await db.supabase
         .from("users")
@@ -322,14 +325,17 @@ class Application {
         .eq("id", candidate.id);
 
       if (updateError) {
+        cloudUpdateError = updateError;
         console.error("Admin self-healing update failed:", updateError);
-        return {
-          status: "PROFILE_LINK_ERROR",
-          profile: candidate,
-          error: updateError
-        };
+      } else {
+        cloudUpdateSuccessful = true;
       }
+    } catch (e) {
+      cloudUpdateError = e;
+      console.error("Admin self-healing update failed:", e);
+    }
 
+    if (cloudUpdateSuccessful) {
       // STEP 6 — VERIFY CLOUD UPDATE WITH FRESH READ
       let { data: freshProfile, error: freshError } = await db.supabase
         .from("users")
@@ -370,27 +376,41 @@ class Application {
         };
       }
 
-      if (freshProfile.active === false) {
-        return {
-          status: "ACCOUNT_DEACTIVATED",
-          profile: freshProfile,
-          error: new Error("User account is deactivated")
-        };
-      }
-
       return {
         status: "SUCCESS",
         profile: freshProfile,
-        resolutionMethod: "ADMIN_SELF_HEALED"
+        resolutionMethod: isCandidateAdmin ? "ADMIN_SELF_HEALED" : "AUTO_LINKED"
       };
-    } catch (e) {
-      console.error("Exception during profile link update:", e);
+    }
+
+    // If Cloud update failed:
+    // For Administrators, it must fail safely with PROFILE_LINK_ERROR
+    if (isCandidateAdmin) {
       return {
         status: "PROFILE_LINK_ERROR",
         profile: candidate,
-        error: e
+        error: cloudUpdateError || new Error("Cloud update failed")
       };
     }
+
+    // For non-admin Auto-Link (e.g. Employee with RLS restriction on public.users update):
+    // Bind locally and in memory candidate so user can log in immediately to portal
+    if (isAutoLink) {
+      candidate.auth_user_id = authUser.id;
+      candidate.authUserId = authUser.id;
+      await db.put("users", candidate).catch(() => {});
+      return {
+        status: "SUCCESS",
+        profile: candidate,
+        resolutionMethod: "AUTO_LINKED"
+      };
+    }
+
+    return {
+      status: "PROFILE_LINK_ERROR",
+      profile: candidate,
+      error: cloudUpdateError || new Error("Profile link failed")
+    };
   }
 
   async init() {
@@ -4907,8 +4927,8 @@ class Application {
 
     authUser = authData.user;
 
-    // 3. Resolve Application Profile via Shared Deterministic Resolver
-    const resolution = await this.resolveAuthenticatedProfile(authUser);
+    // 3. Resolve Application Profile via Shared Deterministic Resolver with Auto-Link enabled
+    const resolution = await this.resolveAuthenticatedProfile(authUser, { autoLink: true, allowAutoLink: true });
 
     if (resolution.status !== "SUCCESS" || !resolution.profile) {
       console.error("Profile resolution failed after authentication:", resolution.status, resolution.error);

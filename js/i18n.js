@@ -1237,7 +1237,24 @@ const I18N = {
     expiryDate: "تاريخ الانتهاء",
     nsrBannerTitle: "بيانات طلب الدعم الفني | Helpdesk Ticket",
     nsrBannerDesc: "تسجيل تفاصيل المشكلة التقنية وتحديد الجهاز المتأثر لتوجيه الطلب لفريق الصيانة والدعم.",
-    requestTitle: "موضوع الطلب"
+    requestTitle: "موضوع الطلب",
+    importEmployeesBtn: "استيراد موظفين (Excel / CSV)",
+    downloadEmpTemplateBtn: "تحميل النموذج",
+    empAutoCreateUserLabel: "إنشاء حساب دخول في النظام لهذا الموظف تلقائياً",
+    empAutoCreateUserDesc: "سيتم تفعيل حساب دخول فوري للموظف للوصول إلى بوابة الموظف وتقديم طلبات الصيانة.",
+    importEmployeesModalTitle: "استيراد الموظفين جماعياً عبر Excel / CSV",
+    importDropzoneText: "اسحب وأفلت ملف Excel أو CSV هنا، أو انقر لاختيار الملف من جهازك",
+    importPasteTab: "أو الصق البيانات المنسوخة من الجداول مباشرة هنا",
+    importAutoCreateUsersOption: "إنشاء حسابات دخول تلقائياً لجميع الموظفين المستوردين (بوابة الموظف)",
+    importUpdateExistingOption: "تحديث بيانات الموظف إذا كان مسجلاً مسبقاً بنفس الرقم الوظيفي",
+    importDefaultPassword: "كلمة المرور الافتراضية للمستخدمين الجدد:",
+    btnStartImport: "بدء استيراد البيانات",
+    importPreviewTitle: "معاينة البيانات قبل الاستيراد",
+    importTotalRows: "إجمالي السجلات:",
+    importValidRows: "سجلات صالحة للاستيراد:",
+    importInvalidRows: "سجلات غير صالحة:",
+    initialPassword: "كلمة المرور الابتدائية",
+    accountSyncReady: "ربط تلقائي فوري مع خادم المصادقة"
   },
 
   en: {
@@ -2458,7 +2475,24 @@ const I18N = {
     diLocationsLabel: "Locations",
     diDepartmentsLabel: "Departments",
     diOfficesLabel: "Offices",
-    diAssetsLabel: "Assets & Devices"
+    diAssetsLabel: "Assets & Devices",
+    importEmployeesBtn: "Import Employees (Excel / CSV)",
+    downloadEmpTemplateBtn: "Download Template",
+    empAutoCreateUserLabel: "Automatically create system login account for this employee",
+    empAutoCreateUserDesc: "Instantly activates a login account for this employee to access the Employee Portal and submit maintenance requests.",
+    importEmployeesModalTitle: "Bulk Import Employees via Excel / CSV",
+    importDropzoneText: "Drag & drop Excel or CSV file here, or click to browse",
+    importPasteTab: "Or paste copied spreadsheet rows directly here",
+    importAutoCreateUsersOption: "Automatically create login accounts for all imported employees (Employee Portal)",
+    importUpdateExistingOption: "Update existing employee records if Employee Number matches",
+    importDefaultPassword: "Default initial password for new user accounts:",
+    btnStartImport: "Start Data Import",
+    importPreviewTitle: "Pre-Import Data Preview",
+    importTotalRows: "Total Rows Detected:",
+    importValidRows: "Valid Records for Import:",
+    importInvalidRows: "Invalid Records:",
+    initialPassword: "Initial Password",
+    accountSyncReady: "Immediate auto-linking with Auth service"
   }
 };
 

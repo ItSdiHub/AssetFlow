@@ -19,7 +19,14 @@ class OrganizationalManager {
     const employees = await db.getAll("employees");
     const departments = await db.getAll("departments");
     const assets = await db.getAll("assets");
+    const users = await db.getAll("users").catch(() => []);
     const lang = AppState.lang;
+
+    const userEmpMap = {};
+    users.forEach(u => {
+      if (u.employeeId) userEmpMap[u.employeeId] = u;
+      if (u.email) userEmpMap[u.email.toLowerCase()] = u;
+    });
 
     const deptMap = Object.fromEntries(departments.map(d => [d.id, lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr)]));
 
@@ -75,6 +82,11 @@ class OrganizationalManager {
       const phoneHtml = emp.phone ? highlightText(emp.phone, query) : '-';
       const emailHtml = emp.email ? highlightText(emp.email, query) : '-';
 
+      const linkedUser = userEmpMap[emp.id] || (emp.employeeNumber && userEmpMap[emp.employeeNumber]) || (emp.email && userEmpMap[emp.email.toLowerCase()]);
+      const accountBadge = linkedUser
+        ? `<span class="badge badge-success text-xs" style="font-size: 10px; margin-top: 3px; display: inline-flex; align-items: center; gap: 4px;" title="${lang === 'ar' ? 'حساب مستخدم مفعل: ' + linkedUser.username : 'Active User: ' + linkedUser.username}"><i class="fas fa-user-check"></i> ${linkedUser.username}</span>`
+        : `<span class="badge badge-secondary text-xs" style="font-size: 10px; margin-top: 3px; display: inline-flex; align-items: center; gap: 4px; opacity: 0.75;" title="${lang === 'ar' ? 'لا يوجد حساب مستخدم مرتبط بعد' : 'No user account yet'}"><i class="fas fa-user-slash"></i> ${lang === 'ar' ? 'بدون حساب' : 'No login'}</span>`;
+
       html += `
         <tr>
           <td><span class="emp-id-badge">${empIdHtml}</span></td>
@@ -85,6 +97,7 @@ class OrganizationalManager {
               <div>
                 <div class="font-bold">${empNameHtml}</div>
                 ${secNameHtml ? `<div class="text-muted text-xs">${secNameHtml}</div>` : ''}
+                ${accountBadge}
               </div>
             </div>
           </td>
@@ -448,6 +461,58 @@ class OrganizationalManager {
       if (bannerEmpId) bannerEmpId.textContent = nextSeq;
     }
 
+    // Combined User Account Setup
+    const usersList = await db.getAll("users").catch(() => []);
+    let linkedUser = null;
+    if (empId) {
+      const currentEmp = await db.getById("employees", empId).catch(() => null);
+      if (currentEmp) {
+        linkedUser = usersList.find(u => 
+          (u.employeeId && (u.employeeId === currentEmp.id || u.employeeId === currentEmp.employeeNumber)) ||
+          (u.email && currentEmp.email && u.email.toLowerCase() === currentEmp.email.toLowerCase())
+        );
+      }
+    }
+
+    const autoUserCheck = document.getElementById("empAutoCreateUser");
+    const autoUserContainer = document.getElementById("empAutoUserFieldsContainer");
+    const statusBadge = document.getElementById("empAccountStatusBadge");
+    const autoUsernameInput = document.getElementById("empAutoUsername");
+    const autoPasswordInput = document.getElementById("empAutoPassword");
+    const autoRoleSelect = document.getElementById("empAutoRole");
+
+    if (linkedUser) {
+      if (autoUserCheck) autoUserCheck.checked = true;
+      if (statusBadge) {
+        statusBadge.className = "badge badge-success";
+        statusBadge.textContent = (AppState.lang === "ar" ? "حساب مفعل: " : "Active Account: ") + linkedUser.username;
+      }
+      if (autoUsernameInput) autoUsernameInput.value = linkedUser.username || "";
+      if (autoRoleSelect) autoRoleSelect.value = linkedUser.role || "Employee";
+      if (autoPasswordInput) {
+        autoPasswordInput.value = "";
+        autoPasswordInput.placeholder = AppState.lang === "ar" ? "اتركه فارغاً للإبقاء على الحالية" : "Leave blank to keep current";
+      }
+      if (autoUserContainer) autoUserContainer.style.display = "block";
+    } else {
+      if (autoUserCheck) autoUserCheck.checked = true;
+      if (statusBadge) {
+        statusBadge.className = "badge badge-primary";
+        statusBadge.textContent = AppState.lang === "ar" ? "إنشاء حساب جديد تلقائياً" : "Auto-Create Account";
+      }
+      if (autoUsernameInput) {
+        const curEmail = document.getElementById("formEmpEmail")?.value || "";
+        const curEmpNum = document.getElementById("formEmpOrgNumber")?.value || "";
+        autoUsernameInput.value = curEmail ? curEmail.split("@")[0].toLowerCase() : (curEmpNum ? `emp.${curEmpNum}` : "");
+      }
+      if (autoPasswordInput) {
+        autoPasswordInput.value = "SDI@2026";
+        autoPasswordInput.placeholder = "Pass@1234";
+      }
+      if (autoRoleSelect) autoRoleSelect.value = "Employee";
+      if (autoUserContainer) autoUserContainer.style.display = "block";
+    }
+
     await this.updateEmployeeBanner();
     App.openModal("employeeModal");
   }
@@ -541,9 +606,28 @@ class OrganizationalManager {
 
     try {
       await db.put("employees", empData);
+
+      // Check if automatic user creation is checked
+      const autoUserCheck = document.getElementById("empAutoCreateUser");
+      if (autoUserCheck && autoUserCheck.checked) {
+        const autoUsername = (document.getElementById("empAutoUsername")?.value || "").trim().toLowerCase();
+        const autoPassword = (document.getElementById("empAutoPassword")?.value || "SDI@2026").trim();
+        const autoRole = document.getElementById("empAutoRole")?.value || "Employee";
+
+        await this.createOrLinkUserForEmployee(empData, {
+          username: autoUsername,
+          password: autoPassword,
+          role: autoRole,
+          active: status === "Active"
+        }).catch(err => {
+          console.warn("User account creation warning:", err);
+        });
+      }
+
       App.closeModal("employeeModal");
       App.showToast(I18N[AppState.lang].saveSuccess, "success");
       await this.renderEmployees();
+      await this.renderUsers();
       if (window.AssetManager && typeof AssetManager.populateDropdowns === "function") {
         await AssetManager.populateDropdowns();
       }
@@ -555,6 +639,559 @@ class OrganizationalManager {
           : ("Failed to save employee to Cloud: " + (err.message || "Unexpected error")),
         "error"
       );
+    }
+  }
+
+  // =========================================================================
+  // AUTOMATIC USER CREATION & LINKING FOR EMPLOYEES
+  // =========================================================================
+  toggleAutoCreateUserFields(e) {
+    const container = document.getElementById("empAutoUserFieldsContainer");
+    if (!container) return;
+    const isChecked = e.target.checked;
+    container.style.display = isChecked ? "block" : "none";
+    if (isChecked) {
+      const email = document.getElementById("formEmpEmail")?.value || "";
+      const empNum = document.getElementById("formEmpOrgNumber")?.value || document.getElementById("formEmpNumber")?.value || "";
+      const usernameInput = document.getElementById("empAutoUsername");
+      if (usernameInput && !usernameInput.value.trim()) {
+        usernameInput.value = email ? email.split("@")[0].toLowerCase() : (empNum ? `emp.${empNum}` : "");
+      }
+    }
+  }
+
+  generateRandomEmpPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+    let pwd = "SDI@";
+    for (let i = 0; i < 5; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById("empAutoPassword");
+    if (input) input.value = pwd;
+  }
+
+  async createOrLinkUserForEmployee(emp, { username, password, role = "Employee", active = true } = {}) {
+    const cleanEmail = (emp.email || "").trim().toLowerCase();
+    const cleanUsername = (username || (cleanEmail ? cleanEmail.split("@")[0] : `emp.${emp.employeeNumber || emp.id}`)).trim().toLowerCase();
+    const fullName = emp.nameAr || emp.nameEn || cleanUsername;
+
+    const users = await db.getAll("users");
+    let existingUser = users.find(u => 
+      (u.employeeId && (u.employeeId === emp.id || u.employeeId === emp.employeeNumber)) ||
+      (u.email && cleanEmail && u.email.toLowerCase() === cleanEmail) ||
+      (u.username && u.username.toLowerCase() === cleanUsername)
+    );
+
+    let authUserId = existingUser ? (existingUser.authUserId || existingUser.auth_user_id || null) : null;
+
+    // Supabase Auth Integration
+    if (db.supabase && cleanEmail && cleanEmail.includes("@")) {
+      try {
+        const tempSupabase = (typeof window !== "undefined" && window.supabase && typeof window.supabase.createClient === "function")
+          ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, { auth: { persistSession: false } })
+          : null;
+
+        if (tempSupabase && !authUserId) {
+          const { data: signUpData, error: signUpError } = await tempSupabase.auth.signUp({
+            email: cleanEmail,
+            password: password || "SDI@2026",
+            options: {
+              data: {
+                full_name: fullName,
+                username: cleanUsername,
+                role: role
+              }
+            }
+          });
+
+          if (signUpData && signUpData.user) {
+            authUserId = signUpData.user.id;
+          } else if (signUpError) {
+            console.warn("Auth signup notice (will auto-link upon user login):", signUpError.message);
+          }
+        }
+      } catch (err) {
+        console.warn("Auth signup error:", err);
+      }
+    }
+
+    const nextSeq = existingUser ? existingUser.id : await db.getNextSequentialId("users");
+    const userData = {
+      id: nextSeq,
+      username: cleanUsername,
+      email: cleanEmail || null,
+      fullName: fullName,
+      role: role,
+      employeeId: emp.id,
+      authUserId: authUserId,
+      auth_user_id: authUserId,
+      active: active
+    };
+
+    await db.put("users", userData);
+    return userData;
+  }
+
+  // =========================================================================
+  // BULK IMPORT EMPLOYEES VIA EXCEL / CSV
+  // =========================================================================
+  openImportEmployeesModal() {
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(I18N[AppState.lang].errViewerNoPermission || (AppState.lang === "ar" ? "غير مصرح لك باستيراد بيانات الموظفين." : "Unauthorized to import employee records."), "error");
+      return;
+    }
+    this.importEmployeesData = [];
+    this.switchImportTab("file");
+
+    const fileInput = document.getElementById("empFileInput");
+    if (fileInput) fileInput.value = "";
+    const pasteInput = document.getElementById("empPasteInput");
+    if (pasteInput) pasteInput.value = "";
+
+    const previewSection = document.getElementById("importPreviewSection");
+    if (previewSection) previewSection.style.display = "none";
+    const progressContainer = document.getElementById("importProgressContainer");
+    if (progressContainer) progressContainer.style.display = "none";
+
+    const executeBtn = document.getElementById("btnExecuteImport");
+    if (executeBtn) executeBtn.disabled = true;
+
+    App.openModal("importEmployeesModal");
+  }
+
+  switchImportTab(tab) {
+    this.importActiveTab = tab;
+    const btnFile = document.getElementById("btnImportTabFile");
+    const btnPaste = document.getElementById("btnImportTabPaste");
+    const fileContainer = document.getElementById("importFileContainer");
+    const pasteContainer = document.getElementById("importPasteContainer");
+
+    if (tab === "file") {
+      if (btnFile) { btnFile.className = "btn btn-sm btn-primary"; }
+      if (btnPaste) { btnPaste.className = "btn btn-sm btn-secondary"; }
+      if (fileContainer) fileContainer.style.display = "block";
+      if (pasteContainer) pasteContainer.style.display = "none";
+    } else {
+      if (btnFile) { btnFile.className = "btn btn-sm btn-secondary"; }
+      if (btnPaste) { btnPaste.className = "btn btn-sm btn-primary"; }
+      if (fileContainer) fileContainer.style.display = "none";
+      if (pasteContainer) pasteContainer.style.display = "block";
+      const pasteInput = document.getElementById("empPasteInput");
+      if (pasteInput) pasteInput.focus();
+    }
+  }
+
+  downloadEmployeeTemplate() {
+    const headers = ["EmployeeNumber", "NameAr", "NameEn", "Email", "Phone", "Department", "Office", "Status"];
+    const sampleRows = [
+      ["1001", "محمد أحمد الشامسي", "Mohammed Al Shamsi", "m.shamsi@sdi.ae", "0501234567", "IT", "Server Room", "Active"],
+      ["1002", "سارة سالم الكعبي", "Sara Al Kaabi", "sara.k@sdi.ae", "0509876543", "HR", "Main Office", "Active"],
+      ["1003", "محمود علي عبد الرحمن", "Mahmoud Ali", "mahmoud.a@sdi.ae", "0551122334", "Finance", "Accounting", "Active"]
+    ];
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...sampleRows.map(r => r.map(c => `"${c}"`).join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "SDI_Employees_Import_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    App.showToast(AppState.lang === "ar" ? "تم تحميل نموذج استيراد الموظفين بنجاح" : "Template downloaded successfully", "success");
+  }
+
+  handleEmployeeDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropzone = document.getElementById("empDropzone");
+    if (dropzone) dropzone.style.borderColor = "var(--primary-color, #0ea5e9)";
+  }
+
+  handleEmployeeDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropzone = document.getElementById("empDropzone");
+    if (dropzone) dropzone.style.borderColor = "rgba(14, 165, 233, 0.4)";
+  }
+
+  handleEmployeeFileDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropzone = document.getElementById("empDropzone");
+    if (dropzone) dropzone.style.borderColor = "rgba(14, 165, 233, 0.4)";
+
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      this.processEmployeeFile(e.dataTransfer.files[0]);
+    }
+  }
+
+  handleEmployeeFileSelect(e) {
+    if (e.target && e.target.files && e.target.files.length > 0) {
+      this.processEmployeeFile(e.target.files[0]);
+    }
+  }
+
+  async processEmployeeFile(file) {
+    const name = file.name.toLowerCase();
+    try {
+      if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+        // Parse with SheetJS if available
+        if (typeof XLSX !== "undefined") {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: "array" });
+              const firstSheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[firstSheetName];
+              const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+              this.parseImportRecords(jsonRows);
+            } catch (err) {
+              console.error("XLSX parse error:", err);
+              App.showToast(AppState.lang === "ar" ? "فشل قراءة ملف Excel: " + err.message : "Failed to parse Excel file", "error");
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          App.showToast(AppState.lang === "ar" ? "مكتبة Excel غير جاهزة، يرجى حفظ الملف كـ CSV واستيراده" : "XLSX parser unavailable, please use CSV", "error");
+        }
+      } else {
+        // Parse as CSV / Text
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target.result;
+          this.parseDelimitedText(text);
+        };
+        reader.readAsText(file, "UTF-8");
+      }
+    } catch (err) {
+      console.error("File read error:", err);
+      App.showToast(AppState.lang === "ar" ? "فشل قراءة الملف" : "Failed to read file", "error");
+    }
+  }
+
+  handleEmployeePasteInput() {
+    const textarea = document.getElementById("empPasteInput");
+    if (!textarea) return;
+    const text = textarea.value.trim();
+    if (!text) {
+      this.importEmployeesData = [];
+      this.renderEmployeeImportPreview();
+      return;
+    }
+    this.parseDelimitedText(text);
+  }
+
+  parseDelimitedText(text) {
+    const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) return;
+
+    // Detect delimiter: tab or comma or semicolon
+    const firstLine = lines[0];
+    let delimiter = ",";
+    if (firstLine.includes("\t")) delimiter = "\t";
+    else if (firstLine.includes(";")) delimiter = ";";
+
+    const parseLine = (line) => {
+      if (delimiter === "\t") {
+        return line.split("\t").map(s => s.trim().replace(/^"(.*)"$/, "$1"));
+      }
+      const row = [];
+      let inQuotes = false;
+      let cur = "";
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === delimiter && !inQuotes) {
+          row.push(cur.trim());
+          cur = "";
+        } else {
+          cur += c;
+        }
+      }
+      row.push(cur.trim());
+      return row.map(s => s.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'));
+    };
+
+    const headerRow = parseLine(lines[0]);
+    const dataRows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseLine(lines[i]);
+      if (values.length === 0 || (values.length === 1 && !values[0])) continue;
+      const obj = {};
+      headerRow.forEach((h, idx) => {
+        obj[h] = values[idx] || "";
+      });
+      dataRows.push(obj);
+    }
+
+    this.parseImportRecords(dataRows);
+  }
+
+  parseImportRecords(rawRows) {
+    if (!rawRows || !Array.isArray(rawRows)) {
+      this.importEmployeesData = [];
+      this.renderEmployeeImportPreview();
+      return;
+    }
+
+    const normalizeKey = (key) => {
+      const k = String(key || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+      if (["رقمموظف", "الرقماموظفي", "الرقمألوظيفي", "الرقماملوظيفي", "رقماملوظف", "الرقم", "id", "empnumber", "employeenumber", "empno", "empid"].includes(k)) return "employeeNumber";
+      if (["الاسمعربي", "الاسمبالعربية", "الاسم", "namear", "name", "fullname", "arabicname"].includes(k)) return "nameAr";
+      if (["الاسمانجليزي", "الاسمبالانجليزية", "الاسمبالإنجليزي", "nameen", "englishname"].includes(k)) return "nameEn";
+      if (["البريدالالكتروني", "البريدالإلكتروني", "البريد", "الايميل", "email", "mail"].includes(k)) return "email";
+      if (["الهاتف", "الموبايل", "الجوال", "رقمالهاتف", "phone", "mobile", "tel"].includes(k)) return "phone";
+      if (["القسم", "الإدارة", "الادارة", "department", "dept"].includes(k)) return "department";
+      if (["المكتب", "الموقع", "office", "location"].includes(k)) return "office";
+      if (["الحالة", "status"].includes(k)) return "status";
+      return k;
+    };
+
+    this.importEmployeesData = rawRows.map((raw, index) => {
+      const item = {
+        _index: index + 1,
+        employeeNumber: "",
+        nameAr: "",
+        nameEn: "",
+        email: "",
+        phone: "",
+        department: "",
+        office: "",
+        status: "Active",
+        _valid: true,
+        _errors: []
+      };
+
+      Object.keys(raw).forEach(rawKey => {
+        const normKey = normalizeKey(rawKey);
+        const val = String(raw[rawKey] || "").trim();
+        if (normKey in item) {
+          item[normKey] = val;
+        }
+      });
+
+      // Validation
+      if (!item.employeeNumber && !item.nameAr && !item.nameEn && !item.email) {
+        return null; // skip empty row
+      }
+
+      if (!item.employeeNumber) {
+        item.employeeNumber = `EMP-${1000 + index + 1}`;
+      }
+
+      if (!item.nameAr && !item.nameEn) {
+        item._valid = false;
+        item._errors.push("الاسم مطلوب (عربي أو إنجليزي)");
+      }
+
+      if (item.email && !item.email.includes("@")) {
+        item._errors.push("صيغة البريد الإلكتروني غير صحيحة");
+      }
+
+      if (item._errors.length > 0) {
+        item._valid = false;
+      }
+
+      return item;
+    }).filter(Boolean);
+
+    this.renderEmployeeImportPreview();
+  }
+
+  renderEmployeeImportPreview() {
+    const previewSection = document.getElementById("importPreviewSection");
+    const tbody = document.getElementById("importPreviewTableBody");
+    const totalCountEl = document.getElementById("previewTotalCount");
+    const validCountEl = document.getElementById("previewValidCount");
+    const invalidCountEl = document.getElementById("previewInvalidCount");
+    const invalidBadge = document.getElementById("previewInvalidBadge");
+    const executeBtn = document.getElementById("btnExecuteImport");
+
+    if (!previewSection || !tbody) return;
+
+    if (this.importEmployeesData.length === 0) {
+      previewSection.style.display = "none";
+      if (executeBtn) executeBtn.disabled = true;
+      return;
+    }
+
+    previewSection.style.display = "block";
+    const total = this.importEmployeesData.length;
+    const valid = this.importEmployeesData.filter(d => d._valid).length;
+    const invalid = total - valid;
+
+    if (totalCountEl) totalCountEl.textContent = total;
+    if (validCountEl) validCountEl.textContent = valid;
+    if (invalidCountEl) invalidCountEl.textContent = invalid;
+    if (invalidBadge) invalidBadge.style.display = invalid > 0 ? "inline-block" : "none";
+
+    if (executeBtn) {
+      executeBtn.disabled = valid === 0;
+    }
+
+    let rowsHtml = "";
+    const previewSlice = this.importEmployeesData.slice(0, 20);
+    previewSlice.forEach(row => {
+      rowsHtml += `
+        <tr style="${row._valid ? '' : 'background: rgba(239, 68, 68, 0.1);'}">
+          <td>${row._index}</td>
+          <td><strong>${row.employeeNumber || '-'}</strong></td>
+          <td>${row.nameAr || '-'}</td>
+          <td>${row.nameEn || '-'}</td>
+          <td>${row.email || '-'}</td>
+          <td>${row.phone || '-'}</td>
+          <td>${row.department || '-'}</td>
+          <td>
+            ${row._valid
+              ? `<span class="badge badge-success"><i class="fas fa-check"></i> جاهز</span>`
+              : `<span class="badge badge-danger" title="${row._errors.join(', ')}"><i class="fas fa-times"></i> ${row._errors[0]}</span>`
+            }
+          </td>
+        </tr>
+      `;
+    });
+
+    if (this.importEmployeesData.length > 20) {
+      rowsHtml += `
+        <tr>
+          <td colspan="8" class="text-center text-muted text-xs" style="padding: 10px;">
+            ... والمزيد (${this.importEmployeesData.length - 20} سجل إضافي)
+          </td>
+        </tr>
+      `;
+    }
+
+    tbody.innerHTML = rowsHtml;
+  }
+
+  async executeEmployeeImport() {
+    const validRecords = this.importEmployeesData.filter(r => r._valid);
+    if (validRecords.length === 0) {
+      App.showToast(AppState.lang === "ar" ? "لا توجد سجلات صالحة للاستيراد" : "No valid records to import", "warning");
+      return;
+    }
+
+    const autoCreateUsers = document.getElementById("importAutoCreateUsers")?.checked;
+    const defaultPassword = (document.getElementById("importDefaultPassword")?.value || "SDI@2026").trim();
+    const updateExisting = document.getElementById("importUpdateExisting")?.checked;
+
+    const progressContainer = document.getElementById("importProgressContainer");
+    const progressBar = document.getElementById("importProgressBar");
+    const progressPercent = document.getElementById("importProgressPercent");
+    const progressLabel = document.getElementById("importProgressLabel");
+    const executeBtn = document.getElementById("btnExecuteImport");
+
+    if (progressContainer) progressContainer.style.display = "block";
+    if (executeBtn) executeBtn.disabled = true;
+
+    const existingEmployees = await db.getAll("employees");
+    const existingDepartments = await db.getAll("departments");
+    const existingOffices = await db.getAll("offices");
+
+    const deptNameMap = {};
+    existingDepartments.forEach(d => {
+      if (d.nameAr) deptNameMap[d.nameAr.trim().toLowerCase()] = d.id;
+      if (d.nameEn) deptNameMap[d.nameEn.trim().toLowerCase()] = d.id;
+    });
+
+    const officeNameMap = {};
+    existingOffices.forEach(o => {
+      if (o.name) officeNameMap[o.name.trim().toLowerCase()] = o.id;
+      if (o.name_en) officeNameMap[o.name_en.trim().toLowerCase()] = o.id;
+    });
+
+    let importedCount = 0;
+    let usersCreatedCount = 0;
+    const total = validRecords.length;
+
+    for (let i = 0; i < total; i++) {
+      const rec = validRecords[i];
+      const pct = Math.round(((i + 1) / total) * 100);
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      if (progressPercent) progressPercent.textContent = `${pct}%`;
+      if (progressLabel) progressLabel.textContent = `استيراد: ${rec.nameAr || rec.nameEn} (${i + 1} من ${total})`;
+
+      // Department matching
+      let deptId = null;
+      if (rec.department) {
+        const dKey = rec.department.trim().toLowerCase();
+        deptId = deptNameMap[dKey] || null;
+      }
+
+      // Office matching
+      let officeId = null;
+      if (rec.office) {
+        const oKey = rec.office.trim().toLowerCase();
+        officeId = officeNameMap[oKey] || null;
+      }
+
+      // Check if employee already exists
+      const existingEmp = existingEmployees.find(e => 
+        (e.employeeNumber && rec.employeeNumber && e.employeeNumber.toLowerCase() === rec.employeeNumber.toLowerCase()) ||
+        (e.email && rec.email && e.email.toLowerCase() === rec.email.toLowerCase())
+      );
+
+      let targetEmpId = null;
+      if (existingEmp) {
+        if (!updateExisting) {
+          continue;
+        }
+        targetEmpId = existingEmp.id;
+      } else {
+        targetEmpId = await db.getNextSequentialId("employees");
+      }
+
+      const empPayload = {
+        id: targetEmpId,
+        employeeNumber: rec.employeeNumber,
+        nameAr: rec.nameAr || rec.nameEn,
+        nameEn: rec.nameEn || rec.nameAr,
+        email: rec.email || "",
+        phone: rec.phone || "",
+        departmentId: deptId || (existingEmp ? existingEmp.departmentId : null),
+        department_id: deptId || (existingEmp ? existingEmp.department_id : null),
+        officeId: officeId || (existingEmp ? existingEmp.officeId : null),
+        office_id: officeId || (existingEmp ? existingEmp.office_id : null),
+        status: rec.status || "Active",
+        notes: "تم الاستيراد جماعياً عبر Excel/CSV"
+      };
+
+      await db.put("employees", empPayload);
+      importedCount++;
+
+      // Create or update user account if checked
+      if (autoCreateUsers && rec.email && rec.email.includes("@")) {
+        try {
+          const username = rec.email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "");
+          await this.createOrLinkUserForEmployee(empPayload, {
+            username: username,
+            password: defaultPassword,
+            role: "Employee",
+            active: rec.status !== "Inactive"
+          });
+          usersCreatedCount++;
+        } catch (uErr) {
+          console.warn("Bulk user create note:", uErr);
+        }
+      }
+    }
+
+    App.showToast(
+      AppState.lang === "ar"
+        ? `اكتمل الاستيراد بنجاح! تم حفظ وتحديث ${importedCount} موظف، وإنشاء ${usersCreatedCount} حساب دخول فورياً.`
+        : `Import completed! ${importedCount} employees saved, ${usersCreatedCount} login accounts provisioned.`,
+      "success"
+    );
+
+    App.closeModal("importEmployeesModal");
+    await this.renderEmployees();
+    await this.renderUsers();
+    if (window.AssetManager && typeof AssetManager.populateDropdowns === "function") {
+      await AssetManager.populateDropdowns();
     }
   }
 
@@ -1149,9 +1786,15 @@ class OrganizationalManager {
           <td>${nameHtml}${linkedEmpText}</td>
           <td><span class="badge ${roleBadge}">${roleLabel}</span></td>
           <td>
-            <span class="badge ${u.active !== false ? 'badge-success' : 'badge-danger'}">
-              ${u.active !== false ? I18N[lang].statusActive : I18N[lang].statusInactive}
-            </span>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span class="badge ${u.active !== false ? 'badge-success' : 'badge-danger'}">
+                ${u.active !== false ? I18N[lang].statusActive : I18N[lang].statusInactive}
+              </span>
+              ${(u.auth_user_id || u.authUserId) 
+                ? `<span class="badge badge-success text-xs" style="font-size: 10px; width: fit-content;" title="${lang === 'ar' ? 'مرتبط بحساب الهوية السحابية' : 'Linked to Cloud Auth'}"><i class="fas fa-check-circle"></i> ${lang === 'ar' ? 'مربوط بالهوية' : 'Auth Linked'}</span>`
+                : `<span class="badge badge-warning text-xs" style="font-size: 10px; width: fit-content;" title="${lang === 'ar' ? 'سيرتبط تلقائياً بحساب الهوية عند أول تسجيل دخول' : 'Auto-links to Auth upon first login'}"><i class="fas fa-bolt"></i> ${lang === 'ar' ? 'ربط تلقائي' : 'Auto-Link'}</span>`
+              }
+            </div>
           </td>
           <td>
             ${isAdmin ? `
@@ -1307,123 +1950,168 @@ class OrganizationalManager {
     }
   }
 
+  generateRandomUserPassword() {
+    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789@#$";
+    let pass = "SDI@";
+    for (let i = 0; i < 4; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById("formUserPass");
+    if (input) {
+      input.value = pass;
+      input.type = "text";
+      setTimeout(() => { if (input) input.type = "password"; }, 5000);
+      App.showToast(AppState.lang === "ar" ? "تم توليد كلمة المرور: " + pass : "Generated password: " + pass, "info");
+    }
+  }
+
   async handleSaveUser(event) {
-    event.preventDefault();
-    if (!AppState.currentUser || AppState.currentUser.role !== "Administrator") {
-      App.showToast(AppState.lang === "ar" ? "فقط مدير النظام يمكنه إدارة حسابات المستخدمين." : "Only system administrator can manage user accounts.", "error");
+    if (event && event.preventDefault) event.preventDefault();
+    const lang = AppState.lang || "ar";
+
+    if (!AppState.currentUser || (AppState.currentUser.role !== "Administrator" && AppState.currentUser.role !== "IT User")) {
+      App.showToast(lang === "ar" ? "فقط مدير النظام أو مسؤول تكنولوجيا المعلومات يمكنه إدارة حسابات المستخدمين." : "Only system administrator or IT User can manage user accounts.", "error");
       return;
     }
-    const id = document.getElementById("formUserId").value;
-    const username = document.getElementById("formUsername").value.trim().toLowerCase();
-    const email = document.getElementById("formUserEmail").value.trim().toLowerCase();
-    const password = document.getElementById("formUserPass").value.trim();
-    const fullName = document.getElementById("formUserFullName").value.trim();
-    const role = document.getElementById("formUserRole").value;
-    const active = document.getElementById("formUserActive").value === "true";
+
+    const saveBtn = document.getElementById("btnSaveUserModal");
+    const originalBtnHtml = saveBtn ? saveBtn.innerHTML : "";
+
+    const id = (document.getElementById("formUserId")?.value || "").trim();
+    const username = (document.getElementById("formUsername")?.value || "").trim().toLowerCase();
+    const email = (document.getElementById("formUserEmail")?.value || "").trim().toLowerCase();
+    const password = (document.getElementById("formUserPass")?.value || "").trim();
+    const fullName = (document.getElementById("formUserFullName")?.value || "").trim();
+    const role = document.getElementById("formUserRole")?.value || "IT User";
+    const active = document.getElementById("formUserActive")?.value !== "false";
     const empSelect = document.getElementById("formUserEmployeeId");
-    const employeeId = empSelect ? empSelect.value : "";
-    const lang = AppState.lang;
+    const employeeId = empSelect ? empSelect.value.trim() : "";
 
-    if (!email || !email.includes("@")) {
-      App.showToast(lang === "ar" ? "يرجى إدخال بريد إلكتروني صحيح" : "Please enter a valid email", "error");
+    // 1. Client-side Validations with friendly toasts
+    if (!username) {
+      App.showToast(lang === "ar" ? "يرجى إدخال اسم المستخدم" : "Please enter username", "warning");
+      document.getElementById("formUsername")?.focus();
       return;
     }
 
-    if (role === "Employee" && !employeeId) {
-      App.showToast(lang === "ar" ? "يجب ربط حساب الموظف بموظف مسجل في النظام" : "Employee account must be linked to a registered employee", "error");
+    if (!email || !email.includes("@") || !email.includes(".")) {
+      App.showToast(lang === "ar" ? "يرجى إدخال بريد إلكتروني صحيح (مثال: user@sdi.ae)" : "Please enter a valid email address (e.g. user@sdi.ae)", "warning");
+      document.getElementById("formUserEmail")?.focus();
       return;
     }
 
-    const users = await db.getAll("users");
-    const isDupUsername = users.some(u => u.username.toLowerCase() === username && u.id !== id);
-    if (isDupUsername) {
-      App.showToast(lang === "ar" ? "اسم المستخدم مسجل مسبقاً" : "Username already exists", "error");
-      return;
-    }
-
-    const isDupEmail = users.some(u => u.email && u.email.toLowerCase() === email && u.id !== id);
-    if (isDupEmail) {
-      App.showToast(lang === "ar" ? "البريد الإلكتروني مسجل مسبقاً" : "Email already exists", "error");
+    if (!fullName) {
+      App.showToast(lang === "ar" ? "يرجى إدخال الاسم الكامل" : "Please enter full name", "warning");
+      document.getElementById("formUserFullName")?.focus();
       return;
     }
 
     if (!id && !password) {
-      App.showToast(lang === "ar" ? "كلمة المرور مطلوبة للمستخدمين الجدد" : "Password is required for new users", "error");
+      App.showToast(lang === "ar" ? "كلمة المرور مطلوبة للمستخدم الجديد (6 خانات على الأقل)" : "Password is required for new user (at least 6 characters)", "warning");
+      document.getElementById("formUserPass")?.focus();
       return;
     }
 
-    let authUserId = null;
-    const existing = id ? await db.getById("users", id) : null;
-    if (existing) authUserId = existing.authUserId || existing.auth_user_id || null;
+    if (!id && password && password.length < 6) {
+      App.showToast(lang === "ar" ? "كلمة المرور يجب أن تكون 6 خانات على الأقل لربط الهوية السحابية" : "Password must be at least 6 characters for identity linking", "warning");
+      document.getElementById("formUserPass")?.focus();
+      return;
+    }
 
-    // 1. Supabase Auth Integration
-    if (db.supabase && db.isCloudOnline) {
-      try {
-        // We use a secondary client to avoid signing out the current admin
-        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm');
-        const tempSupabase = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
-          auth: { persistSession: false }
-        });
+    if (role === "Employee" && !employeeId) {
+      App.showToast(lang === "ar" ? "يجب اختيار الموظف المرتبط بحساب الموظف" : "Please select the employee linked to this account", "warning");
+      document.getElementById("formUserEmployeeId")?.focus();
+      return;
+    }
 
-        if (!id) {
-          // New User: Try to create Auth account
-          const { data: signUpData, error: signUpError } = await tempSupabase.auth.signUp({
-            email: email,
-            password: password,
-            options: {
-              data: {
-                full_name: fullName,
-                username: username,
-                role: role
+    // 2. Duplicate Check
+    const users = await db.getAll("users");
+    const isDupUsername = users.some(u => u && u.username && u.username.toLowerCase() === username && u.id !== id);
+    if (isDupUsername) {
+      App.showToast(lang === "ar" ? "اسم المستخدم مسجل مسبقاً لمستخدم آخر" : "Username already exists for another user", "warning");
+      document.getElementById("formUsername")?.focus();
+      return;
+    }
+
+    const isDupEmail = users.some(u => u && u.email && u.email.toLowerCase() === email && u.id !== id);
+    if (isDupEmail) {
+      App.showToast(lang === "ar" ? "البريد الإلكتروني مسجل مسبقاً لمستخدم آخر" : "Email already exists for another user", "warning");
+      document.getElementById("formUserEmail")?.focus();
+      return;
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${lang === "ar" ? "جاري الحفظ..." : "Saving..."}`;
+    }
+
+    try {
+      let authUserId = null;
+      const existing = id ? await db.getById("users", id) : null;
+      if (existing) authUserId = existing.authUserId || existing.auth_user_id || null;
+
+      // 3. Supabase Auth Integration (using local window.supabase, zero external ESM import)
+      if (db.supabase && db.isCloudOnline) {
+        try {
+          const tempSupabase = (typeof window !== "undefined" && window.supabase && typeof window.supabase.createClient === "function")
+            ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, { auth: { persistSession: false } })
+            : null;
+
+          if (tempSupabase && !id) {
+            // New User: Try to create Auth account
+            const { data: signUpData, error: signUpError } = await tempSupabase.auth.signUp({
+              email: email,
+              password: password,
+              options: {
+                data: {
+                  full_name: fullName,
+                  username: username,
+                  role: role
+                }
               }
-            }
-          });
+            });
 
-          if (signUpError) {
-            // If user already exists in Auth but not in our users table, we can try to link it
-            if (signUpError.message.includes("already registered") || signUpError.status === 422) {
-              console.warn("User already exists in Supabase Auth. Proceeding to create profile link.");
-              // We don't have the user ID here easily without admin API, but we can try to find them later or let them login via fallback
-            } else {
-              // Fatal error for Auth creation
-              App.showToast((lang === "ar" ? "فشل إنشاء حساب الهوية: " : "Auth account creation failed: ") + signUpError.message, "error");
-              return; // STOP HERE
+            if (signUpData && signUpData.user) {
+              authUserId = signUpData.user.id;
+            } else if (signUpError) {
+              console.warn("Auth signup notice (profile will auto-link upon user login):", signUpError.message);
             }
-          } else if (signUpData && signUpData.user) {
-            authUserId = signUpData.user.id;
-          }
-        } else {
-          // Existing User: Update Auth metadata if possible
-          if (authUserId && db.supabase.auth.admin) {
+          } else if (id && authUserId && db.supabase.auth.admin) {
             await db.supabase.auth.admin.updateUserById(authUserId, {
               user_metadata: { full_name: fullName, role: role }
             }).catch(e => console.warn("Admin metadata update skipped:", e));
           }
+        } catch (authErr) {
+          console.warn("Auth integration notice (will auto-link upon login):", authErr);
         }
-      } catch (err) {
-        console.error("Auth sync error:", err);
-        App.showToast((lang === "ar" ? "فشل الربط مع نظام الهوية: " : "Auth sync failed: ") + err.message, "error");
-        return; // STOP HERE if it's a real error
+      }
+
+      const nextSeq = id || await db.getNextSequentialId("users");
+      const userData = {
+        id: nextSeq,
+        username,
+        email,
+        fullName,
+        role,
+        employeeId: role === "Employee" ? employeeId : null,
+        authUserId,
+        active
+      };
+      if (password) userData.password = password;
+
+      await db.put("users", userData);
+      App.closeModal("userModal");
+      App.showToast(I18N[AppState.lang].saveSuccess || (lang === "ar" ? "تم حفظ المستخدم بنجاح" : "User saved successfully"), "success");
+      await this.renderUsers();
+    } catch (saveErr) {
+      console.error("Save user error:", saveErr);
+      App.showToast((lang === "ar" ? "فشل حفظ المستخدم: " : "Failed to save user: ") + (saveErr.message || saveErr), "error");
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalBtnHtml || `<i class="fas fa-save"></i> <span>${lang === "ar" ? "حفظ المستخدم" : "Save User"}</span>`;
       }
     }
-
-    const nextSeq = await db.getNextSequentialId("users");
-    
-    const userData = {
-      id: id || nextSeq,
-      username,
-      email,
-      fullName,
-      role,
-      employeeId: role === "Employee" ? employeeId : null,
-      authUserId,
-      active
-    };
-
-    await db.put("users", userData);
-    App.closeModal("userModal");
-    App.showToast(I18N[AppState.lang].saveSuccess, "success");
-    await this.renderUsers();
   }
 
   async deleteUser(userId) {

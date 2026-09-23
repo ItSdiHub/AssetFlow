@@ -13,6 +13,8 @@
   
   <!-- D3.js Library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <!-- SheetJS for Excel Import/Export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💻</text></svg>">
@@ -677,7 +679,13 @@
               <h2><i class="fas fa-user-tie text-primary"></i> <span data-i18n="navEmployees">الموظفون</span></h2>
               <p data-i18n="employeesSubTitle">سجل الموظفين التابعين للمعهد وربطهم بالعهد التقنية</p>
             </div>
-            <div class="header-btns">
+            <div class="header-btns" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sm user-write-action" id="btnImportEmployees" onclick="UserManager.openImportEmployeesModal()">
+                <i class="fas fa-file-excel text-success"></i> <span data-i18n="importEmployeesBtn">استيراد موظفين (Excel / CSV)</span>
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" id="btnDownloadEmpTemplate" onclick="UserManager.downloadEmployeeTemplate()">
+                <i class="fas fa-download"></i> <span data-i18n="downloadEmpTemplateBtn">تحميل النموذج</span>
+              </button>
               <button class="btn btn-primary btn-sm user-write-action" onclick="UserManager.openEmployeeModal()">
                 <i class="fas fa-plus"></i> <span data-i18n="addEmployeeBtn">إضافة موظف جديد</span>
               </button>
@@ -4102,6 +4110,54 @@
               <label data-i18n="notes">ملاحظات</label>
               <textarea id="formEmpNotes" class="form-control" rows="2"></textarea>
             </div>
+
+            <!-- Automatic System User Account Creation for Employee -->
+            <div class="form-group full-width" style="background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 8px; padding: 14px; margin-top: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <input type="checkbox" id="empAutoCreateUser" style="width: 18px; height: 18px; cursor: pointer;" onchange="UserManager.toggleAutoCreateUserFields(event)">
+                  <div>
+                    <label for="empAutoCreateUser" style="font-weight: 600; cursor: pointer; margin-bottom: 0; color: var(--text-color);">
+                      <i class="fas fa-user-shield text-primary"></i> <span data-i18n="empAutoCreateUserLabel">إنشاء حساب دخول في النظام لهذا الموظف تلقائياً</span>
+                    </label>
+                    <p style="font-size: 11px; margin: 2px 0 0 0; color: var(--text-muted);" data-i18n="empAutoCreateUserDesc">سيتم تفعيل حساب دخول فوري للموظف للوصول إلى بوابة الموظف وتقديم طلبات الصيانة.</p>
+                  </div>
+                </div>
+                <span id="empAccountStatusBadge" class="badge badge-secondary" style="font-size: 11px;">جديد</span>
+              </div>
+
+              <div id="empAutoUserFieldsContainer" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label style="font-size: 12px;"><span data-i18n="username">اسم المستخدم</span>*</label>
+                    <input type="text" id="empAutoUsername" class="form-control form-control-sm" placeholder="e.g. mahmoud.a">
+                  </div>
+                  <div class="form-group">
+                    <label style="font-size: 12px;"><span data-i18n="initialPassword">كلمة المرور الابتدائية</span>*</label>
+                    <div style="display: flex; gap: 6px;">
+                      <input type="text" id="empAutoPassword" class="form-control form-control-sm" placeholder="Pass@1234" value="Pass@1234">
+                      <button type="button" class="btn btn-sm btn-secondary" onclick="UserManager.generateRandomEmpPassword()" title="توليد كلمة مرور">
+                        <i class="fas fa-key"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label style="font-size: 12px;"><span data-i18n="role">الصلاحية</span></label>
+                    <select id="empAutoRole" class="form-control form-control-sm">
+                      <option value="Employee" selected data-i18n="roleEmployee">Employee (بوابة الموظف - عهد وطلبات صيانة)</option>
+                      <option value="IT User" data-i18n="roleITUser">IT User (فني تقنية معلومات)</option>
+                      <option value="Viewer" data-i18n="roleViewer">Viewer (مستعرض)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label style="font-size: 12px;"><span data-i18n="accountSync">حالة الربط</span></label>
+                    <div style="font-size: 11px; padding: 7px 10px; background: rgba(0,0,0,0.2); border-radius: 4px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                      <i class="fas fa-bolt text-warning"></i> <span data-i18n="accountSyncReady">ربط تلقائي فوري مع خادم المصادقة</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -4109,6 +4165,122 @@
           <button type="submit" class="btn btn-primary" data-i18n="btnSave">حفظ الموظف</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Bulk Import Employees via Excel / CSV -->
+  <div class="modal-container" id="importEmployeesModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 780px;">
+      <div class="modal-header">
+        <h3 id="importEmployeesModalTitle" data-i18n="importEmployeesModalTitle">
+          <i class="fas fa-file-excel text-success"></i> استيراد الموظفين جماعياً عبر Excel / CSV
+        </h3>
+        <button class="modal-close-btn" onclick="App.closeModal('importEmployeesModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Tab Switcher: File Upload vs Direct Text Paste -->
+        <div style="display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
+          <button type="button" id="btnImportTabFile" class="btn btn-sm btn-primary" onclick="UserManager.switchImportTab('file')">
+            <i class="fas fa-upload"></i> رفع ملف Excel / CSV
+          </button>
+          <button type="button" id="btnImportTabPaste" class="btn btn-sm btn-secondary" onclick="UserManager.switchImportTab('paste')">
+            <i class="fas fa-paste"></i> لصق من Excel مباشرة
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" style="margin-right: auto;" onclick="UserManager.downloadEmployeeTemplate()">
+            <i class="fas fa-download"></i> <span data-i18n="downloadEmpTemplateBtn">تحميل النموذج (CSV)</span>
+          </button>
+        </div>
+
+        <!-- Mode 1: File Dropzone -->
+        <div id="importFileContainer">
+          <div id="empDropzone" class="file-upload-dropzone" 
+               ondragover="UserManager.handleEmployeeDragOver(event)" 
+               ondragleave="UserManager.handleEmployeeDragLeave(event)" 
+               ondrop="UserManager.handleEmployeeFileDrop(event)"
+               onclick="document.getElementById('empFileInput').click()"
+               style="border: 2px dashed rgba(14, 165, 233, 0.4); border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; background: rgba(14, 165, 233, 0.03); transition: all 0.2s ease;">
+            <i class="fas fa-cloud-upload-alt fa-3x text-primary" style="margin-bottom: 12px; display: block;"></i>
+            <h4 style="margin: 0 0 6px 0;" data-i18n="importDropzoneText">اسحب وأفلت ملف Excel أو CSV هنا، أو انقر لاختيار الملف من جهازك</h4>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">الملفات المدعومة: .csv, .xlsx, .xls, .tsv, .txt (ترميز UTF-8 مع دعم كامل للغة العربية)</p>
+            <input type="file" id="empFileInput" style="display: none;" accept=".csv, .xlsx, .xls, .tsv, .txt" onchange="UserManager.handleEmployeeFileSelect(event)">
+          </div>
+        </div>
+
+        <!-- Mode 2: Direct Paste -->
+        <div id="importPasteContainer" style="display: none;">
+          <label style="font-size: 12px; font-weight: 600;" data-i18n="importPasteTab">الصق الأعمدة المنسوخة من ملف Excel أو Google Sheets هنا:</label>
+          <textarea id="empPasteInput" class="form-control" rows="5" placeholder="الرقم الوظيفي&#9;الاسم بالعربية&#9;Name in English&#9;البريد الإلكتروني&#9;الهاتف&#9;القسم&#10;1021&#9;محمد أحمد الشامسي&#9;Mohammed Al Shamsi&#9;m.shamsi@sdi.ae&#9;0501234567&#9;IT" oninput="UserManager.handleEmployeePasteInput()"></textarea>
+          <small class="text-muted text-xs">يمكنك نسخ الصفوف والأعمدة مباشرة من Excel ولصقها هنا (Tab-delimited).</small>
+        </div>
+
+        <!-- Options Box -->
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-top: 14px;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin: 0;">
+              <input type="checkbox" id="importAutoCreateUsers" checked style="width: 16px; height: 16px; cursor: pointer;">
+              <span data-i18n="importAutoCreateUsersOption"><strong>إنشاء حسابات دخول تلقائياً لجميع الموظفين المستوردين</strong> (لتمكينهم من الدخول لبوابة الموظف فوراً)</span>
+            </label>
+            <div id="importDefaultPassGroup" style="display: flex; align-items: center; gap: 10px; margin-right: 24px;">
+              <span style="font-size: 11px; color: var(--text-muted);" data-i18n="importDefaultPassword">كلمة المرور الافتراضية للمستخدمين الجدد:</span>
+              <input type="text" id="importDefaultPassword" class="form-control form-control-sm" style="width: 140px; font-weight: bold;" value="SDI@2026">
+            </div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin: 0;">
+              <input type="checkbox" id="importUpdateExisting" checked style="width: 16px; height: 16px; cursor: pointer;">
+              <span data-i18n="importUpdateExistingOption">تحديث بيانات الموظف إذا كان مسجلاً مسبقاً بنفس الرقم الوظيفي</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Live Preview Section (populated once file/text is loaded) -->
+        <div id="importPreviewSection" style="display: none; margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h5 style="margin: 0;" data-i18n="importPreviewTitle">معاينة البيانات قبل الاستيراد</h5>
+            <div style="display: flex; gap: 10px; font-size: 12px;">
+              <span class="badge badge-secondary"><span data-i18n="importTotalRows">الإجمالي:</span> <strong id="previewTotalCount">0</strong></span>
+              <span class="badge badge-success"><span data-i18n="importValidRows">صالح:</span> <strong id="previewValidCount">0</strong></span>
+              <span class="badge badge-warning" id="previewInvalidBadge" style="display: none;"><span data-i18n="importInvalidRows">غير صالح:</span> <strong id="previewInvalidCount">0</strong></span>
+            </div>
+          </div>
+          <div style="max-height: 220px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px;">
+            <table class="custom-table" style="font-size: 12px; margin: 0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>الرقم الوظيفي</th>
+                  <th>الاسم بالعربية</th>
+                  <th>الاسم بالإنجليزية</th>
+                  <th>البريد الإلكتروني</th>
+                  <th>الهاتف</th>
+                  <th>القسم</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewTableBody">
+                <!-- Populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div id="importProgressContainer" style="display: none; margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+            <span id="importProgressLabel">جاري استيراد السجلات وتحديث قاعدة البيانات...</span>
+            <span id="importProgressPercent">0%</span>
+          </div>
+          <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+            <div id="importProgressBar" style="width: 0%; height: 100%; background: var(--primary-color, #0ea5e9); transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="App.closeModal('importEmployeesModal')" data-i18n="btnCancel">إلغاء</button>
+        <button type="button" id="btnExecuteImport" class="btn btn-primary" onclick="UserManager.executeEmployeeImport()" disabled>
+          <i class="fas fa-check-circle"></i> <span data-i18n="btnStartImport">بدء استيراد البيانات</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -4415,7 +4587,7 @@
         <h3 id="userModalTitle" data-i18n="modalAddUser">إضافة مستخدم جديد</h3>
         <button class="modal-close-btn" onclick="App.closeModal('userModal')">&times;</button>
       </div>
-      <form id="userModalForm" onsubmit="UserManager.handleSaveUser(event)">
+      <form id="userModalForm" novalidate onsubmit="UserManager.handleSaveUser(event)">
         <div class="modal-body">
           <!-- Top Info Banner: User Account Details -->
           <div class="form-info-banner" id="userFormInfoBanner">
@@ -4455,27 +4627,29 @@
           <div class="form-grid">
             <div class="form-group">
               <label><span data-i18n="username">اسم المستخدم</span>*</label>
-              <input type="text" id="formUsername" class="form-control" required placeholder="ahmed.shamsi">
+              <input type="text" id="formUsername" class="form-control" required placeholder="ahmed.shamsi" autocomplete="off">
             </div>
 
             <div class="form-group">
               <label><span data-i18n="email">البريد الإلكتروني</span>*</label>
-              <input type="email" id="formUserEmail" class="form-control" required placeholder="user@sdi.ae"
-                     pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
+              <input type="email" id="formUserEmail" class="form-control" required placeholder="user@sdi.ae" autocomplete="off">
               <small class="text-muted text-xs" data-i18n="emailAuthHint">سيتم استخدام هذا البريد لتسجيل الدخول السحابي</small>
             </div>
 
             <div class="form-group" id="userPassGroup">
               <label><span data-i18n="password">كلمة المرور</span><span id="passReqStar">*</span></label>
               <div class="input-group">
-                <input type="password" id="formUserPass" class="form-control" placeholder="******">
+                <input type="password" id="formUserPass" class="form-control" placeholder="•••••••• (الحد الأدنى 6 خانات)" autocomplete="new-password">
+                <button type="button" class="btn btn-outline-secondary btn-sm ml-2" onclick="UserManager.generateRandomUserPassword()" title="توليد كلمة مرور عشوائية / Generate Random Password">
+                  <i class="fas fa-magic"></i>
+                </button>
                 <button type="button" id="btnSendResetEmail" class="btn btn-outline-primary btn-sm ml-2" 
                         style="display:none;" onclick="UserManager.handleSendResetEmail()" 
                         title="إرسال رابط استعادة كلمة المرور / Send Reset Link" data-i18n-title="sendResetLinkTitle">
                   <i class="fas fa-paper-plane"></i>
                 </button>
               </div>
-              <small class="text-muted text-xs" id="formUserPassHint" data-i18n="passwordHint">اتركه فارغاً للحفاظ على كلمة المرور الحالية</small>
+              <small class="text-muted text-xs" id="formUserPassHint" data-i18n="passwordHint">اتركه فارغاً للحفاظ على كلمة المرور الحالية (6 خانات على الأقل للحساب الجديد)</small>
             </div>
 
             <div class="form-group">
@@ -4511,7 +4685,9 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="App.closeModal('userModal')" data-i18n="btnCancel">إلغاء</button>
-          <button type="submit" class="btn btn-primary" data-i18n="btnSave">حفظ المستخدم</button>
+          <button type="submit" id="btnSaveUserModal" class="btn btn-primary" onclick="UserManager.handleSaveUser(event)" data-i18n="btnSave">
+            <i class="fas fa-save"></i> <span data-i18n="btnSave">حفظ المستخدم</span>
+          </button>
         </div>
       </form>
     </div>
