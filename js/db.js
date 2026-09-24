@@ -324,45 +324,54 @@ function toCloudRecord(storeName, item) {
       auth_user_id: row.authUserId || row.auth_user_id || null,
       active: row.active !== false
     };
-    if (row.password) {
-      rec.password = row.password;
-    }
     if (usersTableHasEmail !== false) {
       rec.email = row.email || "";
     }
     return rec;
   }
   if (storeName === "helpdeskRequests") {
+    const rawEmp = row.employeeId || row.employee_id;
+    const cleanEmp = (rawEmp && String(rawEmp).trim() && !String(rawEmp).startsWith("temp-")) ? String(rawEmp).trim() : null;
+    const rawAsset = row.assetId || row.asset_id;
+    const cleanAsset = (rawAsset && String(rawAsset).trim() && !String(rawAsset).startsWith("temp-")) ? String(rawAsset).trim() : null;
+    const rawMaint = row.maintenanceId || row.maintenance_id;
+    const cleanMaint = (rawMaint && String(rawMaint).trim() && !String(rawMaint).startsWith("temp-")) ? String(rawMaint).trim() : null;
+
     return {
-      id: row.id,
+      id: row.id || row.requestId || row.requestNumber,
       request_number: row.requestId || row.requestNumber || row.request_number || row.id,
-      employee_id: row.employeeId || row.employee_id || null,
-      asset_id: row.assetId || row.asset_id || null,
+      employee_id: cleanEmp,
+      asset_id: cleanAsset,
       category: row.requestType || row.category || "Hardware",
-      title: row.subject || row.title || "",
+      title: row.subject || row.title || "طلب دعم فني",
       description: row.description || "",
       priority: row.priority || "Medium",
       status: row.status || "New",
       technician_notes: row.technicianNotes || row.technician_notes || null,
       assigned_to: row.assignedTo || row.assigned_to || null,
       messages: Array.isArray(row.messages) ? row.messages : [],
-      maintenance_id: row.maintenanceId || row.maintenance_id || null,
+      maintenance_id: cleanMaint,
       created_at: row.createdDate || row.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
       closed_at: row.closedDate || row.closed_at || null
     };
   }
   if (storeName === "notifications") {
+    const rawEmp = row.employeeId || row.employee_id;
+    const cleanEmp = (rawEmp && String(rawEmp).trim() && !String(rawEmp).startsWith("temp-")) ? String(rawEmp).trim() : null;
+    const rawRel = row.relatedId || row.related_id;
+    const cleanRel = (rawRel && String(rawRel).trim()) ? String(rawRel).trim() : null;
+
     return {
       id: row.id,
-      employee_id: row.employeeId || row.employee_id || null,
+      employee_id: cleanEmp,
       title_ar: row.titleAr || row.title_ar || "",
       title_en: row.titleEn || row.title_en || null,
       message_ar: row.messageAr || row.message_ar || "",
       message_en: row.messageEn || row.message_en || null,
-      type: row.type || "general",
-      related_id: row.relatedId || row.related_id || null,
-      read: !!row.read,
+      type: row.type || "helpdesk",
+      related_id: cleanRel,
+      read: !!(row.read || row.isRead),
       created_at: row.createdDate || row.created_at || new Date().toISOString()
     };
   }
@@ -569,14 +578,16 @@ function fromCloudRecord(storeName, row) {
     delete item.password;
   } else if (storeName === "helpdeskRequests") {
     item.requestId = row.request_number || row.requestId || row.id;
+    item.request_id = row.request_number || row.request_id || row.requestId || row.id;
     item.requestNumber = row.request_number || row.requestId || row.id;
+    item.request_number = row.request_number || row.requestId || row.id;
     item.employeeId = row.employee_id || row.employeeId;
     item.assetId = row.asset_id || row.assetId;
     item.requestType = row.category || row.requestType || "Hardware";
-    item.subject = row.title || row.subject;
-    item.description = row.description;
-    item.priority = row.priority;
-    item.status = row.status;
+    item.subject = row.title || row.subject || "طلب دعم فني";
+    item.description = row.description || "";
+    item.priority = row.priority || "Medium";
+    item.status = row.status || "New";
     item.technicianNotes = row.technician_notes || row.technicianNotes;
     item.assignedTo = row.assigned_to || row.assignedTo;
     item.messages = Array.isArray(row.messages) ? row.messages : [];
@@ -590,8 +601,10 @@ function fromCloudRecord(storeName, row) {
     item.titleEn = row.title_en || row.titleEn;
     item.messageAr = row.message_ar || row.messageAr;
     item.messageEn = row.message_en || row.messageEn;
+    item.type = row.type || item.type || "helpdesk";
     item.relatedId = row.related_id || row.relatedId;
-    item.read = !!row.read;
+    item.read = (row.read !== undefined ? !!row.read : (row.is_read !== undefined ? !!row.is_read : !!row.isRead));
+    item.isRead = item.read;
     item.createdDate = row.created_at || row.createdDate;
   } else if (storeName === "licenses") {
     item.licenseNo = row.license_no || row.licenseNo || row.id;
@@ -661,7 +674,7 @@ class DBEngine {
       delete item.password;
     }
     if (!this.memoryStore[storeName]) this.memoryStore[storeName] = this.getFallbackStore(storeName);
-    const idx = this.memoryStore[storeName].findIndex(x => x && x.id === item.id);
+    const idx = this.memoryStore[storeName].findIndex(x => x && String(x.id) === String(item.id));
     if (idx >= 0) {
       this.memoryStore[storeName][idx] = item;
     } else {
@@ -670,15 +683,29 @@ class DBEngine {
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
+
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      fetch(`/api/sync/${storeName}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item })
+      }).catch(() => {});
+    }
   }
 
   deleteFromFallbackStore(storeName, id) {
     if (!id) return;
     if (!this.memoryStore[storeName]) this.memoryStore[storeName] = this.getFallbackStore(storeName);
-    this.memoryStore[storeName] = this.memoryStore[storeName].filter(x => x && x.id !== id);
+    this.memoryStore[storeName] = this.memoryStore[storeName].filter(x => x && String(x.id) !== String(id));
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
+
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      fetch(`/api/sync/${storeName}/${id}`, {
+        method: "DELETE"
+      }).catch(() => {});
+    }
   }
 
   saveFallbackSnapshot(storeName, items) {
@@ -1287,10 +1314,33 @@ class DBEngine {
       if (!error && Array.isArray(data)) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         const cloudItems = data.map(r => fromCloudRecord(storeName, r));
+        
+        let serverItems = [];
+        if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+          try {
+            const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
+            if (syncRes && syncRes.ok) {
+              serverItems = await syncRes.json().catch(() => []);
+            }
+          } catch (e) {}
+        }
+
+        let mergedItems = cloudItems;
+        const localItems = this.getFallbackStore(storeName) || [];
+        if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
+          const itemMap = new Map();
+          localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
+          if (Array.isArray(serverItems)) {
+            serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
+          }
+          cloudItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
+          mergedItems = Array.from(itemMap.values());
+        }
+
         try {
-          this.saveFallbackSnapshot(storeName, cloudItems);
+          this.saveFallbackSnapshot(storeName, mergedItems);
         } catch (e) {}
-        return cloudItems;
+        return mergedItems;
       }
 
       if (error) {
@@ -1304,7 +1354,27 @@ class DBEngine {
         }
         console.warn(`Supabase getAll(${storeName}) failed:`, error);
 
-        if (this.isTransportError(error)) {
+        let serverItems = [];
+        if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+          try {
+            const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
+            if (syncRes && syncRes.ok) {
+              serverItems = await syncRes.json().catch(() => []);
+            }
+          } catch (e) {}
+        }
+
+        const localItems = this.getFallbackStore(storeName) || [];
+        if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
+          const itemMap = new Map();
+          localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
+          if (Array.isArray(serverItems)) {
+            serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
+          }
+          return Array.from(itemMap.values());
+        }
+
+        if (this.isTransportError(error) || error.code === '42501' || String(error.message || '').toLowerCase().includes('row-level security')) {
           this.isCloudOnline = false;
           if (window.App && typeof window.App.updateCloudStatus === "function") {
             window.App.updateCloudStatus();
@@ -1325,7 +1395,27 @@ class DBEngine {
       }
       console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
 
-      if (this.isTransportError(cloudErr)) {
+      let serverItems = [];
+      if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+        try {
+          const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
+          if (syncRes && syncRes.ok) {
+            serverItems = await syncRes.json().catch(() => []);
+          }
+        } catch (e) {}
+      }
+
+      const localItems = this.getFallbackStore(storeName) || [];
+      if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
+        const itemMap = new Map();
+        localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
+        if (Array.isArray(serverItems)) {
+          serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
+        }
+        return Array.from(itemMap.values());
+      }
+
+      if (this.isTransportError(cloudErr) || (cloudErr && (cloudErr.code === '42501' || String(cloudErr.message || '').toLowerCase().includes('row-level security')))) {
         this.isCloudOnline = false;
         if (window.App && typeof window.App.updateCloudStatus === "function") {
           window.App.updateCloudStatus();
@@ -1535,9 +1625,15 @@ class DBEngine {
         (i && i.projectNo && String(i.projectNo).trim().toLowerCase() === strId) ||
         (i && i.issueNo && String(i.issueNo).trim().toLowerCase() === strId) ||
         (i && i.transferNo && String(i.transferNo).trim().toLowerCase() === strId) ||
-        (i && i.requestId && String(i.requestId).trim().toLowerCase() === strId)
+        (i && i.requestId && String(i.requestId).trim().toLowerCase() === strId) ||
+        (i && i.request_id && String(i.request_id).trim().toLowerCase() === strId) ||
+        (i && i.requestNumber && String(i.requestNumber).trim().toLowerCase() === strId) ||
+        (i && i.request_number && String(i.request_number).trim().toLowerCase() === strId)
       ) || null;
     };
+
+    const localMatch = searchInList(this.getFallbackStore(storeName));
+    if (localMatch) return localMatch;
 
     if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
       return searchInList(this.getFallbackStore(storeName));
@@ -1550,6 +1646,12 @@ class DBEngine {
         selectCols = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
       }
       let { data, error } = await this.supabase.from(table).select(selectCols).eq('id', id).maybeSingle();
+      if (!error && !data && storeName === "helpdeskRequests") {
+        const altRes = await this.supabase.from(table).select(selectCols).eq('request_number', id).maybeSingle();
+        if (!altRes.error && altRes.data) {
+          data = altRes.data;
+        }
+      }
       if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
         await new Promise(r => setTimeout(r, 800));
         const retryRes = await this.supabase.from(table).select(selectCols).eq('id', id).maybeSingle();
@@ -1669,16 +1771,45 @@ class DBEngine {
 
   // Universal Sequential Code Generator by Record Type (e.g. AST-000001, SDI-1001, DEP-001, LOC-001, PRJ-2026-001...)
   async getNextSequentialId(storeName) {
-    const items = await this.getAll(storeName);
+    let items = await this.getAll(storeName);
+    if (!Array.isArray(items)) items = [];
+
+    let maxNum = 0;
+    let foundPrefixed = false;
+
+    // Query server next-id endpoint to guarantee global non-overlapping sequence
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      try {
+        const nextIdRes = await fetch(`/api/sync/next-id/${storeName}`).catch(() => null);
+        if (nextIdRes && nextIdRes.ok) {
+          const sData = await nextIdRes.json().catch(() => null);
+          if (sData && typeof sData.nextNum === "number" && sData.nextNum > 0) {
+            maxNum = sData.nextNum - 1;
+            foundPrefixed = true;
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
+        if (syncRes && syncRes.ok) {
+          const sItems = await syncRes.json().catch(() => []);
+          if (Array.isArray(sItems) && sItems.length > 0) {
+            const idMap = new Map();
+            items.forEach(it => { if (it && (it.id || it.code)) idMap.set(String(it.id || it.code), it); });
+            sItems.forEach(it => { if (it && (it.id || it.code)) idMap.set(String(it.id || it.code), it); });
+            items = Array.from(idMap.values());
+          }
+        }
+      } catch (e) {}
+    }
+
     const cfg = this.getStorePrefixConfig(storeName);
     const prefix = typeof cfg.prefix === "function" ? cfg.prefix() : cfg.prefix;
     const digits = cfg.digits || 3;
     const startNum = cfg.start || 1;
     const fields = cfg.fields || ["id", "code"];
     const allPrefixes = [prefix, ...(cfg.altPrefixes || [])].sort((a, b) => b.length - a.length);
-
-    let maxNum = 0;
-    let foundPrefixed = false;
 
     items.forEach(item => {
       if (!item) return;
@@ -1720,7 +1851,9 @@ class DBEngine {
       (it.employeeNumber && String(it.employeeNumber).toUpperCase() === candidate.toUpperCase()) ||
       (it.projectNo && String(it.projectNo).toUpperCase() === candidate.toUpperCase()) ||
       (it.issueNo && String(it.issueNo).toUpperCase() === candidate.toUpperCase()) ||
-      (it.assetId && String(it.assetId).toUpperCase() === candidate.toUpperCase())
+      (it.assetId && String(it.assetId).toUpperCase() === candidate.toUpperCase()) ||
+      (it.requestId && String(it.requestId).toUpperCase() === candidate.toUpperCase()) ||
+      (it.ticketNo && String(it.ticketNo).toUpperCase() === candidate.toUpperCase())
     ))) {
       nextNum++;
       candidate = `${prefix}${String(nextNum).padStart(digits, "0")}`;
@@ -1806,6 +1939,14 @@ class DBEngine {
         const { data: existing } = await this.supabase.from(table).select('id').eq('id', cloudRecord.id).maybeSingle();
         if (existing) {
           let { error } = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+          if (error && (error.code === '23503' || String(error.message || '').includes('foreign key constraint'))) {
+            console.warn(`FK constraint on update ${table}, nullifying foreign keys and retrying:`, error.message);
+            if (cloudRecord.employee_id) cloudRecord.employee_id = null;
+            if (cloudRecord.asset_id) cloudRecord.asset_id = null;
+            if (cloudRecord.maintenance_id) cloudRecord.maintenance_id = null;
+            const retry = await this.supabase.from(table).update(cloudRecord).eq('id', cloudRecord.id);
+            error = retry.error;
+          }
           if (error && storeName === "users" && (error.code === 'PGRST204' || error.code === '42703') && String(error.message || '').includes('email')) {
             console.warn("Supabase users table does not have 'email' column in schema cache. Adapting payload and retrying update...");
             usersTableHasEmail = false;
@@ -1816,9 +1957,17 @@ class DBEngine {
           if (error) throw error;
         } else {
           if (storeName === "users" && !cloudRecord.password) {
-            cloudRecord.password = "SDI@2026";
+            cloudRecord.password = "***";
           }
           let { error } = await this.supabase.from(table).insert(cloudRecord);
+          if (error && (error.code === '23503' || String(error.message || '').includes('foreign key constraint'))) {
+            console.warn(`FK constraint on insert ${table}, nullifying foreign keys and retrying:`, error.message);
+            if (cloudRecord.employee_id) cloudRecord.employee_id = null;
+            if (cloudRecord.asset_id) cloudRecord.asset_id = null;
+            if (cloudRecord.maintenance_id) cloudRecord.maintenance_id = null;
+            const retry = await this.supabase.from(table).insert(cloudRecord);
+            error = retry.error;
+          }
           if (error && storeName === "users" && (error.code === 'PGRST204' || error.code === '42703') && String(error.message || '').includes('email')) {
             console.warn("Supabase users table does not have 'email' column in schema cache. Adapting payload and retrying insert...");
             usersTableHasEmail = false;
@@ -2214,18 +2363,12 @@ class DBEngine {
 
   // Get Sequential Helpdesk Request ID (e.g. REQ-000125)
   async getNextRequestId() {
-    let nextNum = 101;
-    const requests = await this.getAll("helpdeskRequests");
-    requests.forEach(r => {
-      const idStr = r.requestId || r.id || "";
-      if (idStr.startsWith("REQ-")) {
-        const num = parseInt(idStr.replace("REQ-", ""), 10);
-        if (!isNaN(num) && num >= nextNum) {
-          nextNum = num + 1;
-        }
-      }
-    });
-    return "REQ-" + String(nextNum).padStart(6, "0");
+    if (typeof Helpdesk !== "undefined" && typeof Helpdesk.generateUniqueRequestId === "function") {
+      try {
+        return await Helpdesk.generateUniqueRequestId();
+      } catch (e) {}
+    }
+    return this.getNextSequentialId("helpdeskRequests");
   }
 
   // Internal Notifications Engine
@@ -2236,11 +2379,13 @@ class DBEngine {
     titleEn = "",
     messageAr = "",
     messageEn = "",
-    type = "system",
+    type = "helpdesk",
     relatedId = null
   }) {
+    const notifId = await this.getNextSequentialId("notifications");
+    const cleanRelatedId = (relatedId && String(relatedId).trim() !== "undefined" && String(relatedId).trim() !== "null") ? String(relatedId).trim() : null;
     const notif = {
-      id: await this.getNextSequentialId("notifications"),
+      id: notifId,
       userId,
       employeeId,
       titleAr,
@@ -2248,20 +2393,31 @@ class DBEngine {
       messageAr,
       messageEn,
       type,
-      relatedId,
+      relatedId: cleanRelatedId,
+      related_id: cleanRelatedId,
+      read: false,
       isRead: false,
       createdDate: new Date().toISOString().replace("T", " ").substring(0, 19)
     };
     try {
       await this.put("notifications", notif);
     } catch (e) {
-      console.warn("Cloud notification insert error (RLS or unlinked):", e);
+      console.warn("Cloud notification insert notice (RLS or unlinked):", e);
       try {
         this.saveToFallbackStore("notifications", notif);
       } catch (cacheErr) {}
     }
+
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      fetch("/api/sync/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item: notif })
+      }).catch(() => {});
+    }
+
     if (typeof window !== "undefined" && window.App && typeof window.App.updateNotificationBadge === "function") {
-      window.App.updateNotificationBadge();
+      window.App.updateNotificationBadge().catch(() => {});
     }
     return notif;
   }
@@ -2279,6 +2435,7 @@ class DBEngine {
     const notif = await this.getById("notifications", id);
     if (notif) {
       notif.isRead = true;
+      notif.read = true;
       await this.put("notifications", notif);
       if (typeof window !== "undefined" && window.App && typeof window.App.updateNotificationBadge === "function") {
         window.App.updateNotificationBadge();

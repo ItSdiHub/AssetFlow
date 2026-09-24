@@ -4,6 +4,29 @@ const path = require('path');
 const os = require('os');
 
 const PORT = 3000;
+const DATA_DIR = path.join(__dirname, 'data');
+const SYNC_FILE = path.join(DATA_DIR, 'sync_store.json');
+
+function loadSyncStore() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(SYNC_FILE)) {
+      return JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error loading sync store:', e);
+  }
+  return {};
+}
+
+function saveSyncStore(data) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SYNC_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving sync store:', e);
+  }
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -72,7 +95,7 @@ function createServerInstance(port) {
 
     // CORS Headers for Local Area Network (LAN) accessibility
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
@@ -82,6 +105,107 @@ function createServerInstance(port) {
     }
 
     let reqUrl = req.url.split('?')[0];
+
+    if (reqUrl.startsWith('/api/sync/')) {
+      const parts = reqUrl.replace('/api/sync/', '').split('/');
+      const storeName = parts[0];
+      const itemId = parts[1];
+
+      if (req.method === 'GET' && storeName === 'next-id' && itemId) {
+        const targetStore = itemId;
+        const store = loadSyncStore();
+        const items = store[targetStore] || [];
+        let maxNum = 0;
+        const currentYear = new Date().getFullYear();
+        const prefixes = {
+          employees: { prefix: "EMP-", digits: 4, start: 1001, alt: ["EMP-", "SDI-"] },
+          departments: { prefix: "DEP-", digits: 3, start: 1 },
+          locations: { prefix: "LOC-", digits: 3, start: 1 },
+          assetTypes: { prefix: "TYP-", digits: 3, start: 1 },
+          contractors: { prefix: "CNT-", digits: 3, start: 1 },
+          projects: { prefix: `PRJ-${currentYear}-`, digits: 3, start: 1 },
+          projectTasks: { prefix: "TSK-", digits: 3, start: 1 },
+          warehouseIssues: { prefix: "ISS-", digits: 6, start: 1 },
+          assetTransfers: { prefix: "TRF-", digits: 6, start: 1 },
+          maintenance: { prefix: "MNT-", digits: 5, start: 1, alt: ["MAINT-", "TKT-"] },
+          helpdeskRequests: { prefix: "REQ-", digits: 6, start: 101 },
+          licenses: { prefix: "LIC-", digits: 4, start: 1 },
+          users: { prefix: "USR-", digits: 3, start: 1 },
+          assetTransactions: { prefix: "TX-", digits: 6, start: 1 },
+          notifications: { prefix: "NOTIF-", digits: 6, start: 1 }
+        };
+        const cfg = prefixes[targetStore] || { prefix: targetStore.slice(0, 3).toUpperCase() + "-", digits: 4, start: 1 };
+        const allPrefixes = [cfg.prefix, ...(cfg.alt || [])].sort((a, b) => b.length - a.length);
+        items.forEach(it => {
+          if (!it) return;
+          const val = String(it.id || it.code || it.requestId || it.ticketNo || it.issueNo || it.transferNo || it.projectNo || "");
+          for (const p of allPrefixes) {
+            if (val.toUpperCase().startsWith(p.toUpperCase())) {
+              const numPart = val.slice(p.length).replace(/^[^\d]*/, "");
+              const num = parseInt(numPart, 10);
+              if (!isNaN(num) && num > maxNum && num < 10000000) maxNum = num;
+              break;
+            }
+          }
+        });
+        const nextNum = maxNum >= (cfg.start || 1) ? maxNum + 1 : (cfg.start || 1);
+        const nextId = cfg.prefix + String(nextNum).padStart(cfg.digits || 3, "0");
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ nextId, nextNum, storeName: targetStore }));
+        return;
+      }
+
+      if (req.method === 'GET') {
+        const store = loadSyncStore();
+        const items = store[storeName] || [];
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(items));
+        return;
+      }
+
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const payload = JSON.parse(body || '{}');
+            const item = payload.item || payload;
+            if (!item || !item.id) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Missing item or item.id' }));
+              return;
+            }
+            const store = loadSyncStore();
+            if (!store[storeName]) store[storeName] = [];
+            const idx = store[storeName].findIndex(x => String(x.id) === String(item.id));
+            if (idx >= 0) {
+              store[storeName][idx] = { ...store[storeName][idx], ...item };
+            } else {
+              store[storeName].push(item);
+            }
+            saveSyncStore(store);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: true, item }));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if (req.method === 'DELETE' && itemId) {
+        const store = loadSyncStore();
+        if (store[storeName]) {
+          store[storeName] = store[storeName].filter(x => String(x.id) !== String(itemId));
+          saveSyncStore(store);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true }));
+        return;
+      }
+    }
+
     if (reqUrl === '/' || reqUrl === '') reqUrl = '/index.html';
 
     const filePath = path.join(__dirname, reqUrl);

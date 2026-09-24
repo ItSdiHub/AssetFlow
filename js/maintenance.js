@@ -54,6 +54,12 @@ class MaintenanceController {
       return;
     }
 
+    const safeHL = (txt, q) => {
+      if (typeof highlightText === "function") return highlightText(txt, q);
+      if (typeof window !== "undefined" && typeof window.highlightText === "function") return window.highlightText(txt, q);
+      return String(txt || "");
+    };
+
     let html = "";
     filtered.forEach(t => {
       const asset = assetMap[t.assetId];
@@ -64,16 +70,16 @@ class MaintenanceController {
       const rawAction = (lang === 'en' && t.actionTakenEn) ? t.actionTakenEn : t.actionTaken;
       const rawTech = lang === 'en' ? (t.technicianEn || (t.technician && !/[\u0600-\u06FF]/.test(t.technician) ? t.technician : (t.vendor || "IT Support"))) : (t.technician || t.vendor || "-");
 
-      const ticketIdHtml = highlightText(t.id, searchVal);
-      const assetTagHtml = highlightText(rawAssetTag, searchVal);
-      const assetNameHtml = highlightText(rawAssetName, searchVal);
-      const empNameHtml = rawEmpName ? highlightText(rawEmpName, searchVal) : "";
-      const empIdHtml = t.employeeId ? highlightText(t.employeeId, searchVal) : "";
-      const deptNameHtml = t.departmentName ? highlightText(t.departmentName, searchVal) : "";
-      const locNameHtml = t.locationName ? highlightText(t.locationName, searchVal) : "";
-      const problemHtml = highlightText(rawProblem, searchVal);
-      const actionHtml = rawAction ? highlightText(rawAction, searchVal) : "";
-      const techHtml = highlightText(rawTech, searchVal);
+      const ticketIdHtml = safeHL(t.id, searchVal);
+      const assetTagHtml = safeHL(rawAssetTag, searchVal);
+      const assetNameHtml = safeHL(rawAssetName, searchVal);
+      const empNameHtml = rawEmpName ? safeHL(rawEmpName, searchVal) : "";
+      const empIdHtml = t.employeeId ? safeHL(t.employeeId, searchVal) : "";
+      const deptNameHtml = t.departmentName ? safeHL(t.departmentName, searchVal) : "";
+      const locNameHtml = t.locationName ? safeHL(t.locationName, searchVal) : "";
+      const problemHtml = safeHL(rawProblem, searchVal);
+      const actionHtml = rawAction ? safeHL(rawAction, searchVal) : "";
+      const techHtml = safeHL(rawTech, searchVal);
 
       let statusBadge = "badge-danger";
       if (t.status === "Completed") statusBadge = "badge-success";
@@ -265,10 +271,15 @@ class MaintenanceController {
 
     // Helper functions for validation
     const getEmpLocation = (emp) => {
+      if (!emp) return null;
       if (emp.locationId || emp.location_id) return emp.locationId || emp.location_id;
       const empDept = emp.departmentId || emp.department_id;
-      if (empDept && deptMap[empDept]) {
+      if (empDept && deptMap[empDept] && (deptMap[empDept].locationId || deptMap[empDept].location_id)) {
         return deptMap[empDept].locationId || deptMap[empDept].location_id;
+      }
+      const assignedAsset = assets.find(a => a.currentEmployeeId === emp.id || a.currentEmployeeId === emp.employeeNumber);
+      if (assignedAsset && (assignedAsset.locationId || assignedAsset.location_id)) {
+        return assignedAsset.locationId || assignedAsset.location_id;
       }
       return null;
     };
@@ -276,7 +287,7 @@ class MaintenanceController {
     // 3. Resolve Trigger Context & Cascading Validations
     if (triggerSource === "asset") {
       if (assetId) {
-        const targetAsset = assetMap[assetId];
+        const targetAsset = assetMap[assetId] || assets.find(a => a.id === assetId || a.assetId === assetId);
         if (targetAsset) {
           // If the asset has a current employee assigned, select that employee
           empId = targetAsset.currentEmployeeId || "";
@@ -299,16 +310,20 @@ class MaintenanceController {
       }
     } else if (triggerSource === "employee") {
       if (empId) {
-        const targetEmp = empMap[empId];
+        const targetEmp = empMap[empId] || employees.find(e => e.id === empId || e.employeeNumber === empId);
         if (targetEmp) {
           deptId = targetEmp.departmentId || targetEmp.department_id || "";
           locId = getEmpLocation(targetEmp) || "";
         }
-        // Validate assetId: Is the asset in this employee's custody?
-        if (assetId) {
-          const targetAsset = assetMap[assetId];
+        if (!assetId) {
+          const empAsset = assets.find(a => a.currentEmployeeId === empId || (targetEmp && a.currentEmployeeId === targetEmp.id));
+          if (empAsset) {
+            assetId = empAsset.id || empAsset.assetId;
+          }
+        } else {
+          const targetAsset = assetMap[assetId] || assets.find(a => a.id === assetId || a.assetId === assetId);
           if (!targetAsset || targetAsset.currentEmployeeId !== empId) {
-            assetId = ""; // Clear invalid asset
+            assetId = "";
           }
         }
       } else {
@@ -390,9 +405,8 @@ class MaintenanceController {
 
     // --- REBUILD DEPARTMENTS ---
     let filteredDepts = activeDepts;
-    if (locId) {
+    if (locId && !deptId) {
       filteredDepts = activeDepts.filter(d => (d.locationId === locId || d.location_id === locId));
-
     }
     const selectDeptPlaceholder = lang === "ar" ? "-- اختر القسم / الإدارة --" : "-- Select Department --";
     deptSelect.innerHTML = `<option value="">${selectDeptPlaceholder}</option>` +
@@ -406,17 +420,16 @@ class MaintenanceController {
     } else if (!deptId && filteredDepts.length === 1 && triggerSource === "location") {
       deptId = filteredDepts[0].id;
       deptSelect.value = deptId;
-    } else {
-      deptId = "";
+    } else if (!deptId) {
       deptSelect.value = "";
     }
 
     // --- REBUILD EMPLOYEES ---
     let filteredEmps = activeEmps;
-    if (deptId) {
+    if (deptId && !empId) {
       filteredEmps = filteredEmps.filter(e => (e.departmentId === deptId || e.department_id === deptId));
     }
-    if (locId && !deptId) {
+    if (locId && !deptId && !empId) {
       filteredEmps = filteredEmps.filter(e => getEmpLocation(e) === locId);
     }
 

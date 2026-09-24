@@ -145,6 +145,12 @@ class AssetInventoryManager {
       return;
     }
 
+    const safeHL = (txt, q) => {
+      if (typeof highlightText === "function") return highlightText(txt, q);
+      if (typeof window !== "undefined" && typeof window.highlightText === "function") return window.highlightText(txt, q);
+      return String(txt || "");
+    };
+
     let html = "";
     filtered.forEach(asset => {
       const typeObj = typeMap[asset.assetTypeId];
@@ -155,14 +161,14 @@ class AssetInventoryManager {
       const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
 
       const q = this.currentSearchText || "";
-      const assetIdHtml = highlightText(asset.assetId, q);
-      const typeNameHtml = highlightText(rawTypeName, q);
-      const brandHtml = highlightText(asset.brand || "-", q);
-      const modelHtml = highlightText(asset.model || "-", q);
-      const serialHtml = highlightText(asset.serial || "-", q);
-      const empNameHtml = highlightText(rawEmpName, q);
-      const deptNameHtml = highlightText(rawDeptName, q);
-      const locNameHtml = highlightText(rawLocName, q);
+      const assetIdHtml = safeHL(asset.assetId, q);
+      const typeNameHtml = safeHL(rawTypeName, q);
+      const brandHtml = safeHL(asset.brand || "-", q);
+      const modelHtml = safeHL(asset.model || "-", q);
+      const serialHtml = safeHL(asset.serial || "-", q);
+      const empNameHtml = safeHL(rawEmpName, q);
+      const deptNameHtml = safeHL(rawDeptName, q);
+      const locNameHtml = safeHL(rawLocName, q);
 
       // Status Badge Style
       const statusClass = this.getStatusBadgeClass(asset.status);

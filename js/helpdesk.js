@@ -38,12 +38,38 @@ class HelpdeskManager {
     const employees = await db.getAll("employees");
     const assets = await db.getAll("assets");
     const departments = await db.getAll("departments");
+    const users = await db.getAll("users");
     const lang = AppState.lang;
 
-    const empMap = Object.fromEntries(employees.map(e => [e.id, lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr)]));
-    const empObjMap = Object.fromEntries(employees.map(e => [e.id, e]));
-    const assetMap = Object.fromEntries(assets.map(a => [a.id, a]));
-    const deptMap = Object.fromEntries(departments.map(d => [d.id, typeof getEntityName === "function" ? getEntityName(d, lang) : (lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr))]));
+    const empMap = {};
+    const empObjMap = {};
+    employees.forEach(e => {
+      const name = lang === "ar" ? e.nameAr : (e.nameEn || e.nameAr);
+      if (e.id) { empMap[e.id] = name; empObjMap[e.id] = e; }
+      if (e.employeeNumber) { empMap[e.employeeNumber] = name; empObjMap[e.employeeNumber] = e; }
+      if (e.employeeId) { empMap[e.employeeId] = name; empObjMap[e.employeeId] = e; }
+    });
+
+    const userMap = {};
+    users.forEach(u => {
+      const name = typeof getUserDisplayName === "function" ? getUserDisplayName(u, lang) : (u.fullName || u.fullNameAr || u.username);
+      if (u.id) userMap[u.id] = name;
+      if (u.employeeId) userMap[u.employeeId] = name;
+      if (u.username) userMap[u.username] = name;
+    });
+
+    const assetMap = {};
+    assets.forEach(a => {
+      if (a.id) assetMap[a.id] = a;
+      if (a.assetId) assetMap[a.assetId] = a;
+    });
+
+    const deptMap = {};
+    departments.forEach(d => {
+      const name = typeof getEntityName === "function" ? getEntityName(d, lang) : (lang === "ar" ? d.nameAr : (d.nameEn || d.nameAr));
+      if (d.id) deptMap[d.id] = name;
+      if (d.code) deptMap[d.code] = name;
+    });
 
     // 1. KPI Counters
     const countNew = requests.filter(r => r.status === "New").length;
@@ -70,7 +96,7 @@ class HelpdeskManager {
     const filtered = requests.filter(r => {
       if (currentFilterStatus && r.status !== currentFilterStatus) return false;
       if (currentSearch) {
-        const empName = (empMap[r.employeeId] || "").toLowerCase();
+        const empName = (empMap[r.employeeId] || userMap[r.employeeId] || userMap[r.userId] || "").toLowerCase();
         const asset = assetMap[r.assetId];
         const assetTag = asset ? (asset.assetId + " " + asset.brand + " " + asset.model).toLowerCase() : "";
         const match = (
@@ -105,7 +131,7 @@ class HelpdeskManager {
 
     let html = "";
     filtered.forEach(req => {
-      const empName = req.employeeId ? (empMap[req.employeeId] || (lang === "ar" ? "موظف غير معروف" : "Unknown Employee")) : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee");
+      const empName = req.employeeId ? (empMap[req.employeeId] || userMap[req.employeeId] || req.employeeId) : (req.userId && userMap[req.userId] ? userMap[req.userId] : (lang === "ar" ? "طلب عام / بدون موظف" : "General / No Employee"));
       const asset = assetMap[req.assetId];
       const assetDisplay = asset ? `${asset.assetId} - ${asset.brand} ${asset.model}` : (lang === "ar" ? "طلب عام / بدون جهاز" : "General / No device");
 
@@ -123,15 +149,21 @@ class HelpdeskManager {
         deptName = typeof req.department === "object" ? (typeof getEntityName === "function" ? getEntityName(req.department, lang) : (req.department.nameAr || req.department.nameEn || "-")) : req.department;
       }
 
+      const safeHL = (txt, query) => {
+        if (typeof highlightText === "function") return highlightText(txt, query);
+        if (typeof window !== "undefined" && typeof window.highlightText === "function") return window.highlightText(txt, query);
+        return String(txt || "");
+      };
+
       const q = this.filterSearch || "";
-      const reqIdHtml = highlightText(req.requestId || req.id, q);
-      const empNameHtml = highlightText(empName, q);
-      const assetDisplayHtml = highlightText(assetDisplay, q);
-      const deptNameHtml = highlightText(deptName, q);
+      const reqIdHtml = safeHL(req.requestId || req.id, q);
+      const empNameHtml = safeHL(empName, q);
+      const assetDisplayHtml = safeHL(assetDisplay, q);
+      const deptNameHtml = safeHL(deptName, q);
       const rawSubject = (lang === "en" && req.subjectEn) ? req.subjectEn : req.subject;
       const rawDesc = (lang === "en" && req.descriptionEn) ? req.descriptionEn : (req.description || "");
-      const subjectHtml = highlightText(rawSubject, q);
-      const descHtml = rawDesc ? highlightText(rawDesc, q) : "";
+      const subjectHtml = safeHL(rawSubject, q);
+      const descHtml = rawDesc ? safeHL(rawDesc, q) : "";
 
       const statusBadge = this.getStatusBadge(req.status);
       const msgCount = (req.messages || []).length;
@@ -140,7 +172,7 @@ class HelpdeskManager {
       html += `
         <tr>
           <td>
-            <a href="javascript:void(0)" onclick="Helpdesk.openRequestDetails('${req.id}')" class="font-bold text-primary">
+            <a href="javascript:void(0)" onclick="Helpdesk.openRequestDetails('${req.requestId || req.id}')" class="font-bold text-primary">
               ${reqIdHtml}
             </a>
           </td>
@@ -165,16 +197,16 @@ class HelpdeskManager {
           </td>
           <td>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-              <button class="btn btn-xs btn-primary" onclick="Helpdesk.openRequestDetails('${req.id}')" title="${lang === 'ar' ? 'فتح الطلب والرد' : 'Open & Reply'}">
+              <button class="btn btn-xs btn-primary" onclick="Helpdesk.openRequestDetails('${req.requestId || req.id}')" title="${lang === 'ar' ? 'فتح الطلب والرد' : 'Open & Reply'}">
                 <i class="fas fa-folder-open"></i> ${lang === 'ar' ? 'فتح' : 'Open'} ${msgCount > 0 ? `(${msgCount})` : ''}
               </button>
               ${!hasMaint && asset && req.status !== "Completed" ? `
-                <button class="btn btn-xs btn-secondary text-warning" onclick="Helpdesk.handleCreateMaintenanceFromRequest('${req.id}')" title="${lang === 'ar' ? 'تحويل لصيانة فعلية' : 'Create Maintenance'}">
+                <button class="btn btn-xs btn-secondary text-warning" onclick="Helpdesk.handleCreateMaintenanceFromRequest('${req.requestId || req.id}')" title="${lang === 'ar' ? 'تحويل لصيانة فعلية' : 'Create Maintenance'}">
                   <i class="fas fa-tools"></i>
                 </button>
               ` : ''}
               ${req.status !== "Completed" ? `
-                <button class="btn btn-xs btn-secondary text-success" onclick="Helpdesk.quickCompleteRequest('${req.id}')" title="${lang === 'ar' ? 'إكمال الطلب' : 'Complete'}">
+                <button class="btn btn-xs btn-secondary text-success" onclick="Helpdesk.quickCompleteRequest('${req.requestId || req.id}')" title="${lang === 'ar' ? 'إكمال الطلب' : 'Complete'}">
                   <i class="fas fa-check"></i>
                 </button>
               ` : ''}
@@ -318,7 +350,15 @@ class HelpdeskManager {
     if (!container) return;
 
     const allRequests = await db.getAll("helpdeskRequests");
-    const myRequests = allRequests.filter(r => r.employeeId === user.employeeId).sort((a, b) => new Date(b.createdDate || 0) - new Date(a.createdDate || 0));
+    const myRequests = allRequests.filter(r => {
+      if (!user) return false;
+      if (user.employeeId && (r.employeeId === user.employeeId || r.employeeId === user.id)) return true;
+      if (r.employeeId && r.employeeId === user.id) return true;
+      if (r.userId && r.userId === user.id) return true;
+      if (r.employeeId && user.username && r.employeeId.toLowerCase() === user.username.toLowerCase()) return true;
+      if (user.role === "Employee" && (!r.employeeId || r.employeeId === user.employeeId || r.employeeId === user.id || r.userId === user.id)) return true;
+      return false;
+    }).sort((a, b) => new Date(b.createdDate || 0) - new Date(a.createdDate || 0));
     const lang = AppState.lang;
 
     if (myRequests.length === 0) {
@@ -341,7 +381,7 @@ class HelpdeskManager {
       const lastMsg = msgCount > 0 ? req.messages[msgCount - 1] : null;
 
       html += `
-        <div class="ep-request-card" onclick="Helpdesk.openRequestDetails('${req.id}')">
+        <div class="ep-request-card" onclick="Helpdesk.openRequestDetails('${req.requestId || req.id}')">
           <div class="d-flex justify-between items-center mb-2">
             <span class="font-bold text-primary">${req.requestId || req.id}</span>
             <div class="d-flex gap-2 items-center">
@@ -405,10 +445,12 @@ class HelpdeskManager {
       const title = lang === "ar" ? n.titleAr : (n.titleEn || n.titleAr);
       const msg = lang === "ar" ? n.messageAr : (n.messageEn || n.messageAr);
       const unreadClass = !n.isRead ? "unread" : "";
+      const relId = n.relatedId || n.related_id || "";
+      const nType = n.type || "helpdesk";
 
       html += `
-        <div class="notif-feed-item ${unreadClass}" onclick="Helpdesk.handleNotificationClick('${n.id}', '${n.relatedId}', '${n.type}')">
-          <div class="notif-icon"><i class="fas ${this.getNotifIcon(n.type)}"></i></div>
+        <div class="notif-feed-item ${unreadClass}" onclick="Helpdesk.handleNotificationClick('${n.id}', '${relId}', '${nType}')">
+          <div class="notif-icon"><i class="fas ${this.getNotifIcon(nType)}"></i></div>
           <div class="notif-body">
             <div class="d-flex justify-between items-center">
               <strong>${title}</strong>
@@ -470,15 +512,155 @@ class HelpdeskManager {
   // =========================================================================
   // 4. REQUEST DETAILS MODAL & IN-REQUEST MESSAGING
   // =========================================================================
-  async openRequestDetails(requestId) {
+  // Open Support Request by Unique request_id (Never index-based)
+  async openRequest(targetRequestId) {
+    return this.openRequestDetails(targetRequestId);
+  }
+
+  async openRequestDetails(targetRequestId) {
     const user = AppState.currentUser;
     if (!user) return;
+    if (targetRequestId === null || targetRequestId === undefined || targetRequestId === "" || targetRequestId === "undefined" || targetRequestId === "null") {
+      console.warn("Helpdesk.openRequestDetails called without a valid request ID:", targetRequestId);
+      return;
+    }
 
-    const req = await db.getById("helpdeskRequests", requestId);
-    if (!req) return;
+    const lang = AppState.lang || "ar";
 
-    this.currentRequestId = req.id;
-    const lang = AppState.lang;
+    // 1. Resolve raw input if an object or notification was passed
+    let resolvedReqId = null;
+    if (typeof targetRequestId === "object" && targetRequestId !== null) {
+      resolvedReqId = targetRequestId.requestId || targetRequestId.request_id || targetRequestId.requestNumber || targetRequestId.request_number || targetRequestId.relatedId || targetRequestId.related_id || targetRequestId.id;
+    } else {
+      resolvedReqId = String(targetRequestId).trim();
+    }
+
+    if (!resolvedReqId || resolvedReqId === "undefined" || resolvedReqId === "null") {
+      console.warn("Helpdesk.openRequestDetails: could not resolve request ID from input:", targetRequestId);
+      return;
+    }
+
+    // 2. If target is a notification ID (e.g. NOTIF-000007), resolve the linked request ID from the notification record
+    if (String(resolvedReqId).toUpperCase().startsWith("NOTIF-")) {
+      let notif = null;
+      try {
+        notif = await db.getById("notifications", resolvedReqId);
+      } catch (e) {}
+      if (!notif) {
+        const allNotifs = await db.getAll("notifications");
+        notif = Array.isArray(allNotifs) ? allNotifs.find(n => n && (n.id === resolvedReqId || String(n.id).toUpperCase() === String(resolvedReqId).toUpperCase())) : null;
+      }
+      if (notif) {
+        resolvedReqId = notif.relatedId || notif.related_id || null;
+        if (!resolvedReqId) {
+          const scan = `${notif.titleAr || ""} ${notif.titleEn || ""} ${notif.messageAr || ""} ${notif.messageEn || ""}`;
+          const m = scan.match(/REQ-\d+/i);
+          if (m) resolvedReqId = m[0];
+        }
+      }
+    }
+
+    if (!resolvedReqId) {
+      App.showToast(lang === "ar" ? "تعذر تحديد رقم الطلب المرتبط بالإشعار." : "Could not identify request ID from notification.", "warning");
+      return;
+    }
+
+    const cleanId = String(resolvedReqId).trim();
+    const cleanIdUpper = cleanId.toUpperCase();
+
+    // 3. Prevent index-based lookup: map strictly to candidate request identifiers.
+    // If cleanId is purely numeric (e.g. "101"), search by explicit ID representations ("REQ-000101", "REQ-101", "101")
+    const searchKeys = new Set([cleanIdUpper]);
+    if (/^\d+$/.test(cleanId)) {
+      const num = parseInt(cleanId, 10);
+      searchKeys.add(`REQ-${String(num).padStart(6, "0")}`);
+      searchKeys.add(`REQ-${num}`);
+      searchKeys.add(String(num));
+    } else if (cleanIdUpper.startsWith("REQ-")) {
+      const numPart = cleanIdUpper.slice(4).replace(/^0+/, "");
+      if (numPart) {
+        searchKeys.add(numPart);
+        searchKeys.add(`REQ-${numPart.padStart(6, "0")}`);
+      }
+    }
+
+    const matchesRequest = (r) => {
+      if (!r) return false;
+      const candidates = [r.request_id, r.requestId, r.id, r.requestNumber, r.request_number]
+        .filter(Boolean)
+        .map(v => String(v).trim().toUpperCase());
+      return candidates.some(cand => searchKeys.has(cand));
+    };
+
+    let req = null;
+
+    // A. Direct fetch from local IndexedDB / storage
+    try {
+      const allRequests = await db.getAll("helpdeskRequests");
+      if (Array.isArray(allRequests)) {
+        req = allRequests.find(matchesRequest) || null;
+      }
+    } catch (e) {}
+
+    // B. Direct db.getById lookup across candidate keys
+    if (!req) {
+      for (const k of searchKeys) {
+        try {
+          const found = await db.getById("helpdeskRequests", k);
+          if (found && matchesRequest(found)) {
+            req = found;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    // C. Fallback to server sync store if not yet in local memory
+    if (!req && typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      try {
+        const syncRes = await fetch("/api/sync/helpdeskRequests").catch(() => null);
+        if (syncRes && syncRes.ok) {
+          const sItems = await syncRes.json().catch(() => []);
+          if (Array.isArray(sItems)) {
+            req = sItems.find(matchesRequest) || null;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // D. Direct query from cloud Supabase if online
+    if (!req && db.supabase && typeof db.supabase.from === "function") {
+      try {
+        for (const k of searchKeys) {
+          const { data, error } = await db.supabase
+            .from("helpdesk_requests")
+            .select("id, request_number, employee_id, asset_id, category, title, description, priority, status, technician_notes, assigned_to, messages, maintenance_id, created_at")
+            .or(`id.eq.${k},request_number.eq.${k}`)
+            .maybeSingle();
+          if (data && !error) {
+            req = typeof fromCloudRecord === "function" ? fromCloudRecord("helpdeskRequests", data) : data;
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // E. STRICT GUARD: DO NOT perform index-based fallback (e.g. allRequests[0]).
+    // If not found by explicit request_id, show informative toast and halt.
+    if (!req) {
+      console.warn(`Helpdesk.openRequestDetails: Request not found for key(s) [${Array.from(searchKeys).join(", ")}]`);
+      App.showToast(
+        lang === "ar" 
+          ? `طلب الدعم الفني (${cleanId}) غير موجود أو تم حذفه.` 
+          : `Support request (${cleanId}) was not found or was removed.`,
+        "warning"
+      );
+      return;
+    }
+
+    this.currentRequestId = req.requestId || req.id || req.requestNumber || req.request_number;
+    const hdCurrentReqEl = document.getElementById("hdCurrentRequestId");
+    if (hdCurrentReqEl) hdCurrentReqEl.value = this.currentRequestId;
     const isIT = user ? (user.role === "Administrator" || user.role === "IT User") : false;
 
     const employee = req.employeeId ? await db.getById("employees", req.employeeId) : null;
@@ -656,7 +838,8 @@ class HelpdeskManager {
           messageAr: text,
           messageEn: text,
           type: "it_reply",
-          relatedId: req.id
+          relatedId: req.requestId || req.id,
+          related_id: req.requestId || req.id
         });
       }
     } else {
@@ -672,7 +855,8 @@ class HelpdeskManager {
         messageAr: `${getUserDisplayName(user, 'ar')}: ${text}`,
         messageEn: `${getUserDisplayName(user, 'en')}: ${text}`,
         type: "employee_reply",
-        relatedId: req.id
+        relatedId: req.requestId || req.id,
+        related_id: req.requestId || req.id
       });
     }
 
@@ -687,7 +871,7 @@ class HelpdeskManager {
     input.value = "";
     App.showToast(I18N[lang].saveSuccess || (lang === "ar" ? "تم إرسال الرد بنجاح" : "Reply sent successfully"), "success");
 
-    await this.openRequestDetails(req.id);
+    await this.openRequestDetails(req.requestId || req.id);
     await this.render();
   }
 
@@ -730,12 +914,13 @@ class HelpdeskManager {
         messageAr: `أصبحت حالة طلبك: ${this.formatStatus(newStatus)}`,
         messageEn: `Your request status is now: ${this.formatStatus(newStatus)}`,
         type: "request_update",
-        relatedId: req.id
+        relatedId: req.requestId || req.id,
+        related_id: req.requestId || req.id
       });
     }
 
     App.showToast(I18N[AppState.lang].saveSuccess, "success");
-    await this.openRequestDetails(req.id);
+    await this.openRequestDetails(req.requestId || req.id);
     await this.render();
   }
 
@@ -763,38 +948,98 @@ class HelpdeskManager {
       App.showToast(AppState.lang === "ar" ? "غير مصرح لك بإغلاق الطلبات." : "Unauthorized to close requests.", "error");
       return;
     }
-    const req = await db.getById("helpdeskRequests", requestId);
-    if (!req) return;
 
-    if (!confirm(AppState.lang === "ar" ? `هل أنت متأكد من إكمال وإغلاق الطلب (${req.requestId})؟` : `Complete and close request (${req.requestId})?`)) return;
+    let targetId = requestId;
+    if (!targetId) {
+      targetId = this.currentRequestId || document.getElementById("hdCurrentRequestId")?.value || document.getElementById("hdSumNumber")?.textContent;
+    }
+    if (!targetId) {
+      App.showToast(AppState.lang === "ar" ? "تعذر تحديد معرف الطلب." : "Could not determine request ID.", "error");
+      return;
+    }
+    targetId = String(targetId).trim();
 
+    let req = await db.getById("helpdeskRequests", targetId);
+    if (!req) {
+      const cleanTarget = targetId.toLowerCase();
+      try {
+        const allReqs = await db.getAll("helpdeskRequests");
+        if (Array.isArray(allReqs)) {
+          req = allReqs.find(r => r && (
+            (r.requestId && String(r.requestId).trim().toLowerCase() === cleanTarget) ||
+            (r.id && String(r.id).trim().toLowerCase() === cleanTarget) ||
+            (r.requestNumber && String(r.requestNumber).trim().toLowerCase() === cleanTarget) ||
+            (r.request_number && String(r.request_number).trim().toLowerCase() === cleanTarget) ||
+            (r.request_id && String(r.request_id).trim().toLowerCase() === cleanTarget)
+          )) || null;
+        }
+      } catch (e) {
+        console.warn("Error looking up helpdesk requests:", e);
+      }
+    }
+
+    if (!req) {
+      App.showToast(AppState.lang === "ar" ? `طلب الدعم (${targetId}) غير موجود.` : `Support request (${targetId}) not found.`, "error");
+      return;
+    }
+
+    if (req.status === "Completed") {
+      App.showToast(AppState.lang === "ar" ? `الطلب (${req.requestId || targetId}) مكتمل بالفعل.` : `Request (${req.requestId || targetId}) is already completed.`, "info");
+      const modal = document.getElementById("helpdeskRequestModal");
+      if (modal && modal.classList.contains("active")) {
+        await this.openRequestDetails(req.requestId || req.id || targetId);
+      }
+      return;
+    }
+
+    const now = new Date().toISOString().replace("T", " ").substring(0, 19);
     req.status = "Completed";
-    req.updatedDate = new Date().toISOString().replace("T", " ").substring(0, 19);
+    req.closedDate = now;
+    req.updatedDate = now;
     if (!req.statusHistory) req.statusHistory = [];
     req.statusHistory.push({
       status: "Completed",
       changedBy: getUserDisplayName(AppState.currentUser, "ar"),
       changedByEn: getUserDisplayName(AppState.currentUser, "en"),
-      date: req.updatedDate,
+      date: now,
       note: AppState.lang === "ar" ? "إكمال الطلب بواسطة الدعم الفني" : "Request completed by IT Support"
     });
 
-    await db.put("helpdeskRequests", req);
+    try {
+      await db.put("helpdeskRequests", req);
+    } catch (e) {
+      console.warn("Cloud write error on helpdesk complete (RLS or offline):", e);
+      try {
+        db.saveToFallbackStore("helpdeskRequests", req);
+      } catch (cacheErr) {}
+    }
 
     // Notify employee
     if (req.employeeId) {
-      await db.createNotification({
-        employeeId: req.employeeId,
-        titleAr: `تم اكتمال طلب الدعم الفني (${req.requestId})`,
-        titleEn: `Support Request Completed (${req.requestId})`,
-        messageAr: "تم اكتمال طلب الدعم الفني الخاص بك بنجاح.",
-        messageEn: "Your support request has been completed successfully.",
-        type: "request_completed",
-        relatedId: req.id
-      });
+      try {
+        await db.createNotification({
+          employeeId: req.employeeId,
+          titleAr: `تم اكتمال طلب الدعم الفني (${req.requestId || targetId})`,
+          titleEn: `Support Request Completed (${req.requestId || targetId})`,
+          messageAr: "تم اكتمال طلب الدعم الفني الخاص بك بنجاح.",
+          messageEn: "Your support request has been completed successfully.",
+          type: "request_completed",
+          relatedId: req.requestId || req.id || targetId,
+          related_id: req.requestId || req.id || targetId
+        });
+      } catch (notifErr) {
+        console.warn("Failed to create completion notification:", notifErr);
+      }
     }
 
-    App.showToast(I18N[AppState.lang].saveSuccess || "تم إكمال الطلب بنجاح", "success");
+    App.showToast(I18N[AppState.lang]?.saveSuccess || (AppState.lang === "ar" ? "تم إكمال وإغلاق الطلب بنجاح" : "Support request completed successfully"), "success");
+
+    // If modal is currently open, refresh details immediately
+    const modalEl = document.getElementById("helpdeskRequestModal");
+    if (modalEl && modalEl.classList.contains("active")) {
+      await this.openRequestDetails(req.requestId || req.id || targetId);
+    }
+
     await this.render();
   }
 
@@ -947,6 +1192,113 @@ class HelpdeskManager {
     }
   }
 
+  // Robust Sequential Request ID Generator in helpdesk.js to prevent any collision
+  async generateUniqueRequestId() {
+    let maxNum = 100;
+
+    // 1. Check server-side next-id endpoint
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      try {
+        const sRes = await fetch("/api/sync/next-id/helpdeskRequests").catch(() => null);
+        if (sRes && sRes.ok) {
+          const sData = await sRes.json().catch(() => null);
+          if (sData && typeof sData.nextNum === "number" && sData.nextNum > maxNum) {
+            maxNum = sData.nextNum - 1;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fetch all existing requests across local and cloud stores
+    let allRequests = [];
+    try {
+      allRequests = await db.getAll("helpdeskRequests");
+    } catch (e) {
+      allRequests = [];
+    }
+    if (!Array.isArray(allRequests)) allRequests = [];
+
+    // 3. Fetch server sync store items as well
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      try {
+        const syncRes = await fetch("/api/sync/helpdeskRequests").catch(() => null);
+        if (syncRes && syncRes.ok) {
+          const serverItems = await syncRes.json().catch(() => []);
+          if (Array.isArray(serverItems) && serverItems.length > 0) {
+            const map = new Map();
+            allRequests.forEach(r => { if (r && (r.id || r.requestId)) map.set(String(r.id || r.requestId), r); });
+            serverItems.forEach(r => { if (r && (r.id || r.requestId)) map.set(String(r.id || r.requestId), r); });
+            allRequests = Array.from(map.values());
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 4. Also inspect existing notifications to ensure we don't collide with any related request ID
+    let notifs = [];
+    try {
+      notifs = await db.getAll("notifications");
+    } catch (e) {
+      notifs = [];
+    }
+    if (!Array.isArray(notifs)) notifs = [];
+
+    // 5. Scan all existing request fields and notification related IDs
+    const parseReqNum = (val) => {
+      if (!val) return 0;
+      const str = String(val).trim().toUpperCase();
+      if (str.startsWith("REQ-")) {
+        const numPart = str.slice(4).replace(/^[^\d]*/, "");
+        const num = parseInt(numPart, 10);
+        return (!isNaN(num) && num < 10000000) ? num : 0;
+      }
+      return 0;
+    };
+
+    allRequests.forEach(r => {
+      if (!r) return;
+      [r.id, r.requestId, r.requestNumber, r.request_number].forEach(field => {
+        const num = parseReqNum(field);
+        if (num > maxNum) maxNum = num;
+      });
+    });
+
+    notifs.forEach(n => {
+      if (!n) return;
+      [n.relatedId, n.related_id].forEach(field => {
+        const num = parseReqNum(field);
+        if (num > maxNum) maxNum = num;
+      });
+    });
+
+    let nextNum = maxNum >= 101 ? maxNum + 1 : 101;
+    let candidate = `REQ-${String(nextNum).padStart(6, "0")}`;
+
+    // 6. Guarantee candidate does not collide with any existing request or notification
+    const isCollision = (cand) => {
+      const candUpper = cand.toUpperCase();
+      const inReqs = allRequests.some(r => r && (
+        (r.id && String(r.id).toUpperCase() === candUpper) ||
+        (r.requestId && String(r.requestId).toUpperCase() === candUpper) ||
+        (r.requestNumber && String(r.requestNumber).toUpperCase() === candUpper) ||
+        (r.request_number && String(r.request_number).toUpperCase() === candUpper)
+      ));
+      if (inReqs) return true;
+      const inNotifs = notifs.some(n => n && (
+        (n.relatedId && String(n.relatedId).toUpperCase() === candUpper) ||
+        (n.related_id && String(n.related_id).toUpperCase() === candUpper)
+      ));
+      return inNotifs;
+    };
+
+    while (isCollision(candidate)) {
+      nextNum++;
+      candidate = `REQ-${String(nextNum).padStart(6, "0")}`;
+    }
+
+    return candidate;
+  }
+
   async handleNewSupportRequestSubmit(event) {
     if (event && event.preventDefault) event.preventDefault();
     const user = AppState.currentUser;
@@ -995,14 +1347,17 @@ class HelpdeskManager {
       }
     }
 
-    const nextReqId = await db.getNextRequestId();
-    const nextSeq = await db.getNextSequentialId("helpdeskRequests");
+    // Fully validated unique sequential request ID generator preventing duplicate sequence numbers
+    const uniqueReqId = await this.generateUniqueRequestId();
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
 
     const newReq = {
-      id: nextSeq,
-      requestId: nextReqId,
+      id: uniqueReqId,
+      requestId: uniqueReqId,
+      requestNumber: uniqueReqId,
+      request_number: uniqueReqId,
       employeeId: employeeId,
+      userId: user ? user.id : null,
       assetId: targetAssetId,
       requestType: reqType,
       subject,
@@ -1036,30 +1391,48 @@ class HelpdeskManager {
     try {
       await db.put("helpdeskRequests", newReq);
     } catch (writeErr) {
-      console.warn("Cloud write error on helpdeskRequests (RLS or offline):", writeErr);
+      console.warn("Cloud write notice on helpdeskRequests:", writeErr);
       try {
         db.saveToFallbackStore("helpdeskRequests", newReq);
       } catch (cacheErr) {}
     }
 
-    // Notify IT
+    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
+      fetch("/api/sync/helpdeskRequests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item: newReq })
+      }).catch(() => {});
+    }
+
+    // Notify IT with guaranteed unique relatedId
     try {
       await db.createNotification({
-        titleAr: `طلب دعم فني جديد: ${nextReqId}`,
-        titleEn: `New Support Request: ${nextReqId}`,
+        titleAr: `طلب دعم فني جديد: ${uniqueReqId}`,
+        titleEn: `New Support Request: ${uniqueReqId}`,
         messageAr: `${subject} - مقدم من: ${getUserDisplayName(user, "ar")}`,
         messageEn: `${subject} - Submitted by: ${getUserDisplayName(user, "en")}`,
         type: "new_request",
-        relatedId: newReq.id
+        relatedId: uniqueReqId,
+        related_id: uniqueReqId
       });
     } catch (notifErr) {
-      console.warn("Cloud write error on notification:", notifErr);
+      console.warn("Notification notice:", notifErr);
+    }
+
+    if (window.App && typeof window.App.updateNotificationBadge === "function") {
+      window.App.updateNotificationBadge().catch(() => {});
     }
 
     App.closeModal("newSupportRequestModal");
     App.showToast(I18N[lang].requestSubmittedSuccess || (lang === "ar" ? "تم إرسال الطلب بنجاح." : "Request submitted successfully."), "success");
 
-    await this.render();
+    if (user.role === "Employee") {
+      this.activePortalSubTab = "requests";
+      await this.switchPortalSubTab("requests");
+    } else {
+      await this.render();
+    }
   }
 
   // =========================================================================
@@ -1130,12 +1503,59 @@ class HelpdeskManager {
     const user = AppState.currentUser;
     if (!user) return;
 
-    await db.markNotificationRead(notifId);
-    if (relatedId && (type === "it_reply" || type === "request_update" || type === "request_completed" || type === "new_request" || type === "employee_reply")) {
-      await this.openRequestDetails(relatedId);
-    } else if (relatedId && type === "handover") {
-      await AssetManager.openDetailsModal(relatedId);
+    if (notifId) {
+      await db.markNotificationRead(notifId);
+      if (typeof App !== "undefined" && typeof App.updateNotificationBadge === "function") {
+        App.updateNotificationBadge().catch(() => {});
+      }
     }
+
+    // Resolve target ID cleanly
+    let targetId = (relatedId && String(relatedId).trim() !== "undefined" && String(relatedId).trim() !== "null") ? String(relatedId).trim() : null;
+    let notifType = type;
+
+    // If targetId is missing or is the notification ID itself, fetch notification to resolve related record
+    let notif = null;
+    if (!targetId || targetId.startsWith("NOTIF-") || !notifType || notifType === "helpdesk") {
+      if (notifId) {
+        try {
+          notif = await db.getById("notifications", notifId);
+        } catch (e) {}
+        if (!notif) {
+          const allNotifs = await db.getAll("notifications");
+          notif = Array.isArray(allNotifs) ? allNotifs.find(n => n && (n.id === notifId || String(n.id) === String(notifId))) : null;
+        }
+      }
+      if (notif) {
+        if (!targetId || targetId.startsWith("NOTIF-")) {
+          targetId = notif.relatedId || notif.related_id || null;
+        }
+        if (!notifType) notifType = notif.type;
+        if (!targetId) {
+          const scanText = `${notif.titleAr || ""} ${notif.titleEn || ""} ${notif.messageAr || ""} ${notif.messageEn || ""}`;
+          const m = scanText.match(/REQ-\d+/i);
+          if (m) targetId = m[0];
+        }
+      }
+    }
+
+    if (!targetId && notifId) {
+      targetId = notifId;
+    }
+
+    if (!targetId) {
+      App.showToast(AppState.lang === "ar" ? "لا يوجد سجل مرتبط بهذا الإشعار" : "No record linked to this notification", "warning");
+      return;
+    }
+
+    // Route based on target ID or notification type
+    if (notifType === "handover" || targetId.startsWith("AST-")) {
+      await AssetManager.openDetailsModal(targetId);
+      return;
+    }
+
+    // Helpdesk request notification: open details for this specific request ID
+    await this.openRequestDetails(targetId);
   }
 
   // =========================================================================
@@ -1251,9 +1671,19 @@ class HelpdeskManager {
   }
 
   async handleCompleteRequestFromModal() {
-    if (this.currentRequestId) {
-      await this.quickCompleteRequest(this.currentRequestId);
+    let reqId = this.currentRequestId;
+    if (!reqId) {
+      const el = document.getElementById("hdCurrentRequestId");
+      if (el && el.value) reqId = el.value.trim();
     }
+    if (!reqId) {
+      const sumEl = document.getElementById("hdSumNumber");
+      if (sumEl && sumEl.textContent) {
+        const text = sumEl.textContent.trim();
+        if (text && text !== "-") reqId = text;
+      }
+    }
+    await this.quickCompleteRequest(reqId);
   }
 
   async handleSubmitNewRequest(event) {
@@ -1268,5 +1698,9 @@ class HelpdeskManager {
 // Global Singleton
 const HelpdeskController = new HelpdeskManager();
 const Helpdesk = HelpdeskController;
+window.HelpdeskManager = HelpdeskManager;
 window.Helpdesk = Helpdesk;
 window.HelpdeskController = HelpdeskController;
+window.openRequest = (id) => Helpdesk.openRequest(id);
+window.handleCompleteRequestFromModal = () => HelpdeskController.handleCompleteRequestFromModal();
+window.quickCompleteRequest = (id) => HelpdeskController.quickCompleteRequest(id);

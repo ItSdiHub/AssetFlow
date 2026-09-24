@@ -69,6 +69,12 @@ class OrganizationalManager {
       return;
     }
 
+    const safeHL = (txt, q) => {
+      if (typeof highlightText === "function") return highlightText(txt, q);
+      if (typeof window !== "undefined" && typeof window.highlightText === "function") return window.highlightText(txt, q);
+      return String(txt || "");
+    };
+
     let html = "";
     filtered.forEach(emp => {
       const rawEmpName = lang === "ar" ? emp.nameAr : (emp.nameEn || emp.nameAr);
@@ -76,13 +82,13 @@ class OrganizationalManager {
       const assetCount = assignedMap[emp.id] || 0;
       const isViewer = AppState.currentUser && AppState.currentUser.role === "Viewer";
 
-      const empIdHtml = highlightText(emp.id || "-", query);
-      const empNoHtml = highlightText(emp.employeeNumber || "-", query);
-      const empNameHtml = highlightText(rawEmpName, query);
-      const secNameHtml = emp.nameEn && lang === 'ar' ? highlightText(emp.nameEn, query) : '';
-      const deptNameHtml = highlightText(rawDeptName, query);
-      const phoneHtml = emp.phone ? highlightText(emp.phone, query) : '-';
-      const emailHtml = emp.email ? highlightText(emp.email, query) : '-';
+      const empIdHtml = safeHL(emp.id || "-", query);
+      const empNoHtml = safeHL(emp.employeeNumber || "-", query);
+      const empNameHtml = safeHL(rawEmpName, query);
+      const secNameHtml = emp.nameEn && lang === 'ar' ? safeHL(emp.nameEn, query) : '';
+      const deptNameHtml = safeHL(rawDeptName, query);
+      const phoneHtml = emp.phone ? safeHL(emp.phone, query) : '-';
+      const emailHtml = emp.email ? safeHL(emp.email, query) : '-';
 
       const linkedUser = userEmpMap[emp.id] || (emp.employeeNumber && userEmpMap[emp.employeeNumber]) || (emp.email && userEmpMap[emp.email.toLowerCase()]);
       const accountBadge = linkedUser
@@ -2102,7 +2108,6 @@ class OrganizationalManager {
         authUserId,
         active
       };
-      if (password) userData.password = password;
 
       await db.put("users", userData);
       App.closeModal("userModal");

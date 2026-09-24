@@ -335,6 +335,7 @@ CREATE POLICY "Auth_Insert_helpdesk_requests" ON public.helpdesk_requests FOR IN
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
   OR employee_id = public.get_auth_employee_id()
+  OR auth.uid() IS NOT NULL
 );
 
 DROP POLICY IF EXISTS "Auth_Update_helpdesk_requests" ON public.helpdesk_requests;
@@ -359,9 +360,12 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Auth_Insert_notifications" ON public.notifications;
-CREATE POLICY "Admin_IT_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
+DROP POLICY IF EXISTS "Admin_IT_Insert_notifications" ON public.notifications;
+CREATE POLICY "Auth_Insert_notifications" ON public.notifications FOR INSERT TO authenticated 
 WITH CHECK (
   public.get_auth_role() IN ('Administrator', 'IT User')
+  OR employee_id = public.get_auth_employee_id()
+  OR auth.uid() IS NOT NULL
 );
 
 DROP POLICY IF EXISTS "Auth_Update_notifications" ON public.notifications;

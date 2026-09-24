@@ -714,6 +714,35 @@ class Application {
         this.switchTab(hash, true);
       }
     });
+
+    // Window focus & multi-user live polling for helpdesk and notifications
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("focus", () => {
+        if (AppState.currentUser) {
+          this.updateNotificationBadge().catch(() => {});
+          if (AppState.currentTab === "helpdesk" && window.HelpdeskController) {
+            HelpdeskController.renderITHelpdesk().catch(() => {});
+          }
+          if (AppState.currentTab === "employeePortal" && window.HelpdeskController) {
+            HelpdeskController.renderEmployeePortal().catch(() => {});
+          }
+        }
+      });
+    }
+
+    if (typeof window !== "undefined" && !window.__SDI_TEST_ENV__ && (typeof process === "undefined" || !process.versions || !process.versions.node)) {
+      const syncTimer = setInterval(() => {
+        if (AppState.currentUser) {
+          this.updateNotificationBadge().catch(() => {});
+          if (AppState.currentTab === "helpdesk" && window.HelpdeskController) {
+            HelpdeskController.renderITHelpdesk().catch(() => {});
+          }
+        }
+      }, 10000);
+      if (syncTimer && typeof syncTimer.unref === "function") {
+        syncTimer.unref();
+      }
+    }
   }
 
   // =========================================================================
@@ -4476,6 +4505,13 @@ class Application {
           await UserManager.renderUsers();
           await this.updateNotificationBadge();
         }
+        if (table === "helpdesk_requests" || table === "notifications") {
+          if (window.HelpdeskController) {
+            if (AppState.currentTab === "helpdesk") await HelpdeskController.renderITHelpdesk();
+            if (AppState.currentTab === "employeePortal") await HelpdeskController.renderEmployeePortal();
+          }
+          await this.updateNotificationBadge();
+        }
         if (["assets", "employees", "departments", "locations", "asset_types",
              "maintenance", "asset_transactions", "warehouse_issues",
              "asset_transfers", "projects", "project_tasks"].includes(table)) {
@@ -5356,23 +5392,29 @@ class Application {
     let unread = 0;
     if (AppState.currentUser) {
       const all = await db.getAll("notifications");
-      if (AppState.currentUser.role === "Employee") {
-        unread = all.filter(n => n.employeeId === AppState.currentUser.employeeId && !n.read).length;
+      const user = AppState.currentUser;
+      if (user.role === "Employee") {
+        unread = all.filter(n => {
+          const isMine = (user.employeeId && n.employeeId === user.employeeId) || (n.userId && n.userId === user.id);
+          const isUnread = !n.read && !n.isRead;
+          return isMine && isUnread;
+        }).length;
       } else {
-        unread = all.filter(n => !n.read).length;
+        unread = all.filter(n => !n.read && !n.isRead).length;
       }
     }
 
+    const displayVal = unread > 99 ? "99+" : String(unread);
+    if (countSpan) {
+      countSpan.textContent = displayVal;
+    }
     if (badge) {
       if (unread > 0) {
-        badge.textContent = unread > 99 ? "99+" : unread;
+        if (!countSpan) badge.textContent = displayVal;
         badge.style.display = "inline-flex";
       } else {
         badge.style.display = "none";
       }
-    }
-    if (countSpan) {
-      countSpan.textContent = unread;
     }
   }
 
@@ -5384,7 +5426,7 @@ class Application {
     let notifs = await db.getAll("notifications");
 
     if (AppState.currentUser && AppState.currentUser.role === "Employee") {
-      notifs = notifs.filter(n => n.employeeId === AppState.currentUser.employeeId);
+      notifs = notifs.filter(n => (AppState.currentUser.employeeId && n.employeeId === AppState.currentUser.employeeId) || (n.userId && n.userId === AppState.currentUser.id));
     }
     notifs.sort((a, b) => new Date(b.createdDate || 0) - new Date(a.createdDate || 0));
 
@@ -5396,10 +5438,13 @@ class Application {
         </div>
       `;
     } else {
-      listEl.innerHTML = notifs.map(n => `
-        <div class="notification-item ${n.read ? 'read' : 'unread'}" style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; gap: 12px; align-items: flex-start; background: ${n.read ? 'transparent' : 'rgba(59, 130, 246, 0.08)'};">
+      listEl.innerHTML = notifs.map(n => {
+        const isRead = !!(n.read || n.isRead);
+        const iconClass = (n.type === 'handover') ? 'fa-laptop-medical text-primary' : ((n.type === 'helpdesk' || n.type === 'new_request' || n.type === 'it_reply') ? 'fa-headset text-warning' : 'fa-info-circle text-info');
+        return `
+        <div class="notification-item ${isRead ? 'read' : 'unread'}" style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; gap: 12px; align-items: flex-start; background: ${isRead ? 'transparent' : 'rgba(59, 130, 246, 0.08)'};">
           <div style="margin-top: 2px;">
-            <i class="fas ${n.type === 'handover' ? 'fa-laptop-medical text-primary' : (n.type === 'helpdesk' ? 'fa-headset text-warning' : 'fa-info-circle text-info')}"></i>
+            <i class="fas ${iconClass}"></i>
           </div>
           <div style="flex: 1;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -5408,25 +5453,26 @@ class Application {
             </div>
             <p style="margin: 4px 0 0 0; font-size: 12px;" class="text-muted">${lang === 'ar' ? n.messageAr : (n.messageEn || n.messageAr)}</p>
             <div style="margin-top: 6px; display: flex; gap: 8px;">
-              ${!n.read ? `
+              ${!isRead ? `
                 <button class="btn btn-xs btn-secondary" onclick="App.markNotificationAsRead('${n.id}')">
                   <i class="fas fa-check"></i> ${lang === 'ar' ? 'تحديد كمقروء' : 'Mark as Read'}
                 </button>
               ` : ''}
-              ${n.type === 'handover' ? `
+              ${(n.type === 'handover' || (n.relatedId && String(n.relatedId).startsWith('AST-')) || (n.related_id && String(n.related_id).startsWith('AST-'))) ? `
                 <button class="btn btn-xs btn-primary" onclick="App.closeModal('notificationsModal'); App.switchTab('employeePortal');">
                   ${lang === 'ar' ? 'بوابة الموظف' : 'Employee Portal'}
                 </button>
               ` : ''}
-              ${n.type === 'helpdesk' && n.relatedId ? `
-                <button class="btn btn-xs btn-primary" onclick="App.closeModal('notificationsModal'); HelpdeskController.viewRequestDetails('${n.relatedId}');">
+              ${(n.type === 'helpdesk' || n.type === 'new_request' || n.type === 'it_reply' || n.type === 'employee_reply' || n.type === 'request_update' || n.type === 'request_completed' || (n.relatedId && String(n.relatedId).startsWith('REQ-')) || (n.related_id && String(n.related_id).startsWith('REQ-'))) && (n.relatedId || n.related_id || n.id) ? `
+                <button class="btn btn-xs btn-primary" onclick="App.closeModal('notificationsModal'); HelpdeskController.handleNotificationClick('${n.id}', '${n.relatedId || n.related_id || ''}', '${n.type || 'helpdesk'}');">
                   ${lang === 'ar' ? 'عرض الطلب' : 'View Request'}
                 </button>
               ` : ''}
             </div>
           </div>
         </div>
-      `).join("");
+      `;
+      }).join("");
     }
 
     this.openModal("notificationsModal");
