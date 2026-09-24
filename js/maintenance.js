@@ -479,6 +479,11 @@ class MaintenanceController {
   }
 
   async openAddModalForAsset(assetId) {
+    const asset = await db.getById("assets", assetId);
+    if (asset && (asset.status === "Retired" || asset.status === "Disposed")) {
+      App.showToast(AppState.lang === "ar" ? "لا يمكن إرسال أصل مكهن أو مستبعد للصيانة." : "Retired/Disposed assets cannot be sent to maintenance.", "error");
+      return;
+    }
     await this.openAddModal();
     const assetSelect = document.getElementById("formMaintAssetId");
     if (assetSelect) {

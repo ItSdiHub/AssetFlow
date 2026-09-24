@@ -950,6 +950,15 @@ class AssetInventoryManager {
     } else {
       // EDIT EXISTING ASSET (Preserve attachments and createdDate)
       const existing = await db.getById("assets", internalId);
+      if (existing && (existing.status === "Retired" || existing.status === "Disposed") && status !== existing.status) {
+        App.showToast(
+          AppState.lang === "ar"
+            ? "لا يمكن تغيير حالة الأصل بعد التكهين أو الاستبعاد."
+            : "Finalized assets (Retired/Disposed) status cannot be changed.",
+          "error"
+        );
+        return;
+      }
       const finalBarcode = rawBarcode || existing.barcodeValue || existing.assetId;
       const finalQr = rawQr || existing.qrCodeValue || existing.assetId;
       const updatedAsset = {
@@ -1242,9 +1251,7 @@ class AssetInventoryManager {
       `;
     } else if (asset.status === "Retired" || asset.status === "Disposed") {
       actionsHtml += `
-        <button class="btn btn-secondary btn-sm" onclick="AssetManager.updateAssetStatusPrompt('${asset.id}', 'Available')">
-          <i class="fas fa-recycle text-success"></i> ${lang === "ar" ? "إعادة تنشيط الأصل" : "Reactivate Asset"}
-        </button>
+        <span class="text-muted small align-self-center"><i class="fas fa-lock me-1"></i> ${lang === "ar" ? "أصل مكهن/مستبعد نهائياً" : "Finalized Asset (Retired/Disposed)"}</span>
       `;
     }
 
@@ -2380,10 +2387,20 @@ class AssetInventoryManager {
   }
 
 
-  // Quick Status Update Prompt (Retire, Dispose, Reactivate)
+  // Quick Status Update Prompt (Retire, Dispose)
   async updateAssetStatusPrompt(assetId, targetStatus) {
     const asset = await db.getById("assets", assetId);
     if (!asset) return;
+
+    if (asset.status === "Retired" || asset.status === "Disposed") {
+      App.showToast(
+        AppState.lang === "ar"
+          ? "لا يمكن تعديل أو إعادة تنشيط أصل تم تكهينه أو استبعاده نهائياً."
+          : "Finalized assets (Retired/Disposed) cannot be reactivated.",
+        "error"
+      );
+      return;
+    }
 
     const reason = prompt(AppState.lang === "ar" ? `تأكيد تغيير حالة الأصل [${asset.assetId}] إلى (${targetStatus}). يرجى إدخال السبب أو الملاحظات:` : `Confirm status change of asset [${asset.assetId}] to (${targetStatus}). Enter reason or notes:`);
     if (reason === null) return; // user cancelled
