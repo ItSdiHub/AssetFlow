@@ -113,12 +113,9 @@ function createServerInstance(port) {
 
       if (req.method === 'GET' && storeName === 'next-id' && itemId) {
         const targetStore = itemId;
-        const store = loadSyncStore();
-        const items = store[targetStore] || [];
-        let maxNum = 0;
         const currentYear = new Date().getFullYear();
         const prefixes = {
-          employees: { prefix: "EMP-", digits: 4, start: 1001, alt: ["EMP-", "SDI-"] },
+          employees: { prefix: "EMP-", digits: 4, start: 1001 },
           departments: { prefix: "DEP-", digits: 3, start: 1 },
           locations: { prefix: "LOC-", digits: 3, start: 1 },
           assetTypes: { prefix: "TYP-", digits: 3, start: 1 },
@@ -127,7 +124,7 @@ function createServerInstance(port) {
           projectTasks: { prefix: "TSK-", digits: 3, start: 1 },
           warehouseIssues: { prefix: "ISS-", digits: 6, start: 1 },
           assetTransfers: { prefix: "TRF-", digits: 6, start: 1 },
-          maintenance: { prefix: "MNT-", digits: 5, start: 1, alt: ["MAINT-", "TKT-"] },
+          maintenance: { prefix: "MNT-", digits: 5, start: 1 },
           helpdeskRequests: { prefix: "REQ-", digits: 6, start: 101 },
           licenses: { prefix: "LIC-", digits: 4, start: 1 },
           users: { prefix: "USR-", digits: 3, start: 1 },
@@ -135,73 +132,28 @@ function createServerInstance(port) {
           notifications: { prefix: "NOTIF-", digits: 6, start: 1 }
         };
         const cfg = prefixes[targetStore] || { prefix: targetStore.slice(0, 3).toUpperCase() + "-", digits: 4, start: 1 };
-        const allPrefixes = [cfg.prefix, ...(cfg.alt || [])].sort((a, b) => b.length - a.length);
-        items.forEach(it => {
-          if (!it) return;
-          const val = String(it.id || it.code || it.requestId || it.ticketNo || it.issueNo || it.transferNo || it.projectNo || "");
-          for (const p of allPrefixes) {
-            if (val.toUpperCase().startsWith(p.toUpperCase())) {
-              const numPart = val.slice(p.length).replace(/^[^\d]*/, "");
-              const num = parseInt(numPart, 10);
-              if (!isNaN(num) && num > maxNum && num < 10000000) maxNum = num;
-              break;
-            }
-          }
-        });
-        const nextNum = maxNum >= (cfg.start || 1) ? maxNum + 1 : (cfg.start || 1);
+        const nextNum = cfg.start || 1;
         const nextId = cfg.prefix + String(nextNum).padStart(cfg.digits || 3, "0");
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ nextId, nextNum, storeName: targetStore }));
+        res.end(JSON.stringify({ nextId, nextNum, storeName: targetStore, cloudMode: true }));
         return;
       }
 
       if (req.method === 'GET') {
-        const store = loadSyncStore();
-        const items = store[storeName] || [];
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(items));
+        res.end(JSON.stringify([]));
         return;
       }
 
       if (req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', () => {
-          try {
-            const payload = JSON.parse(body || '{}');
-            const item = payload.item || payload;
-            if (!item || !item.id) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Missing item or item.id' }));
-              return;
-            }
-            const store = loadSyncStore();
-            if (!store[storeName]) store[storeName] = [];
-            const idx = store[storeName].findIndex(x => String(x.id) === String(item.id));
-            if (idx >= 0) {
-              store[storeName][idx] = { ...store[storeName][idx], ...item };
-            } else {
-              store[storeName].push(item);
-            }
-            saveSyncStore(store);
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ success: true, item }));
-          } catch (err) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
-          }
-        });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, cloudMode: true }));
         return;
       }
 
       if (req.method === 'DELETE' && itemId) {
-        const store = loadSyncStore();
-        if (store[storeName]) {
-          store[storeName] = store[storeName].filter(x => String(x.id) !== String(itemId));
-          saveSyncStore(store);
-        }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: true }));
+        res.end(JSON.stringify({ success: true, cloudMode: true }));
         return;
       }
     }

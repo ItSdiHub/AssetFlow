@@ -151,9 +151,10 @@ function toCloudRecord(storeName, item) {
       due_date: row.dueDate || row.due_date || null,
       responsible_employee_id: row.responsibleEmployeeId || row.responsible_employee_id || null,
       contractor_id: row.contractorId || row.contractor_id || null,
+      priority: row.priority || "Medium",
       progress: typeof row.progress === "number" ? row.progress : (parseFloat(row.progress) || 0),
       status: row.status || "Pending",
-      notes: row.notes || row.remarks || (row.priority ? `Priority: ${row.priority}` : null)
+      notes: row.notes || row.remarks || null
     };
   }
   if (storeName === "licenses") {
@@ -683,14 +684,6 @@ class DBEngine {
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
-
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      fetch(`/api/sync/${storeName}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item })
-      }).catch(() => {});
-    }
   }
 
   deleteFromFallbackStore(storeName, id) {
@@ -700,12 +693,6 @@ class DBEngine {
     try {
       localStorage.setItem("sdi_fb_" + storeName, JSON.stringify(this.memoryStore[storeName]));
     } catch (e) {}
-
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      fetch(`/api/sync/${storeName}/${id}`, {
-        method: "DELETE"
-      }).catch(() => {});
-    }
   }
 
   saveFallbackSnapshot(storeName, items) {
@@ -1314,33 +1301,10 @@ class DBEngine {
       if (!error && Array.isArray(data)) {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         const cloudItems = data.map(r => fromCloudRecord(storeName, r));
-        
-        let serverItems = [];
-        if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-          try {
-            const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
-            if (syncRes && syncRes.ok) {
-              serverItems = await syncRes.json().catch(() => []);
-            }
-          } catch (e) {}
-        }
-
-        let mergedItems = cloudItems;
-        const localItems = this.getFallbackStore(storeName) || [];
-        if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
-          const itemMap = new Map();
-          localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
-          if (Array.isArray(serverItems)) {
-            serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
-          }
-          cloudItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
-          mergedItems = Array.from(itemMap.values());
-        }
-
         try {
-          this.saveFallbackSnapshot(storeName, mergedItems);
+          this.saveFallbackSnapshot(storeName, cloudItems);
         } catch (e) {}
-        return mergedItems;
+        return cloudItems;
       }
 
       if (error) {
@@ -1354,27 +1318,7 @@ class DBEngine {
         }
         console.warn(`Supabase getAll(${storeName}) failed:`, error);
 
-        let serverItems = [];
-        if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-          try {
-            const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
-            if (syncRes && syncRes.ok) {
-              serverItems = await syncRes.json().catch(() => []);
-            }
-          } catch (e) {}
-        }
-
-        const localItems = this.getFallbackStore(storeName) || [];
-        if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
-          const itemMap = new Map();
-          localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
-          if (Array.isArray(serverItems)) {
-            serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
-          }
-          return Array.from(itemMap.values());
-        }
-
-        if (this.isTransportError(error) || error.code === '42501' || String(error.message || '').toLowerCase().includes('row-level security')) {
+        if (this.isTransportError(error)) {
           this.isCloudOnline = false;
           if (window.App && typeof window.App.updateCloudStatus === "function") {
             window.App.updateCloudStatus();
@@ -1395,27 +1339,7 @@ class DBEngine {
       }
       console.warn(`Supabase getAll(${storeName}) catch:`, cloudErr);
 
-      let serverItems = [];
-      if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-        try {
-          const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
-          if (syncRes && syncRes.ok) {
-            serverItems = await syncRes.json().catch(() => []);
-          }
-        } catch (e) {}
-      }
-
-      const localItems = this.getFallbackStore(storeName) || [];
-      if (localItems.length > 0 || (Array.isArray(serverItems) && serverItems.length > 0)) {
-        const itemMap = new Map();
-        localItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), item); });
-        if (Array.isArray(serverItems)) {
-          serverItems.forEach(item => { if (item && item.id) itemMap.set(String(item.id), { ...(itemMap.get(String(item.id)) || {}), ...item }); });
-        }
-        return Array.from(itemMap.values());
-      }
-
-      if (this.isTransportError(cloudErr) || (cloudErr && (cloudErr.code === '42501' || String(cloudErr.message || '').toLowerCase().includes('row-level security')))) {
+      if (this.isTransportError(cloudErr)) {
         this.isCloudOnline = false;
         if (window.App && typeof window.App.updateCloudStatus === "function") {
           window.App.updateCloudStatus();
@@ -1632,9 +1556,6 @@ class DBEngine {
       ) || null;
     };
 
-    const localMatch = searchInList(this.getFallbackStore(storeName));
-    if (localMatch) return localMatch;
-
     if (this.isCloudReadUnavailable() || !STORE_TABLE_MAP[storeName]) {
       return searchInList(this.getFallbackStore(storeName));
     }
@@ -1776,33 +1697,6 @@ class DBEngine {
 
     let maxNum = 0;
     let foundPrefixed = false;
-
-    // Query server next-id endpoint to guarantee global non-overlapping sequence
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      try {
-        const nextIdRes = await fetch(`/api/sync/next-id/${storeName}`).catch(() => null);
-        if (nextIdRes && nextIdRes.ok) {
-          const sData = await nextIdRes.json().catch(() => null);
-          if (sData && typeof sData.nextNum === "number" && sData.nextNum > 0) {
-            maxNum = sData.nextNum - 1;
-            foundPrefixed = true;
-          }
-        }
-      } catch (e) {}
-
-      try {
-        const syncRes = await fetch(`/api/sync/${storeName}`).catch(() => null);
-        if (syncRes && syncRes.ok) {
-          const sItems = await syncRes.json().catch(() => []);
-          if (Array.isArray(sItems) && sItems.length > 0) {
-            const idMap = new Map();
-            items.forEach(it => { if (it && (it.id || it.code)) idMap.set(String(it.id || it.code), it); });
-            sItems.forEach(it => { if (it && (it.id || it.code)) idMap.set(String(it.id || it.code), it); });
-            items = Array.from(idMap.values());
-          }
-        }
-      } catch (e) {}
-    }
 
     const cfg = this.getStorePrefixConfig(storeName);
     const prefix = typeof cfg.prefix === "function" ? cfg.prefix() : cfg.prefix;
@@ -1984,13 +1878,6 @@ class DBEngine {
         if (this.lastQueryErrors) delete this.lastQueryErrors[storeName];
         return item;
       } catch (e) {
-        if (e && (e.code === '42501' || e.code === 'PGRST301' || e.code === 'PGRST204' || String(e.message || '').toLowerCase().includes('row-level security'))) {
-          console.warn(`Supabase RLS/constraint notice on ${storeName}:`, e.message || e);
-          try {
-            this.saveToFallbackStore(storeName, item);
-          } catch (cacheErr) {}
-          return item;
-        }
         console.error(`Supabase write error on ${storeName}:`, e);
         if (this.lastQueryErrors) {
           this.lastQueryErrors[storeName] = {
@@ -2402,18 +2289,7 @@ class DBEngine {
     try {
       await this.put("notifications", notif);
     } catch (e) {
-      console.warn("Cloud notification insert notice (RLS or unlinked):", e);
-      try {
-        this.saveToFallbackStore("notifications", notif);
-      } catch (cacheErr) {}
-    }
-
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      fetch("/api/sync/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item: notif })
-      }).catch(() => {});
+      console.warn("Cloud notification insert error:", e);
     }
 
     if (typeof window !== "undefined" && window.App && typeof window.App.updateNotificationBadge === "function") {

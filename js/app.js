@@ -5055,56 +5055,20 @@ class Application {
 
       cloudUser = resolution.profile;
     } else {
-      // Supabase GoTrue Auth failed (e.g. unconfirmed email, or user not yet in GoTrue Auth)
-      // Authenticate against authoritative public.users database record
-      if (!dbUserRec) {
-        try {
-          const { data: matchedDbUser } = await db.supabase
-            .from("users")
-            .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
-            .or(`email.ilike.${cleanInput},username.ilike.${cleanInput}`)
-            .maybeSingle();
-          dbUserRec = matchedDbUser;
-        } catch (errDb) {
-          console.warn("User lookup fallback notice:", errDb);
+      console.warn("Supabase GoTrue authentication failed:", authError);
+      recordFailedAttempt();
+      if (!this.loginCooldownUntil) {
+        let errorMsg = lang === "ar"
+          ? "اسم المستخدم أو كلمة المرور غير صحيحة"
+          : "Invalid username or password";
+        if (authError && (authError.code === "email_not_confirmed" || String(authError.message || "").toLowerCase().includes("email not confirmed"))) {
+          errorMsg = lang === "ar"
+            ? "البريد الإلكتروني غير مؤكد. يرجى تأكيد البريد الإلكتروني أو مراجعة المسؤول."
+            : "Email is not confirmed. Please confirm your email or contact the administrator.";
         }
+        this.showToast(errorMsg, "error");
       }
-
-      const isEmailNotConfirmed = authError && (authError.code === "email_not_confirmed" || String(authError.message || "").toLowerCase().includes("email not confirmed"));
-      const isPasswordMatch = dbUserRec && dbUserRec.password && (dbUserRec.password === pass);
-
-      if (dbUserRec && (isEmailNotConfirmed || isPasswordMatch)) {
-        if (dbUserRec.active === false) {
-          recordFailedAttempt();
-          this.showToast(lang === "ar" ? "حساب المستخدم معطل" : "User account is deactivated", "error");
-          return;
-        }
-
-        cloudUser = {
-          id: dbUserRec.id,
-          username: dbUserRec.username,
-          fullName: dbUserRec.full_name || dbUserRec.fullName || dbUserRec.username,
-          fullNameAr: dbUserRec.full_name_ar || dbUserRec.fullNameAr,
-          fullNameEn: dbUserRec.full_name_en || dbUserRec.fullNameEn,
-          role: String(dbUserRec.role || "Viewer").trim(),
-          employeeId: dbUserRec.employee_id || dbUserRec.employeeId || null,
-          email: dbUserRec.email,
-          auth_user_id: dbUserRec.auth_user_id,
-          active: true
-        };
-      } else {
-        console.warn("Authentication failed:", authError);
-        recordFailedAttempt();
-        if (!this.loginCooldownUntil) {
-          this.showToast(
-            lang === "ar"
-              ? "اسم المستخدم أو كلمة المرور غير صحيحة"
-              : "Invalid username or password",
-            "error"
-          );
-        }
-        return;
-      }
+      return;
     }
 
     // Reset failed attempts counter on successful authentication

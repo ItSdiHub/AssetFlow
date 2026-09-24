@@ -1790,9 +1790,7 @@ class ProjectManagementController {
         }
       }
       
-      if (!targetProjectId && projects.length > 0) {
-        targetProjectId = projects[0].id;
-      } else if (!targetProjectId && projects.length === 0) {
+      if (!targetProjectId && projects.length === 0) {
         App.showToast(lang === "ar" ? "يرجى إنشاء مشروع أولاً قبل إضافة المهام" : "Please create a project first before adding tasks", "warning");
         return;
       }

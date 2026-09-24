@@ -615,18 +615,6 @@ class HelpdeskManager {
       }
     }
 
-    // C. Fallback to server sync store if not yet in local memory
-    if (!req && typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      try {
-        const syncRes = await fetch("/api/sync/helpdeskRequests").catch(() => null);
-        if (syncRes && syncRes.ok) {
-          const sItems = await syncRes.json().catch(() => []);
-          if (Array.isArray(sItems)) {
-            req = sItems.find(matchesRequest) || null;
-          }
-        }
-      } catch (e) {}
-    }
 
     // D. Direct query from cloud Supabase if online
     if (!req && db.supabase && typeof db.supabase.from === "function") {
@@ -1218,21 +1206,6 @@ class HelpdeskManager {
     }
     if (!Array.isArray(allRequests)) allRequests = [];
 
-    // 3. Fetch server sync store items as well
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      try {
-        const syncRes = await fetch("/api/sync/helpdeskRequests").catch(() => null);
-        if (syncRes && syncRes.ok) {
-          const serverItems = await syncRes.json().catch(() => []);
-          if (Array.isArray(serverItems) && serverItems.length > 0) {
-            const map = new Map();
-            allRequests.forEach(r => { if (r && (r.id || r.requestId)) map.set(String(r.id || r.requestId), r); });
-            serverItems.forEach(r => { if (r && (r.id || r.requestId)) map.set(String(r.id || r.requestId), r); });
-            allRequests = Array.from(map.values());
-          }
-        }
-      } catch (e) {}
-    }
 
     // 4. Also inspect existing notifications to ensure we don't collide with any related request ID
     let notifs = [];
@@ -1391,18 +1364,9 @@ class HelpdeskManager {
     try {
       await db.put("helpdeskRequests", newReq);
     } catch (writeErr) {
-      console.warn("Cloud write notice on helpdeskRequests:", writeErr);
-      try {
-        db.saveToFallbackStore("helpdeskRequests", newReq);
-      } catch (cacheErr) {}
-    }
-
-    if (typeof window !== "undefined" && typeof fetch === "function" && !window.__SDI_TEST_ENV__) {
-      fetch("/api/sync/helpdeskRequests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item: newReq })
-      }).catch(() => {});
+      console.error("Cloud write error on helpdeskRequests:", writeErr);
+      App.showToast(lang === "ar" ? "فشل حفظ طلب الدعم الفني في السحابة" : "Failed to save support request to cloud", "error");
+      return;
     }
 
     // Notify IT with guaranteed unique relatedId
