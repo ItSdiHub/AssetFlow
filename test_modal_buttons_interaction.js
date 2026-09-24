@@ -128,6 +128,7 @@ async function runTests() {
   console.log("================================================================================");
 
   await db.init();
+  AppState.currentUser = { id: 'usr-admin', role: 'Administrator', username: 'admin', employeeId: 'emp-101' };
   if (typeof App.setupEventListeners === 'function') {
     App.setupEventListeners();
   }
@@ -448,7 +449,7 @@ async function runTests() {
   getOrCreateEl('formPrjNameEn').value = 'Test Infra Project';
   getOrCreateEl('formPrjType').value = 'Infrastructure';
   getOrCreateEl('formPrjContractor').value = '';
-  getOrCreateEl('formPrjLocation').value = '';
+  getOrCreateEl('formPrjLocation').value = 'loc-wh1';
   getOrCreateEl('formPrjResponsibleEmp').value = 'emp-ahmed';
   getOrCreateEl('formPrjStartDate').value = '2026-09-01';
   getOrCreateEl('formPrjPlannedEndDate').value = '2026-12-31';

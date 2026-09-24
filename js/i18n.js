@@ -975,6 +975,13 @@ const I18N = {
     taskNameAr: "اسم المهمة (عربي)",
     taskNameEn: "اسم المهمة (إنجليزي)",
     taskDueDate: "تاريخ الاستحقاق",
+    project: "المشروع المرتبط",
+    priorityUrgent: "حرجة / عاجلة (Urgent)",
+    calendarDayTasksTitle: "مهام اليوم المحدد",
+    btnEditProject: "تعديل بيانات المشروع",
+    size: "الحجم / المصدر",
+    date: "التاريخ",
+    accountSync: "حالة الربط",
 
     // Projects Sub-Tabs & Calendar
     projectsSubTabList: "قائمة المشاريع",
@@ -2221,6 +2228,13 @@ const I18N = {
     taskNameAr: "Task Name (Arabic)",
     taskNameEn: "Task Name (English)",
     taskDueDate: "Due Date",
+    project: "Associated Project",
+    priorityUrgent: "Urgent",
+    calendarDayTasksTitle: "Selected Day Tasks",
+    btnEditProject: "Edit Project Details",
+    size: "Size / Source",
+    date: "Date",
+    accountSync: "Account Sync Status",
 
     // Projects Sub-Tabs & Calendar
     projectsSubTabList: "Projects List",

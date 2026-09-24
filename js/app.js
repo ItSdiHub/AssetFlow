@@ -2120,6 +2120,7 @@ class Application {
         hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
 
         this.zxingMultiReader = new window.ZXing.BrowserMultiFormatReader(hints);
+        this.zxingReader = this.zxingMultiReader; // decodeFromVideoElement compatibility reference
 
         if (window.ZXing.BrowserQRCodeReader && (this.scannerMode === "qr" || this.scannerMode === "all")) {
           this.zxingQrReader = new window.ZXing.BrowserQRCodeReader();
@@ -5615,7 +5616,13 @@ class Application {
       });
 
       this.modalZIndex = Math.max(this.modalZIndex || 100000, highestZ) + 10;
-      modal.style.setProperty("z-index", String(this.modalZIndex), "important");
+      if (modal.style) {
+        if (typeof modal.style.setProperty === "function") {
+          modal.style.setProperty("z-index", String(this.modalZIndex), "important");
+        } else {
+          modal.style.zIndex = String(this.modalZIndex);
+        }
+      }
       modal.classList.add("active");
       modal.classList.add("show");
       modal.style.display = "flex";
@@ -5907,7 +5914,13 @@ class Application {
       modal.classList.remove("show");
       modal.style.display = "none";
       modal.setAttribute("aria-hidden", "true");
-      modal.style.removeProperty("z-index");
+      if (modal.style) {
+        if (typeof modal.style.removeProperty === "function") {
+          modal.style.removeProperty("z-index");
+        } else {
+          modal.style.zIndex = "";
+        }
+      }
       if (!document.querySelector(".modal-container.active, .modal-container.show")) {
         document.body.classList.remove("modal-open");
       }

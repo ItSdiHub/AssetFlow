@@ -42,13 +42,16 @@ global.I18N = {
   en: { noResultsFound: "No results found" }
 };
 
-// Mock DB
+// Mock DB with dynamic dates relative to current execution time
+const now = Date.now();
+const toDateStr = (msOffset) => new Date(now + msOffset).toISOString().split('T')[0];
+
 const sampleAssets = [
-  { id: "ast-1", assetId: "PC-001", brand: "Dell", model: "OptiPlex", status: "Available", warrantyExpiry: "2026-09-20" }, // within 10 days
-  { id: "ast-2", assetId: "PC-002", brand: "HP", model: "EliteBook", status: "Assigned", warrantyExpiry: "2026-09-14" }, // within 3 days (critical)
-  { id: "ast-3", assetId: "PC-003", brand: "Lenovo", model: "ThinkPad", status: "Assigned", warrantyExpiry: "2025-01-01" }, // expired
-  { id: "ast-4", assetId: "PC-004", brand: "Apple", model: "MacBook", status: "Assigned", warrantyExpiry: "2027-12-31" }, // valid
-  { id: "ast-5", assetId: "PC-005", brand: "Cisco", model: "Switch", status: "Disposed", warrantyExpiry: "2026-09-15" } // disposed (should be excluded)
+  { id: "ast-1", assetId: "PC-001", brand: "Dell", model: "OptiPlex", status: "Available", warrantyExpiry: toDateStr(10 * 86400000) }, // within 10 days (matches 30d)
+  { id: "ast-2", assetId: "PC-002", brand: "HP", model: "EliteBook", status: "Assigned", warrantyExpiry: toDateStr(3 * 86400000) }, // within 3 days (matches 7d)
+  { id: "ast-3", assetId: "PC-003", brand: "Lenovo", model: "ThinkPad", status: "Assigned", warrantyExpiry: toDateStr(-60 * 86400000) }, // expired
+  { id: "ast-4", assetId: "PC-004", brand: "Apple", model: "MacBook", status: "Assigned", warrantyExpiry: toDateStr(400 * 86400000) }, // valid
+  { id: "ast-5", assetId: "PC-005", brand: "Cisco", model: "Switch", status: "Disposed", warrantyExpiry: toDateStr(5 * 86400000) } // disposed (excluded)
 ];
 
 global.db = {

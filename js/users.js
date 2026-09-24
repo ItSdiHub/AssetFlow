@@ -1779,11 +1779,17 @@ class OrganizationalManager {
         roleLabel = lang === "ar" ? "موظف" : "Employee";
       }
 
-      const usernameHtml = highlightText(u.username, query);
-      const nameHtml = highlightText(getUserDisplayName(u, lang), query);
-      const emailHtml = u.email ? highlightText(u.email, query) : "";
+      const safeHL = (txt, q) => {
+        if (typeof highlightText === "function") return highlightText(txt, q);
+        if (typeof window !== "undefined" && typeof window.highlightText === "function") return window.highlightText(txt, q);
+        return String(txt || "");
+      };
+
+      const usernameHtml = safeHL(u.username, query);
+      const nameHtml = safeHL(getUserDisplayName(u, lang), query);
+      const emailHtml = u.email ? safeHL(u.email, query) : "";
       const linkedName = u.employeeId && empMap[u.employeeId] ? empMap[u.employeeId] : "";
-      const linkedEmpHtml = linkedName ? highlightText(linkedName, query) : "";
+      const linkedEmpHtml = linkedName ? safeHL(linkedName, query) : "";
 
       const linkedEmpText = linkedEmpHtml ? `<br><small class="text-muted"><i class="fas fa-link"></i> ${linkedEmpHtml}</small>` : "";
       const emailText = emailHtml ? `<div class="text-muted text-xs"><i class="fas fa-envelope"></i> ${emailHtml}</div>` : "";

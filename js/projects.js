@@ -3,6 +3,19 @@
  * Pure Vanilla JavaScript ES6+ Controller
  */
 
+function highlightText(text, query) {
+  if (typeof window !== "undefined" && typeof window.highlightText === "function" && window.highlightText !== highlightText) {
+    return window.highlightText(text, query);
+  }
+  if (typeof App !== "undefined" && typeof App.highlightText === "function") {
+    return App.highlightText(text, query);
+  }
+  if (!query || !text) return String(text != null ? text : "");
+  const str = String(text);
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")})`, "gi");
+  return str.replace(regex, "<mark class='search-highlight'>$1</mark>");
+}
+
 // ============================================================================
 // 1. CONTRACTOR MANAGEMENT CONTROLLER
 // ============================================================================
@@ -2439,12 +2452,14 @@ class AssetOperationsController {
 
   switchSubTab(tabName) {
     this.currentSubTab = tabName;
-    document.querySelectorAll(".ops-subtab-btn").forEach(btn => {
-      btn.classList.toggle("active", btn.getAttribute("data-opstab") === tabName);
-    });
-    document.querySelectorAll(".ops-subtab-pane").forEach(pane => {
-      pane.style.display = (pane.id === `ops-pane-${tabName}`) ? "block" : "none";
-    });
+    if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+      document.querySelectorAll(".ops-subtab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-opstab") === tabName);
+      });
+      document.querySelectorAll(".ops-subtab-pane").forEach(pane => {
+        pane.style.display = (pane.id === `ops-pane-${tabName}`) ? "block" : "none";
+      });
+    }
     this.render();
   }
 
@@ -4227,7 +4242,7 @@ class AssetOperationsController {
       let newLocationId = asset.locationId;
 
       if (destination === "warehouse") {
-        newStatus = "In Store";
+        newStatus = "Available";
         const locations = await db.getAll("locations");
         const mainWh = locations.find(l => (l.isWarehouse || (l.type && l.type.toLowerCase().includes("warehouse")) || (l.nameAr && l.nameAr.includes("مستودع"))));
         if (mainWh) newLocationId = mainWh.id;
