@@ -4034,16 +4034,19 @@ class Application {
             ${rowsHtml}
             ${totalsHtml ? `<tr class="report-totals-tr"><td colspan="${colCount}" class="report-totals-td">${totalsHtml}</td></tr>` : ''}
           </tbody>
-          <tfoot class="report-table-print-spacer">
-            <tr class="report-spacer-tr">
-              <td colspan="${colCount}" class="report-spacer-td"></td>
+          <tfoot class="report-table-print-footer report-table-print-spacer">
+            <tr class="report-print-footer-tr report-spacer-tr">
+              <td colspan="${colCount}" class="report-print-footer-td report-spacer-td">
+                <div class="report-print-bottom-footer print-only" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
+                  <div class="report-footer-row">
+                    <div class="report-footer-timestamp">${dateFormatted}, ${timeFormatted}</div>
+                    <div class="report-footer-brand">SDI IT Asset Hub - ${footerOrgName}</div>
+                  </div>
+                </div>
+              </td>
             </tr>
           </tfoot>
         </table>
-      </div>
-      <div class="report-print-bottom-footer print-only" dir="${lang === 'ar' ? 'rtl' : 'ltr'}">
-        <div class="report-footer-timestamp">${dateFormatted}, ${timeFormatted}</div>
-        <div class="report-footer-brand">SDI IT Asset Hub - ${footerOrgName}</div>
       </div>
     `;
 
@@ -4191,7 +4194,7 @@ class Application {
       styleEl.id = "dynamicPageOrientationStyle";
       document.head.appendChild(styleEl);
     }
-    styleEl.innerHTML = `@page { size: A4 ${this.currentReportOrientation}; margin: 8mm 10mm 10mm 10mm; }`;
+    styleEl.innerHTML = `@page { size: A4 ${this.currentReportOrientation}; margin: 8mm 10mm; }`;
   }
 
   printCurrentReport() {
@@ -4337,42 +4340,87 @@ class Application {
         brandTextInClone.style.direction = "ltr";
         brandTextInClone.style.textAlign = "left";
       }
+      // Hide the header meta row in the clone so print generation Date/Time does not duplicate in the PDF header
       const metaRowInClone = headerInClone.querySelector(".report-header-meta-row");
       if (metaRowInClone) {
-        metaRowInClone.setAttribute("dir", "ltr");
-        metaRowInClone.style.direction = "ltr";
-        metaRowInClone.style.justifyContent = "flex-end";
+        metaRowInClone.style.display = "none";
       }
     }
 
-    // Format and display the bottom institutional footer in the exported PDF
+    // Extract footer details and remove footer elements from the body clone so the footer does NOT behave as normal body content
+    const settings = (typeof db !== "undefined" && db.getSystemSettings) ? await db.getSystemSettings() : {};
     const printFooter = clone.querySelector(".report-print-bottom-footer");
+    let footerTsText = `${dateStr}, ${now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+    let footerBrandText = `SDI IT Asset Hub - ${(settings && settings.orgNameEn) || "Sharjah Driving Institute"}`;
     if (printFooter) {
-      printFooter.style.display = "flex";
-      printFooter.style.position = "static";
-      printFooter.style.marginTop = "20px";
-      printFooter.style.paddingTop = "8px";
-      printFooter.style.borderTop = "1px solid #cbd5e1";
-      printFooter.style.fontSize = "10px";
-      printFooter.style.color = "#475569";
-      printFooter.style.width = "100%";
-      printFooter.style.boxSizing = "border-box";
-      printFooter.style.justifyContent = "space-between";
-      printFooter.style.alignItems = "center";
-      printFooter.classList.remove("print-only");
+      const tsEl = printFooter.querySelector(".report-footer-timestamp");
+      const brandEl = printFooter.querySelector(".report-footer-brand");
+      if (tsEl && tsEl.textContent.trim()) footerTsText = tsEl.textContent.trim();
+      if (brandEl && brandEl.textContent.trim()) footerBrandText = brandEl.textContent.trim();
     }
 
-    // Hide print-specific spacer tfoot in HTML-to-PDF export
-    const spacerTfoot = clone.querySelector(".report-table-print-spacer");
-    if (spacerTfoot) {
-      spacerTfoot.style.display = "none";
+    // Completely remove tfoot and print footer elements from the clone DOM before html2pdf conversion
+    const footersInClone = clone.querySelectorAll(".report-print-bottom-footer, .report-footer-row");
+    footersInClone.forEach(f => {
+      if (f.parentNode) f.parentNode.removeChild(f);
+    });
+    const tfootsInClone = clone.querySelectorAll("tfoot");
+    tfootsInClone.forEach(tf => {
+      if (tf.parentNode) tf.parentNode.removeChild(tf);
+    });
+
+    // Generate crisp 2x resolution canvas image for injecting the institutional footer onto every A4 page
+    let footerImgData = null;
+    try {
+      const footerCanvas = document.createElement("canvas");
+      footerCanvas.width = targetWidth * 2;
+      footerCanvas.height = 44; // 22px * 2 for high DPI
+      const ctx = footerCanvas.getContext("2d");
+      if (ctx) {
+        ctx.scale(2, 2);
+        // Top border line
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 1);
+        ctx.lineTo(targetWidth, 1);
+        ctx.stroke();
+
+        ctx.font = "500 9px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        ctx.textBaseline = "middle";
+
+        if (AppState.lang === "ar") {
+          // Arabic RTL: timestamp on right, institutional brand on left
+          ctx.fillStyle = "#64748b";
+          ctx.textAlign = "right";
+          ctx.fillText(footerTsText, targetWidth - 2, 13);
+
+          ctx.fillStyle = "#334155";
+          ctx.textAlign = "left";
+          ctx.fillText(footerBrandText, 2, 13);
+        } else {
+          // English LTR: timestamp on left, institutional brand on right
+          ctx.fillStyle = "#64748b";
+          ctx.textAlign = "left";
+          ctx.fillText(footerTsText, 2, 13);
+
+          ctx.fillStyle = "#334155";
+          ctx.textAlign = "right";
+          ctx.fillText(footerBrandText, targetWidth - 2, 13);
+        }
+        footerImgData = footerCanvas.toDataURL("image/png");
+      }
+    } catch (canvasErr) {
+      console.warn("Could not generate footer canvas:", canvasErr);
     }
 
     pdfContainer.appendChild(clone);
     document.body.appendChild(pdfContainer);
 
+    // Margin bottom reserves ample space so table rows never overlap the footer on any page
+    const margins = isLandscape ? [8, 10, 14, 10] : [10, 10, 16, 10];
     const opt = {
-      margin: isLandscape ? [6, 8, 6, 8] : [8, 8, 8, 8],
+      margin: margins,
       filename: filename,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: {
@@ -4393,7 +4441,56 @@ class Application {
     };
 
     try {
-      await html2pdf().set(opt).from(pdfContainer).save();
+      const marginLeft = margins[3];
+      const marginRight = margins[1];
+      const marginBottom = margins[2];
+
+      const pdfWorker = html2pdf()
+        .set(opt)
+        .from(pdfContainer)
+        .toPdf()
+        .get("pdf")
+        .then((pdf) => {
+          const totalPages = pdf.internal.getNumberOfPages();
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const contentWidth = pageWidth - marginLeft - marginRight;
+          const footerY = pageHeight - marginBottom + 2;
+
+          for (let i = 1; i <= totalPages; i++) {
+            pdf.setPage(i);
+
+            if (footerImgData) {
+              const footerHeightMm = (22 / targetWidth) * contentWidth;
+              pdf.addImage(
+                footerImgData,
+                "PNG",
+                marginLeft,
+                footerY,
+                contentWidth,
+                footerHeightMm
+              );
+            } else {
+              // Vector line + text fallback
+              pdf.setDrawColor(203, 213, 225);
+              pdf.setLineWidth(0.25);
+              pdf.line(marginLeft, footerY, pageWidth - marginRight, footerY);
+
+              pdf.setFontSize(8);
+              pdf.setTextColor(71, 85, 105);
+              const textY = footerY + 4;
+              if (AppState.lang === "ar") {
+                pdf.text(footerTsText, pageWidth - marginRight, textY, { align: "right" });
+                pdf.text(footerBrandText, marginLeft, textY, { align: "left" });
+              } else {
+                pdf.text(footerTsText, marginLeft, textY, { align: "left" });
+                pdf.text(footerBrandText, pageWidth - marginRight, textY, { align: "right" });
+              }
+            }
+          }
+        });
+
+      await pdfWorker.save();
       this.showToast(
         AppState.lang === "ar" ? "تم حفظ وتنزيل تقرير PDF بنجاح" : "PDF report saved and downloaded successfully",
         "success"

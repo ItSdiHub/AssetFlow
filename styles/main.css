@@ -5065,7 +5065,9 @@ body[data-theme="dark"] .combobox-empty {
 
 /* Print-only Bottom Footer and Spacer: completely hidden on screen preview */
 .report-print-bottom-footer,
-.report-table-print-spacer {
+.report-table-print-spacer,
+.report-table-print-footer,
+.report-print-footer-tr {
   display: none !important;
 }
 
@@ -5325,34 +5327,34 @@ body[data-theme="dark"] .combobox-empty {
 
   /* Repeating footer space reservation at bottom of EVERY printed page */
   .print-table tfoot,
+  .report-table-print-footer,
   .report-table-print-spacer {
     display: table-footer-group !important;
-    height: 24px !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
 
-  .report-table-print-spacer tr,
-  .report-table-print-spacer td {
-    height: 24px !important;
-    max-height: 24px !important;
-    border: none !important;
-    background: transparent !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    line-height: 0 !important;
-    font-size: 0 !important;
+  .report-print-footer-tr {
+    display: table-row !important;
+    height: 22px !important;
+    max-height: 22px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
-  /* Pinned Bottom Print Footer: sits at the bottom edge on every printed page */
+  .report-print-footer-td {
+    border: none !important;
+    padding: 3px 0 0 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    vertical-align: bottom !important;
+  }
+
+  .report-footer-row,
   .report-print-bottom-footer {
     display: flex !important;
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
+    position: static !important;
     width: 100% !important;
-    height: 18px !important;
     box-sizing: border-box !important;
     align-items: center !important;
     justify-content: space-between !important;
@@ -5363,16 +5365,17 @@ body[data-theme="dark"] .combobox-empty {
     font-weight: 500 !important;
     color: #475569 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-    z-index: 9999 !important;
   }
 
-  .report-print-bottom-footer .report-footer-timestamp {
+  .report-print-bottom-footer .report-footer-timestamp,
+  .report-footer-row .report-footer-timestamp {
     color: #64748b !important;
     font-weight: 500 !important;
     font-size: 8.5px !important;
   }
 
-  .report-print-bottom-footer .report-footer-brand {
+  .report-print-bottom-footer .report-footer-brand,
+  .report-footer-row .report-footer-brand {
     color: #334155 !important;
     font-weight: 600 !important;
     font-size: 8.5px !important;
@@ -5852,11 +5855,7 @@ body[data-theme="dark"] .combobox-empty {
   }
 
   .report-header-meta-row {
-    display: flex !important;
-    justify-content: flex-end !important;
-    margin-bottom: 6px !important;
-    font-size: 10px !important;
-    direction: ltr !important;
+    display: none !important;
   }
 
   .report-header-main-row {
@@ -6302,10 +6301,15 @@ body[data-theme="dark"] .combobox-empty {
 }
 
 #pdfExportIsolatedContainer .report-header-meta-row {
-  display: flex !important;
-  justify-content: flex-end !important;
-  direction: ltr !important;
-  width: 100% !important;
+  display: none !important;
+}
+
+#pdfExportIsolatedContainer tfoot,
+#pdfExportIsolatedContainer .report-table-print-footer,
+#pdfExportIsolatedContainer .report-table-print-spacer,
+#pdfExportIsolatedContainer .report-print-footer-tr,
+#pdfExportIsolatedContainer .report-print-bottom-footer {
+  display: none !important;
 }
 
 #pdfExportIsolatedContainer .report-header-main-row {
