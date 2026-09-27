@@ -814,7 +814,10 @@ class Application {
 
     // Refresh specific tab data
     if (targetTab === "dashboard") await this.updateDashboard();
-    else if (targetTab === "assets") await AssetManager.render();
+    else if (targetTab === "assets") {
+      if (typeof AssetManager !== "undefined") await AssetManager.render();
+      else console.warn("AssetManager not yet defined, deferring render.");
+    }
     else if (targetTab === "employees") await UserManager.renderEmployees();
     else if (targetTab === "departments") await UserManager.renderDepartments();
     else if (targetTab === "locations") {
