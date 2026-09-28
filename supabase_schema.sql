@@ -456,7 +456,11 @@ END $$;
 -- ------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Auth_Read_Users" ON public.users;
 CREATE POLICY "Auth_Read_Users" ON public.users FOR SELECT TO authenticated 
-USING (auth_user_id = auth.uid()::text OR public.get_auth_role() = 'Administrator');
+USING (
+  auth_user_id = auth.uid()::text 
+  OR public.get_auth_role() = 'Administrator'
+  OR (email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
+);
 
 DROP POLICY IF EXISTS "Admin_Insert_Users" ON public.users;
 CREATE POLICY "Admin_Insert_Users" ON public.users FOR INSERT TO authenticated 
@@ -464,8 +468,14 @@ WITH CHECK (public.get_auth_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Admin_Update_Users" ON public.users;
 CREATE POLICY "Admin_Update_Users" ON public.users FOR UPDATE TO authenticated 
-USING (public.get_auth_role() = 'Administrator')
-WITH CHECK (public.get_auth_role() = 'Administrator');
+USING (
+  public.get_auth_role() = 'Administrator'
+  OR (auth_user_id IS NULL AND email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
+)
+WITH CHECK (
+  public.get_auth_role() = 'Administrator'
+  OR (auth_user_id IS NULL AND email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
+);
 
 DROP POLICY IF EXISTS "Admin_Delete_Users" ON public.users;
 CREATE POLICY "Admin_Delete_Users" ON public.users FOR DELETE TO authenticated 
