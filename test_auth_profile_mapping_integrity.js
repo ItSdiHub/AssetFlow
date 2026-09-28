@@ -1270,8 +1270,133 @@ async function runAllTests() {
     console.log('✓ Test AN: When autoLink: true is passed, unlinked active IT User profile auto-links safely.');
   }
 
+  // --------------------------------------------------------------------------
+  // TEST AO: Dedicated SECURITY DEFINER RPC claim_authenticated_user_profile is
+  // invoked and returns authoritative profile without local fallback.
+  // --------------------------------------------------------------------------
+  {
+    const authUser = { id: 'auth-claim-303', email: 'claim.user@sdi.ae' };
+    const unlinkedProfile = {
+      id: 'usr-claim-303',
+      username: 'claim.user',
+      email: 'claim.user@sdi.ae',
+      role: 'Employee',
+      auth_user_id: null,
+      active: true
+    };
+    let rpcCalled = false;
+    let localPutCalled = false;
+
+    const mockDb = {
+      supabase: {
+        from: (table) => ({
+          select: (cols) => ({
+            eq: (field, val) => {
+              if (field === 'auth_user_id') {
+                return { maybeSingle: async () => ({ data: null, error: null }) };
+              }
+              if (field === 'email' && val === 'claim.user@sdi.ae') {
+                return Promise.resolve({ data: [unlinkedProfile], error: null });
+              }
+              return Promise.resolve({ data: [], error: null });
+            }
+          })
+        }),
+        rpc: async (fnName) => {
+          if (fnName === 'claim_authenticated_user_profile') {
+            rpcCalled = true;
+            return {
+              data: [{ ...unlinkedProfile, auth_user_id: 'auth-claim-303' }],
+              error: null
+            };
+          }
+          return { data: null, error: new Error('Unknown RPC') };
+        }
+      },
+      put: async () => {
+        localPutCalled = true;
+      }
+    };
+    global.db = mockDb;
+
+    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(res.profile.auth_user_id, 'auth-claim-303');
+    assert.strictEqual(rpcCalled, true, 'claim_authenticated_user_profile RPC must be called');
+    assert.strictEqual(localPutCalled, false, 'Local db.put must NEVER be called');
+    console.log('✓ Test AO: Dedicated claim RPC is invoked and returns claimed profile without local fallback.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AP: Verification that zero db.put fallback exists in
+  // resolveAuthenticatedProfile or auth flows in app.js.
+  // --------------------------------------------------------------------------
+  {
+    const resolverCode = appJs.substring(
+      appJs.indexOf('async resolveAuthenticatedProfile('),
+      appJs.indexOf('async init()')
+    );
+    assert.strictEqual(
+      resolverCode.includes('db.put("users"'),
+      false,
+      'resolveAuthenticatedProfile must contain zero db.put("users") calls'
+    );
+    assert.strictEqual(
+      resolverCode.includes('db.put('),
+      false,
+      'resolveAuthenticatedProfile must contain zero local db.put calls'
+    );
+    console.log('✓ Test AP: Confirmed absolute zero db.put fallback in resolveAuthenticatedProfile.');
+  }
+
+  // --------------------------------------------------------------------------
+  // TEST AQ: Verify claim_authenticated_user_profile SQL schema definitions
+  // in supabase_schema.sql and supabase_security_hardening.sql.
+  // --------------------------------------------------------------------------
+  {
+    const hardeningSql = fs.readFileSync(path.join(__dirname, 'supabase_security_hardening.sql'), 'utf8');
+    const schemaSql = fs.readFileSync(path.join(__dirname, 'supabase_schema.sql'), 'utf8');
+
+    for (const [name, sql] of [['supabase_schema.sql', schemaSql], ['supabase_security_hardening.sql', hardeningSql]]) {
+      assert.ok(
+        sql.includes('CREATE OR REPLACE FUNCTION public.claim_authenticated_user_profile()'),
+        `${name} must define public.claim_authenticated_user_profile()`
+      );
+      assert.ok(
+        sql.includes('SECURITY DEFINER'),
+        `${name} claim function must be SECURITY DEFINER`
+      );
+      assert.ok(
+        sql.includes('SET search_path = public, pg_temp'),
+        `${name} claim function must enforce search_path = public, pg_temp`
+      );
+      assert.ok(
+        sql.includes('REVOKE ALL ON FUNCTION public.claim_authenticated_user_profile() FROM anon'),
+        `${name} must revoke claim function from anon`
+      );
+      assert.ok(
+        sql.includes('GRANT EXECUTE ON FUNCTION public.claim_authenticated_user_profile() TO authenticated'),
+        `${name} must grant claim function execute to authenticated`
+      );
+      assert.strictEqual(
+        sql.includes('auth_user_id IS NULL AND email IS NOT NULL AND lower(email) = lower(auth.jwt()'),
+        false,
+        `${name} must not contain old email-based self-update claim logic in RLS policies`
+      );
+      const claimFnMatch = sql.match(/CREATE OR REPLACE FUNCTION public\.claim_authenticated_user_profile\(\)[\s\S]*?END;\s*\$\$;/);
+      assert.ok(claimFnMatch, `${name} must define claim function body`);
+      assert.strictEqual(
+        claimFnMatch[0].includes('password'),
+        false,
+        `${name} claim function must never return password data`
+      );
+    }
+    console.log('✓ Test AQ: Verified claim function SQL definitions enforce SECURITY DEFINER, search_path, role execution limits, no self-update RLS, and no password exposure.');
+  }
+
   console.log('================================================================================');
-  console.log('ALL 40/40 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AN) PASSED!');
+  console.log('ALL 43/43 MANDATORY AUTH & PROFILE MAPPING INTEGRITY TESTS (A-AQ) PASSED!');
   console.log('================================================================================');
 }
 

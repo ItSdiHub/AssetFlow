@@ -36,6 +36,109 @@ SECURITY DEFINER
 STABLE
 SET search_path = public;
 
+-- Dedicated Claim Function for Unlinked Authenticated User Profiles
+CREATE OR REPLACE FUNCTION public.claim_authenticated_user_profile()
+RETURNS TABLE (
+  id TEXT,
+  username TEXT,
+  full_name TEXT,
+  full_name_ar TEXT,
+  full_name_en TEXT,
+  role TEXT,
+  employee_id TEXT,
+  auth_user_id TEXT,
+  active BOOLEAN,
+  email TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_jwt_email TEXT := lower(trim(auth.jwt() ->> 'email'));
+  v_match_count INT;
+  v_target_id TEXT;
+BEGIN
+  -- 1 & 3: Reject when auth.uid() is NULL or JWT email is NULL/empty
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '28000';
+  END IF;
+
+  IF v_jwt_email IS NULL OR v_jwt_email = '' THEN
+    RAISE EXCEPTION 'Authenticated identity has no verified email claim' USING ERRCODE = '22000';
+  END IF;
+
+  -- Reject if an active profile with this email is already linked to another Auth UID
+  IF EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE lower(trim(u.email)) = v_jwt_email
+      AND u.active = true
+      AND u.auth_user_id IS NOT NULL
+      AND u.auth_user_id != v_uid::text
+  ) THEN
+    RAISE EXCEPTION 'Profile is already linked to another authentication identity' USING ERRCODE = 'P0005';
+  END IF;
+
+  -- 4: Find exactly ONE active public.users profile where auth_user_id IS NULL, email IS NOT NULL, and lower(email) matches
+  SELECT count(*), min(u.id)
+  INTO v_match_count, v_target_id
+  FROM public.users u
+  WHERE u.auth_user_id IS NULL
+    AND u.active = true
+    AND u.email IS NOT NULL
+    AND lower(trim(u.email)) = v_jwt_email;
+
+  -- 6: Reject if no matching profile exists
+  IF v_match_count = 0 THEN
+    -- If already linked to this auth user, return existing row safely
+    IF EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.auth_user_id = v_uid::text
+        AND u.active = true
+        AND lower(trim(u.email)) = v_jwt_email
+    ) THEN
+      RETURN QUERY
+      SELECT u.id, u.username, u.full_name, u.full_name_ar, u.full_name_en, u.role, u.employee_id, u.auth_user_id, u.active, u.email
+      FROM public.users u
+      WHERE u.auth_user_id = v_uid::text;
+      RETURN;
+    END IF;
+
+    RAISE EXCEPTION 'No unlinked active profile found for authenticated email' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- 5: Reject ambiguous matches
+  IF v_match_count > 1 THEN
+    RAISE EXCEPTION 'Ambiguous profile match: multiple unlinked profiles found' USING ERRCODE = 'P0003';
+  END IF;
+
+  -- 7 & 8: Atomically claim by setting ONLY auth_user_id = auth.uid()::text without altering any other fields
+  UPDATE public.users
+  SET auth_user_id = v_uid::text
+  WHERE public.users.id = v_target_id
+    AND public.users.auth_user_id IS NULL;
+
+  -- 9 & 10: Verify the resulting row before returning success
+  RETURN QUERY
+  SELECT u.id, u.username, u.full_name, u.full_name_ar, u.full_name_en, u.role, u.employee_id, u.auth_user_id, u.active, u.email
+  FROM public.users u
+  WHERE u.id = v_target_id
+    AND u.auth_user_id = v_uid::text;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Verification failed after claiming profile' USING ERRCODE = 'P0004';
+  END IF;
+END;
+$$;
+
+-- Restrict RPC execution
+REVOKE ALL ON FUNCTION public.claim_authenticated_user_profile() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.claim_authenticated_user_profile() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_authenticated_user_profile() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.claim_authenticated_user_profile() FROM anon;
+GRANT EXECUTE ON FUNCTION public.claim_authenticated_user_profile() TO authenticated;
+
 -- 2. Revoke anonymous access to ensure secure boundary
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
 
@@ -73,7 +176,6 @@ CREATE POLICY "Auth_Read_Users" ON public.users FOR SELECT TO authenticated
 USING (
   auth_user_id = auth.uid()::text 
   OR public.get_auth_role() = 'Administrator'
-  OR (email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
 );
 
 DROP POLICY IF EXISTS "Admin_Insert_Users" ON public.users;
@@ -82,14 +184,8 @@ WITH CHECK (public.get_auth_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Admin_Update_Users" ON public.users;
 CREATE POLICY "Admin_Update_Users" ON public.users FOR UPDATE TO authenticated 
-USING (
-  public.get_auth_role() = 'Administrator'
-  OR (auth_user_id IS NULL AND email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
-)
-WITH CHECK (
-  public.get_auth_role() = 'Administrator'
-  OR (auth_user_id IS NULL AND email IS NOT NULL AND lower(email) = lower(auth.jwt() ->> 'email'))
-);
+USING (public.get_auth_role() = 'Administrator')
+WITH CHECK (public.get_auth_role() = 'Administrator');
 
 DROP POLICY IF EXISTS "Admin_Delete_Users" ON public.users;
 CREATE POLICY "Admin_Delete_Users" ON public.users FOR DELETE TO authenticated 

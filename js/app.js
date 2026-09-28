@@ -315,9 +315,41 @@ class Application {
       };
     }
 
-    // Execute Cloud update
-    let cloudUpdateSuccessful = false;
+    // STEP 5 — SAFE CLOUD CLAIM & SELF-HEALING
+    // Attempt dedicated SECURITY DEFINER RPC claim if available
+    let cloudClaimSuccessful = false;
+    let claimedProfile = null;
     let cloudUpdateError = null;
+
+    if (typeof db.supabase?.rpc === 'function') {
+      try {
+        const { data: rpcData, error: rpcError } = await db.supabase.rpc('claim_authenticated_user_profile');
+        if (!rpcError && rpcData) {
+          const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+          if (row && row.auth_user_id === authUser.id) {
+            cloudClaimSuccessful = true;
+            claimedProfile = row;
+          }
+        } else if (rpcError) {
+          cloudUpdateError = rpcError;
+          console.warn("claim_authenticated_user_profile RPC attempt returned:", rpcError);
+        }
+      } catch (rpcEx) {
+        cloudUpdateError = rpcEx;
+        console.warn("Exception calling claim_authenticated_user_profile RPC:", rpcEx);
+      }
+    }
+
+    if (cloudClaimSuccessful && claimedProfile) {
+      return {
+        status: "SUCCESS",
+        profile: claimedProfile,
+        resolutionMethod: isCandidateAdmin ? "ADMIN_SELF_HEALED" : "AUTO_LINKED"
+      };
+    }
+
+    // Direct Cloud table update (if RPC not yet provisioned or in mock environment)
+    let cloudUpdateSuccessful = false;
     try {
       const { data: updateRes, error: updateError } = await db.supabase
         .from("users")
@@ -326,13 +358,13 @@ class Application {
 
       if (updateError) {
         cloudUpdateError = updateError;
-        console.error("Admin self-healing update failed:", updateError);
+        console.error("Profile link update failed:", updateError);
       } else {
         cloudUpdateSuccessful = true;
       }
     } catch (e) {
       cloudUpdateError = e;
-      console.error("Admin self-healing update failed:", e);
+      console.error("Profile link update failed:", e);
     }
 
     if (cloudUpdateSuccessful) {
@@ -383,29 +415,7 @@ class Application {
       };
     }
 
-    // If Cloud update failed:
-    // For Administrators, it must fail safely with PROFILE_LINK_ERROR
-    if (isCandidateAdmin) {
-      return {
-        status: "PROFILE_LINK_ERROR",
-        profile: candidate,
-        error: cloudUpdateError || new Error("Cloud update failed")
-      };
-    }
-
-    // For non-admin Auto-Link (e.g. Employee with RLS restriction on public.users update):
-    // Bind locally and in memory candidate so user can log in immediately to portal
-    if (isAutoLink) {
-      candidate.auth_user_id = authUser.id;
-      candidate.authUserId = authUser.id;
-      await db.put("users", candidate).catch(() => {});
-      return {
-        status: "SUCCESS",
-        profile: candidate,
-        resolutionMethod: "AUTO_LINKED"
-      };
-    }
-
+    // Strict Cloud-only failure handling: NEVER fake success or use local fallback
     return {
       status: "PROFILE_LINK_ERROR",
       profile: candidate,
