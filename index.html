@@ -3459,10 +3459,6 @@
                       </div>
                       <div style="display: flex; gap: 6px;">
                         <input type="url" id="formDocUrl" class="form-control text-xs" placeholder="https://drive.google.com/... أو رابط السحابة" data-i18n-placeholder="docUrl" style="flex: 1;">
-                        <input type="file" id="formDocFile" style="display: none;" onchange="ProjectManager.handleFileSelection(event)">
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('formDocFile').click()" title="تحميل ملف" style="white-space: nowrap;">
-                          <i class="fas fa-upload"></i>
-                        </button>
                         <button type="button" class="btn btn-sm btn-secondary" onclick="ProjectManager.addDocLinkFromForm()" style="white-space: nowrap;">
                           <i class="fas fa-plus"></i> <span data-i18n="btnAddLink">إضافة الرابط</span>
                         </button>
@@ -3471,21 +3467,9 @@
                   </div>
                 </div>
 
-                <!-- Document Section -->
-                <div class="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <h4 class="text-sm font-semibold mb-2" data-i18n="projectDocuments">Project Documents</h4>
-                  <!-- Dropzone -->
-                  <div id="dropzone" class="border-2 border-dashed border-gray-300 p-4 text-center text-gray-500 cursor-pointer rounded-md hover:bg-gray-100 transition" 
-                       ondragover="event.preventDefault(); this.classList.add('border-primary')"
-                       ondragleave="this.classList.remove('border-primary')"
-                       ondrop="ProjectManager.handleFileDrop(event); this.classList.remove('border-primary');"
-                       onclick="document.getElementById('formDocFile').click()">
-                    <p data-i18n="dropFiles">Drop files here or click to upload</p>
-                  </div>
-                  <!-- Grid -->
-                  <div id="projectDocsGrid" class="grid grid-cols-2 gap-3 mt-4 max-h-60 overflow-y-auto">
-                    <!-- Rendered via JS -->
-                  </div>
+                <!-- Document List Container -->
+                <div id="projectModalDocsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;">
+                  <!-- Rendered via JS -->
                 </div>
               </div>
             </div>
@@ -5350,7 +5334,6 @@
   <script src="js/qrcode.min.js"></script>
   <script src="js/zxing.min.js"></script>
   <script src="js/html2pdf.bundle.min.js"></script>
-  <script src="js/assetValidator.js"></script>
   <script src="js/users.js"></script>
   <script src="js/treeView.js"></script>
   <script src="js/assets.js"></script>

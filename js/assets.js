@@ -825,21 +825,7 @@ class AssetInventoryManager {
       }
     }
 
-    // 2. Check Asset Reservation
-    try {
-        const oldAsset = await db.getById("assets", internalId);
-        AssetValidator.assertReservation(oldAsset, {
-            project_id: oldAsset ? oldAsset.project_id : null,
-            location_id: locationId,
-            employee_id: currentEmployeeId,
-            department_id: departmentId
-        }, false);
-    } catch (e) {
-        console.error("Asset reservation validation failed:", e);
-        return;
-    }
-
-    // 3. Check duplicate serial
+    // 2. Check duplicate serial
     if (serial) {
       const serialExists = await db.checkSerialExists(serial, internalId);
       if (serialExists) {

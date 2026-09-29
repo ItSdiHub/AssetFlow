@@ -2234,37 +2234,6 @@ class ProjectManagementController {
     }
   }
 
-  handleFileSelection(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const lang = AppState.lang || "ar";
-    const titleInput = document.getElementById("formDocTitle");
-    const catSelect = document.getElementById("formDocCategory");
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (!this.stagedProjectDocuments) this.stagedProjectDocuments = [];
-      
-      this.stagedProjectDocuments.push({
-        id: "doc-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
-        name: titleInput.value.trim() || file.name,
-        category: catSelect.value,
-        size: (file.size / 1024).toFixed(1) + " KB",
-        mime: file.type,
-        dataUrl: e.target.result,
-        url: null,
-        addedAt: new Date().toISOString().slice(0, 10)
-      });
-      
-      if (titleInput) titleInput.value = "";
-      event.target.value = ""; // Reset input
-      this.renderProjectModalDocs();
-      App.showToast(lang === "ar" ? "تم تحميل الملف بنجاح" : "File uploaded successfully", "success");
-    };
-    reader.readAsDataURL(file);
-  }
-
   addDocLinkFromForm() {
     const lang = AppState.lang || "ar";
     const titleInput = document.getElementById("formDocTitle");
@@ -2309,55 +2278,60 @@ class ProjectManagementController {
     App.showToast(lang === "ar" ? "تم حذف المستند من القائمة" : "Document removed from list", "info");
   }
 
-  handleFileDrop(event) {
-    event.preventDefault();
-    const files = event.dataTransfer.files;
-    if (files.length > 0) {
-      this.handleFileSelection({ target: { files } });
-    }
-  }
-
-  getFileIcon(mime) {
-    if (mime?.includes('pdf')) return 'fa-file-pdf text-red-500';
-    if (mime?.includes('image')) return 'fa-file-image text-blue-500';
-    if (mime?.includes('word')) return 'fa-file-word text-blue-700';
-    if (mime === 'link') return 'fa-link text-gray-500';
-    return 'fa-file-alt text-gray-500';
-  }
-
   renderProjectModalDocs() {
-    const grid = document.getElementById("projectDocsGrid");
+    const container = document.getElementById("projectModalDocsList");
     const badge = document.getElementById("projectDocsCountBadge");
     const lang = AppState.lang || "ar";
     const docs = this.stagedProjectDocuments || [];
 
     if (badge) badge.textContent = docs.length;
-    if (!grid) return;
+
+    if (!container) return;
 
     if (docs.length === 0) {
-      grid.innerHTML = `
-        <div class="col-span-2 text-center py-6 text-gray-400 border-2 border-dashed border-gray-200 rounded-md">
-          <i class="fas fa-folder-open text-3xl mb-2"></i>
-          <p class="text-xs">${I18N[lang].noProjectDocs || 'لا توجد مستندات'}</p>
+      container.innerHTML = `
+        <div class="text-center py-3 text-muted" style="border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+          <i class="fas fa-folder-open text-muted mb-1" style="font-size: 20px;"></i>
+          <div style="font-size: 11px;">${I18N[lang].noProjectDocs || 'لا توجد مستندات أو عقود مرفقة بهذا المشروع بعد'}</div>
         </div>
       `;
       return;
     }
 
-    grid.innerHTML = docs.map(doc => `
-      <div class="border rounded-lg p-3 flex flex-col items-center bg-white shadow-sm hover:shadow-md transition cursor-pointer group"
-           onclick="ProjectManager.openStagedDocument('${doc.id}')">
-        <div class="relative">
-          <i class="fas ${this.getFileIcon(doc.mime)} text-4xl mb-2"></i>
-          <button class="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition"
-                  onclick="event.stopPropagation(); ProjectManager.removeStagedDocument('${doc.id}')">
-            &times;
-          </button>
+    container.innerHTML = docs.map(doc => {
+      const catBadge = this.getDocCategoryBadge(doc.category, lang);
+      const iconHtml = this.getDocIconHtml(doc);
+      return `
+        <div class="card p-2 d-flex justify-between items-center" style="background: var(--bg-surface); border: 1px solid var(--border-color); margin-bottom: 0;">
+          <div class="d-flex items-center gap-2" style="overflow: hidden; flex: 1;">
+            ${iconHtml}
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <div style="font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${doc.name || '-'}</div>
+              <div class="text-xs text-muted d-flex items-center gap-2" style="font-size: 10px;">
+                <span>${catBadge}</span>
+                <span>&bull;</span>
+                <span class="${doc.url ? 'text-info font-bold' : ''}">${doc.size || '-'}</span>
+                <span>&bull;</span>
+                <span>${doc.addedAt || '-'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex gap-1" style="flex-shrink: 0; margin-inline-start: 8px;">
+            <button type="button" class="btn btn-xs btn-primary" onclick="ProjectManager.openStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'معاينة / فتح' : 'Open / View'}">
+              <i class="${doc.url ? 'fas fa-external-link-alt' : 'fas fa-eye'}"></i>
+            </button>
+            ${doc.dataUrl ? `
+              <button type="button" class="btn btn-xs btn-secondary" onclick="ProjectManager.downloadStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'تحميل' : 'Download'}">
+                <i class="fas fa-download"></i>
+              </button>
+            ` : ''}
+            <button type="button" class="btn btn-xs btn-secondary text-danger" onclick="ProjectManager.removeStagedDocument('${doc.id}')" title="${lang === 'ar' ? 'حذف' : 'Delete'}">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
         </div>
-        <span class="text-xs truncate w-full text-center font-medium" title="${doc.name}">${doc.name}</span>
-        <span class="text-[10px] text-gray-400">${doc.size || ''}</span>
-      </div>
-    `).join('');
+      `;
+    }).join("");
   }
 
   getDocCategoryBadge(cat, lang = "ar") {
@@ -3212,19 +3186,6 @@ class AssetOperationsController {
     const currentUserName = AppState.currentUser
       ? (AppState.currentUser.fullName || AppState.currentUser.username)
       : "System";
-
-    // 0. Validation: Asset Reservation
-    try {
-        AssetValidator.assertReservation(asset, {
-            project_id: asset.project_id,
-            location_id: warehouseLocId,
-            employee_id: itEmpId,
-            department_id: null
-        }, !!projectId);
-    } catch (e) {
-        console.error("Asset reservation validation failed for warehouse issue:", e);
-        return;
-    }
 
     // 1. UPDATE ASSET: In Transit, assigned to IT employee, source warehouse recorded
     asset.status = "In Transit";

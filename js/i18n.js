@@ -98,7 +98,6 @@ const I18N = {
     locIconIT: "تقنية معلومات (IT Dept)",
     locIconServer: "غرفة سيرفرات (Server Room)",
     locIconDesktop: "مكتب / قاعة (Desktop)",
-    errAssetReserved: "هذا الأصل محجوز حالياً لمشروع محدد ولا يمكن تخصيصه لفرع أو مستخدم آخر حتى يتم تحريره من المشروع.",
     locIconRoom: "غرفة / مكتب (Room/Office)",
     locIconStore: "مستودع (Store/Warehouse)",
     locIconSecurity: "أمن ومراقبة (Security)",
@@ -1266,7 +1265,6 @@ const I18N = {
   },
 
   en: {
-    errAssetReserved: "This asset is currently reserved for a project and cannot be assigned to another branch or user until its project reservation is released.",
     selectDepartment: "-- Select Department --",
     selectOfficeOptional: "-- Select Office (Optional) --",
     btnAddLocationTitle: "Add New Location",
