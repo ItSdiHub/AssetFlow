@@ -501,17 +501,12 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST O: Username-to-email resolution queries public.users and employees
-  // with safe column lists only (no password, no *).
+  // TEST O: Username-to-email resolution uses secure RPC
   // --------------------------------------------------------------------------
   {
-    const queryIdx = appJs.indexOf('.ilike("username", cleanInput)');
-    assert.ok(queryIdx > 0, 'Username resolution query must exist in app.js');
-    const snippet = appJs.substring(queryIdx - 160, queryIdx + 60);
-    assert.ok(snippet.includes('.select("id, username, employee_id")'), 'Username query must select safe minimal columns');
-    assert.strictEqual(snippet.includes('*'), false, 'Username query must not use wildcard');
-    assert.strictEqual(snippet.includes('password'), false, 'Username query must not touch password');
-    console.log('✓ Test O: Username resolution query uses safe column selection without credentials.');
+    const queryIdx = appJs.indexOf('.rpc("resolve_login_email_by_username"');
+    assert.ok(queryIdx > 0, 'Username resolution RPC call must exist in app.js');
+    console.log('✓ Test O: Username resolution uses secure RPC.');
   }
 
   // --------------------------------------------------------------------------

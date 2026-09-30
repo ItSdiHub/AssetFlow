@@ -4951,14 +4951,19 @@ class Application {
         
         if (rpcError) {
           console.warn("Username resolution RPC error:", rpcError);
+          this.showToast(lang === "ar" ? "خطأ في الاتصال بالخادم" : "Server connection error", "error");
+          return;
         } else if (resData && resData.length > 0) {
           emailToAuth = resData[0].email.trim().toLowerCase();
+        } else {
+          this.showToast(lang === "ar" ? "اسم المستخدم غير صحيح" : "Invalid username", "error");
+          return;
         }
       } catch (e) {
         console.warn("Username resolution RPC exception:", e);
+        this.showToast(lang === "ar" ? "خطأ غير متوقع" : "Unexpected error", "error");
+        return;
       }
-    } else {
-      // Direct email handling
     }
 
     // 2. Execute Supabase GoTrue Authentication to acquire valid JWT session for RLS
