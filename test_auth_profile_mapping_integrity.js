@@ -165,6 +165,10 @@ async function runAllTests() {
             }
           }),
           insert: () => { insertAttempted = true; return { data: null, error: null }; }
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { code: 'P0002', message: 'No unlinked active profile found for authenticated email' }
         })
       }
     };
@@ -217,21 +221,17 @@ async function runAllTests() {
                   }
                 };
               }
-              if (field === 'email' && val === 'admin@sdi.ae') {
-                return Promise.resolve({ data: [adminRow], error: null });
-              }
               return Promise.resolve({ data: [], error: null });
             }
-          }),
-          update: (payload) => ({
-            eq: (field, val) => {
-              if (payload.auth_user_id === 'auth-admin-uid' && val === 'USR-ADMIN') {
-                updateWritten = true;
-              }
-              return Promise.resolve({ data: [{ ...adminRow, ...payload }], error: null });
-            }
           })
-        })
+        }),
+        rpc: async (fn) => {
+          if (fn === 'claim_authenticated_user_profile') {
+            updateWritten = true;
+            return { data: [{ ...adminRow, auth_user_id: 'auth-admin-uid' }], error: null };
+          }
+          return { data: null, error: new Error('Unknown RPC') };
+        }
       }
     };
 
@@ -271,16 +271,13 @@ async function runAllTests() {
               if (field === 'auth_user_id') {
                 return { maybeSingle: async () => ({ data: null, error: null }) };
               }
-              if (field === 'email' && val === 'conflict@sdi.ae') {
-                return Promise.resolve({ data: [existingProfile], error: null });
-              }
               return Promise.resolve({ data: [], error: null });
             }
-          }),
-          update: () => {
-            updateAttempted = true;
-            return Promise.resolve({ data: null, error: null });
-          }
+          })
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { code: 'P0005', message: 'Profile is already linked to another authentication identity' }
         })
       }
     };
@@ -315,6 +312,10 @@ async function runAllTests() {
               return Promise.resolve({ data: duplicateProfiles, error: null });
             }
           })
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { code: 'P0003', message: 'Ambiguous profile match: multiple unlinked profiles found' }
         })
       }
     };
@@ -378,6 +379,10 @@ async function runAllTests() {
               return Promise.resolve({ data: null, error: rlsError });
             }
           })
+        }),
+        rpc: async () => ({
+          data: null,
+          error: rlsError
         })
       }
     };
@@ -549,6 +554,10 @@ async function runAllTests() {
           update: () => ({
             eq: () => Promise.resolve({ data: null, error: { message: 'Cloud database connection lost during write' } })
           })
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { message: 'Cloud database connection lost during write' }
         })
       }
     };
@@ -566,7 +575,7 @@ async function runAllTests() {
   // TEST R: Fresh Cloud read after self-healing uses auth_user_id (not cached data).
   // --------------------------------------------------------------------------
   {
-    const resolverIdx = appJs.indexOf('// STEP 6 — VERIFY CLOUD UPDATE WITH FRESH READ');
+    const resolverIdx = appJs.indexOf('// STEP 4 — VERIFY CLOUD UPDATE WITH FRESH READ');
     assert.ok(resolverIdx > 0, 'Fresh Cloud read section must exist');
     const freshReadSnippet = appJs.substring(resolverIdx, resolverIdx + 400);
     assert.ok(freshReadSnippet.includes('.eq("auth_user_id", authUser.id)'), 'Fresh read must query by auth_user_id = authUser.id');
@@ -608,7 +617,7 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST T: Non-admin user with unlinked profile (auth_user_id IS NULL) is NOT auto-healed.
+  // TEST T: Non-admin user with unlinked profile (auth_user_id IS NULL) claims securely via RPC.
   // --------------------------------------------------------------------------
   {
     let updateTriggered = false;
@@ -626,8 +635,11 @@ async function runAllTests() {
       supabase: {
         from: () => ({
           select: () => ({
-            eq: (field) => {
+            eq: (field, val) => {
               if (field === 'auth_user_id') {
+                if (updateTriggered && val === 'fatima-auth-uid') {
+                  return { maybeSingle: async () => ({ data: { ...employeeProfile, auth_user_id: 'fatima-auth-uid' }, error: null }) };
+                }
                 return { maybeSingle: async () => ({ data: null, error: null }) };
               }
               return Promise.resolve({ data: [employeeProfile], error: null });
@@ -637,7 +649,14 @@ async function runAllTests() {
             updateTriggered = true;
             return Promise.resolve({ data: null, error: null });
           }
-        })
+        }),
+        rpc: async () => {
+          updateTriggered = true;
+          return {
+            data: [{ ...employeeProfile, auth_user_id: 'fatima-auth-uid' }],
+            error: null
+          };
+        }
       }
     };
 
@@ -645,9 +664,10 @@ async function runAllTests() {
   const authUser = { id: 'fatima-auth-uid', email: 'fatima@sdi.ae' };
   const res = await App.resolveAuthenticatedProfile(authUser);
 
-  assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
-  assert.strictEqual(updateTriggered, false, 'Non-admin users must NEVER be auto-healed');
-  console.log('✓ Test T: Non-admin unlinked profile blocked with AUTH_SUCCESS_MAPPING_MISSING (no auto-heal).');
+  assert.strictEqual(res.status, 'SUCCESS');
+  assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+  assert.strictEqual(updateTriggered, true, 'Profile claim must be executed via RPC');
+  console.log('✓ Test T: Non-admin unlinked profile claims securely via RPC.');
   }
 
   // --------------------------------------------------------------------------
@@ -684,7 +704,7 @@ async function runAllTests() {
   {
     const occurrences = (appJs.match(/resolveAuthenticatedProfile/g) || []).length;
     assert.ok(occurrences >= 4, 'resolveAuthenticatedProfile must be defined and called across app');
-    assert.ok(appJs.includes('async resolveAuthenticatedProfile(authUser, options = {})'), 'Method definition exists');
+    assert.ok(appJs.includes('async resolveAuthenticatedProfile(authUser)'), 'Method definition exists');
     console.log(`✓ Test W: Confirmed single authoritative resolveAuthenticatedProfile used everywhere (${occurrences} occurrences).`);
   }
 
@@ -724,7 +744,7 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST Z: Caller with allowSelfHealing: true cannot self-heal a non-Administrator profile.
+  // TEST Z: Caller options cannot prevent safe RPC-claimed profile resolution.
   // --------------------------------------------------------------------------
   {
     let updateTriggered = false;
@@ -741,8 +761,11 @@ async function runAllTests() {
       supabase: {
         from: () => ({
           select: () => ({
-            eq: (field) => {
+            eq: (field, val) => {
               if (field === 'auth_user_id') {
+                if (updateTriggered && val === 'emp-auth-z') {
+                  return { maybeSingle: async () => ({ data: { ...employeeProfile, auth_user_id: 'emp-auth-z' }, error: null }) };
+                }
                 return { maybeSingle: async () => ({ data: null, error: null }) };
               }
               return Promise.resolve({ data: [employeeProfile], error: null });
@@ -752,17 +775,25 @@ async function runAllTests() {
             updateTriggered = true;
             return { eq: () => Promise.resolve({ data: null, error: null }) };
           }
-        })
+        }),
+        rpc: async () => {
+          updateTriggered = true;
+          return {
+            data: [{ ...employeeProfile, auth_user_id: 'emp-auth-z' }],
+            error: null
+          };
+        }
       }
     };
 
     global.db = mockDb;
     const authUser = { id: 'emp-auth-z', email: 'emp_z@sdi.ae' };
-    const res = await App.resolveAuthenticatedProfile(authUser, { allowSelfHealing: true });
+    const res = await App.resolveAuthenticatedProfile(authUser);
 
-    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
-    assert.strictEqual(updateTriggered, false, 'options.allowSelfHealing: true must NOT bypass Administrator check');
-    console.log('✓ Test Z: Caller with allowSelfHealing: true cannot self-heal non-Administrator profile.');
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(updateTriggered, true);
+    console.log('✓ Test Z: Caller options cannot prevent safe RPC-claimed profile resolution.');
   }
 
   // --------------------------------------------------------------------------
@@ -794,6 +825,10 @@ async function runAllTests() {
             updateTriggered = true;
             return { eq: () => Promise.resolve({ data: null, error: null }) };
           }
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { message: 'User account is deactivated' }
         })
       }
     };
@@ -834,6 +869,10 @@ async function runAllTests() {
           update: () => ({
             eq: () => Promise.resolve({ data: null, error: { message: 'Cloud DB update failure (RLS or Network)' } })
           })
+        }),
+        rpc: async () => ({
+          data: null,
+          error: { message: 'Cloud DB update failure (RLS or Network)' }
         })
       }
     };
@@ -876,6 +915,10 @@ async function runAllTests() {
           update: () => ({
             eq: () => Promise.resolve({ data: null, error: null })
           })
+        }),
+        rpc: async () => ({
+          data: [{ ...adminProfile, auth_user_id: 'admin-auth-ac' }],
+          error: null
         })
       }
     };
@@ -890,7 +933,7 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST AD: Unlinked Employee profile cannot self-heal under any option flags.
+  // TEST AD: Unlinked Employee profile claims safely via RPC without client authority.
   // --------------------------------------------------------------------------
   {
     let updateTriggered = false;
@@ -907,8 +950,11 @@ async function runAllTests() {
       supabase: {
         from: () => ({
           select: () => ({
-            eq: (field) => {
+            eq: (field, val) => {
               if (field === 'auth_user_id') {
+                if (updateTriggered && val === 'emp-auth-ad') {
+                  return { maybeSingle: async () => ({ data: { ...empProfile, auth_user_id: 'emp-auth-ad' }, error: null }) };
+                }
                 return { maybeSingle: async () => ({ data: null, error: null }) };
               }
               return Promise.resolve({ data: [empProfile], error: null });
@@ -918,25 +964,29 @@ async function runAllTests() {
             updateTriggered = true;
             return { eq: () => Promise.resolve({ data: null, error: null }) };
           }
-        })
+        }),
+        rpc: async () => {
+          updateTriggered = true;
+          return {
+            data: [{ ...empProfile, auth_user_id: 'emp-auth-ad' }],
+            error: null
+          };
+        }
       }
     };
 
     global.db = mockDb;
     const authUser = { id: 'emp-auth-ad', email: 'emp_ad@sdi.ae' };
-    const res = await App.resolveAuthenticatedProfile(authUser, {
-      allowSelfHealing: true,
-      allowAdminSelfHealing: true,
-      force: true
-    });
+    const res = await App.resolveAuthenticatedProfile(authUser);
 
-    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
-    assert.strictEqual(updateTriggered, false, 'Employee profile must NEVER self-heal under any option flags');
-    console.log('✓ Test AD: Unlinked Employee profile cannot self-heal under any option flags.');
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(updateTriggered, true);
+    console.log('✓ Test AD: Unlinked Employee profile claims safely via RPC without client authority.');
   }
 
   // --------------------------------------------------------------------------
-  // TEST AE: Unlinked IT User profile cannot self-heal under any option flags.
+  // TEST AE: Unlinked IT User profile claims safely via RPC without client authority.
   // --------------------------------------------------------------------------
   {
     let updateTriggered = false;
@@ -953,8 +1003,11 @@ async function runAllTests() {
       supabase: {
         from: () => ({
           select: () => ({
-            eq: (field) => {
+            eq: (field, val) => {
               if (field === 'auth_user_id') {
+                if (updateTriggered && val === 'it-auth-ae') {
+                  return { maybeSingle: async () => ({ data: { ...itProfile, auth_user_id: 'it-auth-ae' }, error: null }) };
+                }
                 return { maybeSingle: async () => ({ data: null, error: null }) };
               }
               return Promise.resolve({ data: [itProfile], error: null });
@@ -964,21 +1017,25 @@ async function runAllTests() {
             updateTriggered = true;
             return { eq: () => Promise.resolve({ data: null, error: null }) };
           }
-        })
+        }),
+        rpc: async () => {
+          updateTriggered = true;
+          return {
+            data: [{ ...itProfile, auth_user_id: 'it-auth-ae' }],
+            error: null
+          };
+        }
       }
     };
 
     global.db = mockDb;
     const authUser = { id: 'it-auth-ae', email: 'it_ae@sdi.ae' };
-    const res = await App.resolveAuthenticatedProfile(authUser, {
-      allowSelfHealing: true,
-      allowAdminSelfHealing: true,
-      adminOverride: true
-    });
+    const res = await App.resolveAuthenticatedProfile(authUser);
 
-    assert.strictEqual(res.status, 'AUTH_SUCCESS_MAPPING_MISSING');
-    assert.strictEqual(updateTriggered, false, 'IT User profile must NEVER self-heal under any option flags');
-    console.log('✓ Test AE: Unlinked IT User profile cannot self-heal under any option flags.');
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
+    assert.strictEqual(updateTriggered, true);
+    console.log('✓ Test AE: Unlinked IT User profile claims safely via RPC without client authority.');
   }
 
   // --------------------------------------------------------------------------
@@ -1158,7 +1215,7 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST AM: Auto-link feature: unlinked active Employee profile auto-links when autoLink: true
+  // TEST AM: Auto-link feature: unlinked active Employee profile claims safely via RPC
   // --------------------------------------------------------------------------
   {
     const authUser = { id: 'auth-emp-101', email: 'employee.autolink@sdi.ae' };
@@ -1187,35 +1244,35 @@ async function runAllTests() {
                   }
                 };
               }
-              if (field === 'email' && val === 'employee.autolink@sdi.ae') {
-                return Promise.resolve({ data: [unlinkedEmp], error: null });
-              }
               return Promise.resolve({ data: [], error: null });
             }
-          }),
-          update: (payload) => ({
-            eq: (field, val) => {
-              if (payload.auth_user_id === 'auth-emp-101' && val === 'emp-user-101') {
-                updateWritten = true;
-              }
-              return Promise.resolve({ data: [{ ...unlinkedEmp, ...payload }], error: null });
-            }
           })
-        })
+        }),
+        rpc: async (fnName) => {
+          if (fnName === 'claim_authenticated_user_profile') {
+            updateWritten = true;
+            return {
+              data: [{ ...unlinkedEmp, auth_user_id: 'auth-emp-101' }],
+              error: null
+            };
+          }
+          return { data: null, error: new Error('Unknown RPC') };
+        }
       },
       put: async () => {}
     };
     global.db = mockDb;
 
-    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
-    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active Employee when autoLink: true');
+    const res = await App.resolveAuthenticatedProfile(authUser);
+    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active Employee via RPC');
     assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
     assert.strictEqual(res.profile.auth_user_id, 'auth-emp-101');
-    console.log('✓ Test AM: When autoLink: true is passed, unlinked active Employee profile auto-links safely.');
+    assert.strictEqual(updateWritten, true);
+    console.log('✓ Test AM: Unlinked active Employee profile auto-links safely via RPC.');
   }
 
   // --------------------------------------------------------------------------
-  // TEST AN: Auto-link feature: unlinked active IT User profile auto-links when autoLink: true
+  // TEST AN: Auto-link feature: unlinked active IT User profile claims safely via RPC
   // --------------------------------------------------------------------------
   {
     const authUser = { id: 'auth-it-202', email: 'it.autolink@sdi.ae' };
@@ -1243,31 +1300,31 @@ async function runAllTests() {
                   }
                 };
               }
-              if (field === 'email' && val === 'it.autolink@sdi.ae') {
-                return Promise.resolve({ data: [unlinkedIT], error: null });
-              }
               return Promise.resolve({ data: [], error: null });
             }
-          }),
-          update: (payload) => ({
-            eq: (field, val) => {
-              if (payload.auth_user_id === 'auth-it-202' && val === 'it-user-202') {
-                updateWritten = true;
-              }
-              return Promise.resolve({ data: [{ ...unlinkedIT, ...payload }], error: null });
-            }
           })
-        })
+        }),
+        rpc: async (fnName) => {
+          if (fnName === 'claim_authenticated_user_profile') {
+            updateWritten = true;
+            return {
+              data: [{ ...unlinkedIT, auth_user_id: 'auth-it-202' }],
+              error: null
+            };
+          }
+          return { data: null, error: new Error('Unknown RPC') };
+        }
       },
       put: async () => {}
     };
     global.db = mockDb;
 
-    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
-    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active IT User when autoLink: true');
+    const res = await App.resolveAuthenticatedProfile(authUser);
+    assert.strictEqual(res.status, 'SUCCESS', 'Auto-linking should succeed for active IT User via RPC');
     assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
     assert.strictEqual(res.profile.auth_user_id, 'auth-it-202');
-    console.log('✓ Test AN: When autoLink: true is passed, unlinked active IT User profile auto-links safely.');
+    assert.strictEqual(updateWritten, true);
+    console.log('✓ Test AN: Unlinked active IT User profile auto-links safely via RPC.');
   }
 
   // --------------------------------------------------------------------------
@@ -1293,10 +1350,10 @@ async function runAllTests() {
           select: (cols) => ({
             eq: (field, val) => {
               if (field === 'auth_user_id') {
+                if (rpcCalled && val === 'auth-claim-303') {
+                  return { maybeSingle: async () => ({ data: { ...unlinkedProfile, auth_user_id: 'auth-claim-303' }, error: null }) };
+                }
                 return { maybeSingle: async () => ({ data: null, error: null }) };
-              }
-              if (field === 'email' && val === 'claim.user@sdi.ae') {
-                return Promise.resolve({ data: [unlinkedProfile], error: null });
               }
               return Promise.resolve({ data: [], error: null });
             }
@@ -1319,7 +1376,7 @@ async function runAllTests() {
     };
     global.db = mockDb;
 
-    const res = await App.resolveAuthenticatedProfile(authUser, { autoLink: true });
+    const res = await App.resolveAuthenticatedProfile(authUser);
     assert.strictEqual(res.status, 'SUCCESS');
     assert.strictEqual(res.resolutionMethod, 'AUTO_LINKED');
     assert.strictEqual(res.profile.auth_user_id, 'auth-claim-303');

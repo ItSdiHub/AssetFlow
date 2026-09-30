@@ -94,10 +94,9 @@ class Application {
    * Resolves Supabase Auth identity strictly to authoritative public.users profile.
    *
    * @param {Object} authUser - Supabase Auth User object
-   * @param {Object} options - Resolution options (e.g. allowAdminSelfHealing)
    * @returns {Promise<{status: string, profile: Object|null, error: Error|null, resolutionMethod?: string}>}
    */
-  async resolveAuthenticatedProfile(authUser, options = {}) {
+  async resolveAuthenticatedProfile(authUser) {
     if (!authUser || !authUser.id) {
       return {
         status: "AUTH_INVALID_CREDENTIALS",
@@ -174,252 +173,157 @@ class Application {
       };
     }
 
-    // STEP 2 — VERIFIED AUTH EMAIL LOOKUP
-    const authEmail = ((authUser && authUser.email) || "").trim().toLowerCase();
-    if (!authEmail) {
+    // STEP 2 — CALL DEDICATED SECURITY DEFINER RPC
+    if (typeof db.supabase?.rpc !== 'function') {
       return {
-        status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
+        status: "PROFILE_LINK_ERROR",
         profile: null,
-        error: new Error("Authenticated identity has no verified email")
+        error: new Error("Dedicated profile claim RPC is unavailable")
       };
     }
 
-    let emailMatches = null;
+    let rpcData = null;
+    let rpcError = null;
+
     try {
-      let { data: matchedUsers, error: emailError } = await db.supabase
-          .from('users')
-          .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-          .eq('email', authEmail);
+      const res = await db.supabase.rpc('claim_authenticated_user_profile');
+      rpcData = res.data;
+      rpcError = res.error;
+    } catch (rpcEx) {
+      rpcError = rpcEx;
+      console.warn("Exception calling claim_authenticated_user_profile RPC:", rpcEx);
+    }
 
-      // Handle clock skew / "JWT issued at future" (PGRST303) gracefully with retries
-      if (emailError && (emailError.code === 'PGRST303' || String(emailError.message || '').includes('issued at future'))) {
-        console.warn("[PGRST303] JWT issued at future detected on email query. Retrying after clock catch-up...");
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          await new Promise(r => setTimeout(r, 800 * attempt));
-          const retryRes = await db.supabase
-            .from('users')
-            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-            .eq('email', authEmail);
-          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
-            matchedUsers = retryRes.data;
-            emailError = retryRes.error;
-            break;
-          }
-        }
-      }
+    if (rpcError) {
+      console.error("claim_authenticated_user_profile RPC attempt returned:", rpcError);
+      const errMsg = String(rpcError.message || "");
+      const errCode = String(rpcError.code || "");
 
-      if (emailError) {
-        console.error("Email-based profile lookup error:", emailError);
-        const isRls = emailError.code === "42501" || 
-                      emailError.code === "PGRST301" || 
-                      String(emailError.message || "").toLowerCase().includes("policy") ||
-                      String(emailError.message || "").toLowerCase().includes("permission");
-        if (isRls) {
-          return {
-            status: "PROFILE_LINK_REQUIRES_SECURE_RESOLUTION",
-            profile: null,
-            error: emailError
-          };
-        }
+      if (errCode === 'P0002' || errMsg.includes('No unlinked active profile found') || errMsg.includes('no verified email')) {
         return {
-          status: "PROFILE_QUERY_ERROR",
+          status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
           profile: null,
-          error: emailError
+          error: rpcError
         };
       }
-      emailMatches = matchedUsers;
-    } catch (err) {
-      console.error("Exception during email profile query:", err);
-      return {
-        status: "PROFILE_QUERY_ERROR",
-        profile: null,
-        error: err
-      };
-    }
 
-    if (!emailMatches || emailMatches.length === 0) {
-      return {
-        status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
-        profile: null,
-        error: new Error("No registered application profile found for verified email")
-      };
-    }
-
-    // STEP 3 — AMBIGUITY CHECK
-    if (emailMatches.length > 1) {
-      return {
-        status: "PROFILE_AMBIGUOUS",
-        profile: null,
-        error: new Error("Multiple user profiles found matching this email"),
-        matchesCount: emailMatches.length
-      };
-    }
-
-    const candidate = emailMatches[0];
-
-    // Check if candidate is active
-    if (candidate.active === false) {
-      return {
-        status: "ACCOUNT_DEACTIVATED",
-        profile: candidate,
-        error: new Error("User account is deactivated")
-      };
-    }
-
-    // STEP 4 — IDENTITY CONFLICT PROTECTION
-    if (candidate.auth_user_id && candidate.auth_user_id !== authUser.id) {
-      return {
-        status: "AUTH_SUCCESS_MAPPING_CONFLICT",
-        profile: candidate,
-        error: new Error("Profile is already linked to a different authentication identity")
-      };
-    }
-
-    // If candidate is already linked to this authUser.id
-    if (candidate.auth_user_id === authUser.id) {
-      return {
-        status: "SUCCESS",
-        profile: candidate,
-        resolutionMethod: "VERIFIED_EMAIL_MATCH"
-      };
-    }
-
-    // STEP 5 — SAFE ADMIN SELF-HEALING
-    // Strict conditions:
-    // 1. Auth succeeded (authUser.id exists)
-    // 2. authUser.email exists
-    // 3. Exactly one profile matches the Auth email
-    // 4. Profile is active
-    // 5. Profile auth_user_id is NULL
-    // 6. Profile is not already associated with another Auth UID
-    // 7. Approved admin self-healing: candidate role is strictly "Administrator" and allowAdminSelfHealing !== false
-    // Note: Generic callers must NOT be able to set allowSelfHealing: true to bypass Administrator check.
-    if (candidate.auth_user_id != null && candidate.auth_user_id !== "") {
-      return {
-        status: "AUTH_SUCCESS_MAPPING_CONFLICT",
-        profile: candidate,
-        error: new Error("Profile already has an associated auth_user_id")
-      };
-    }
-
-    const isCandidateAdmin = String(candidate.role || "").trim() === "Administrator";
-    const isCandidateActive = candidate.active !== false;
-    const isAutoLink = (options.autoLink === true || options.allowAutoLink === true) && isCandidateActive;
-    const approvedSelfHealing = (options.allowAdminSelfHealing !== false && isCandidateAdmin && isCandidateActive) || isAutoLink;
-
-    if (!approvedSelfHealing) {
-      return {
-        status: "AUTH_SUCCESS_MAPPING_MISSING",
-        profile: candidate,
-        error: new Error("User profile exists but auth_user_id mapping is unlinked")
-      };
-    }
-
-    // STEP 5 — SAFE CLOUD CLAIM & SELF-HEALING
-    // Attempt dedicated SECURITY DEFINER RPC claim if available
-    let cloudClaimSuccessful = false;
-    let claimedProfile = null;
-    let cloudUpdateError = null;
-
-    if (typeof db.supabase?.rpc === 'function') {
-      try {
-        const { data: rpcData, error: rpcError } = await db.supabase.rpc('claim_authenticated_user_profile');
-        if (!rpcError && rpcData) {
-          const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-          if (row && row.auth_user_id === authUser.id) {
-            cloudClaimSuccessful = true;
-            claimedProfile = row;
-          }
-        } else if (rpcError) {
-          cloudUpdateError = rpcError;
-          console.warn("claim_authenticated_user_profile RPC attempt returned:", rpcError);
-        }
-      } catch (rpcEx) {
-        cloudUpdateError = rpcEx;
-        console.warn("Exception calling claim_authenticated_user_profile RPC:", rpcEx);
+      if (errCode === 'P0003' || errMsg.includes('Ambiguous profile match') || errMsg.includes('multiple unlinked profiles')) {
+        return {
+          status: "PROFILE_AMBIGUOUS",
+          profile: null,
+          error: rpcError,
+          matchesCount: rpcError.matchesCount || 2
+        };
       }
-    }
 
-    if (cloudClaimSuccessful && claimedProfile) {
+      if (errCode === 'P0005' || errMsg.includes('already linked to another authentication identity') || errMsg.includes('already has an associated auth_user_id')) {
+        return {
+          status: "AUTH_SUCCESS_MAPPING_CONFLICT",
+          profile: null,
+          error: rpcError
+        };
+      }
+
+      if (errMsg.includes('deactivated') || errMsg.includes('account is deactivated')) {
+        return {
+          status: "ACCOUNT_DEACTIVATED",
+          profile: null,
+          error: rpcError
+        };
+      }
+
+      const isRls = errCode === "42501" ||
+                    errCode === "PGRST301" ||
+                    errMsg.toLowerCase().includes("permission") ||
+                    errMsg.toLowerCase().includes("policy");
+      if (isRls) {
+        return {
+          status: "PROFILE_LINK_REQUIRES_SECURE_RESOLUTION",
+          profile: null,
+          error: rpcError
+        };
+      }
+
       return {
-        status: "SUCCESS",
-        profile: claimedProfile,
-        resolutionMethod: isCandidateAdmin ? "ADMIN_SELF_HEALED" : "AUTO_LINKED"
+        status: "PROFILE_LINK_ERROR",
+        profile: null,
+        error: rpcError
       };
     }
 
-    // Direct Cloud table update (if RPC not yet provisioned or in mock environment)
-    let cloudUpdateSuccessful = false;
+    // STEP 3 — RPC SUCCESS VERIFICATION
+    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (!row || row.auth_user_id !== authUser.id) {
+      return {
+        status: "PROFILE_LINK_ERROR",
+        profile: null,
+        error: new Error("RPC returned invalid or unlinked profile data")
+      };
+    }
+
+    // STEP 4 — VERIFY CLOUD UPDATE WITH FRESH READ
+    let freshProfile = null;
+    let freshError = null;
+
     try {
-      const { data: updateRes, error: updateError } = await db.supabase
-        .from("users")
-        .update({ auth_user_id: authUser.id })
-        .eq("id", candidate.id);
+      let { data, error } = await db.supabase
+          .from('users')
+          .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+          .eq("auth_user_id", authUser.id)
+          .maybeSingle();
 
-      if (updateError) {
-        cloudUpdateError = updateError;
-        console.error("Profile link update failed:", updateError);
-      } else {
-        cloudUpdateSuccessful = true;
-      }
-    } catch (e) {
-      cloudUpdateError = e;
-      console.error("Profile link update failed:", e);
-    }
-
-    if (cloudUpdateSuccessful) {
-      // STEP 6 — VERIFY CLOUD UPDATE WITH FRESH READ
-      let { data: freshProfile, error: freshError } = await db.supabase
-        .from("users")
-        .select(safeColumns)
-        .eq("auth_user_id", authUser.id)
-        .maybeSingle();
-
-      if (freshError && (freshError.code === 'PGRST303' || String(freshError.message || '').includes('issued at future'))) {
+      if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
         for (let attempt = 1; attempt <= 3; attempt++) {
           await new Promise(r => setTimeout(r, 800 * attempt));
           const retryRes = await db.supabase
             .from("users")
-            .select(safeColumns)
+            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
             .eq("auth_user_id", authUser.id)
             .maybeSingle();
           if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
-            freshProfile = retryRes.data;
-            freshError = retryRes.error;
+            data = retryRes.data;
+            error = retryRes.error;
             break;
           }
         }
       }
 
-      if (freshError) {
-        console.error("Fresh profile read after link failed:", freshError);
-        return {
-          status: "PROFILE_LINK_ERROR",
-          profile: candidate,
-          error: freshError
-        };
-      }
+      freshProfile = data;
+      freshError = error;
+    } catch (e) {
+      freshError = e;
+      console.error("Fresh profile read after link failed:", e);
+    }
 
-      if (!freshProfile || freshProfile.auth_user_id !== authUser.id) {
-        return {
-          status: "PROFILE_LINK_ERROR",
-          profile: candidate,
-          error: new Error("Profile auth_user_id link verification mismatch")
-        };
-      }
-
+    if (freshError) {
+      console.error("Fresh profile read after link failed:", freshError);
       return {
-        status: "SUCCESS",
-        profile: freshProfile,
-        resolutionMethod: isCandidateAdmin ? "ADMIN_SELF_HEALED" : "AUTO_LINKED"
+        status: "PROFILE_LINK_ERROR",
+        profile: null,
+        error: freshError
       };
     }
 
-    // Strict Cloud-only failure handling: NEVER fake success or use local fallback
+    if (!freshProfile || freshProfile.auth_user_id !== authUser.id) {
+      return {
+        status: "PROFILE_LINK_ERROR",
+        profile: null,
+        error: new Error("Profile auth_user_id link verification mismatch")
+      };
+    }
+
+    if (freshProfile.active === false) {
+      return {
+        status: "ACCOUNT_DEACTIVATED",
+        profile: freshProfile,
+        error: new Error("User account is deactivated")
+      };
+    }
+
     return {
-      status: "PROFILE_LINK_ERROR",
-      profile: candidate,
-      error: cloudUpdateError || new Error("Profile link failed")
+      status: "SUCCESS",
+      profile: freshProfile,
+      resolutionMethod: String(freshProfile.role || '').trim() === 'Administrator' ? 'ADMIN_SELF_HEALED' : 'AUTO_LINKED'
     };
   }
 
@@ -5124,8 +5028,8 @@ class Application {
     if (!authError && authData && authData.user && authData.session) {
       authUser = authData.user;
 
-      // 3. Resolve Application Profile via Shared Deterministic Resolver with Auto-Link enabled
-      const resolution = await this.resolveAuthenticatedProfile(authUser, { autoLink: true, allowAutoLink: true });
+      // 3. Resolve Application Profile via Shared Deterministic Resolver
+      const resolution = await this.resolveAuthenticatedProfile(authUser);
 
       if (resolution.status !== "SUCCESS" || !resolution.profile) {
         console.error("Profile resolution failed after authentication:", resolution.status, resolution.error);
@@ -6604,10 +6508,10 @@ if (typeof window !== "undefined" && typeof document !== "undefined" && !window.
 }
 
 if (typeof window !== "undefined") {
-  window.resolveAuthenticatedProfile = (authUser, options) => App.resolveAuthenticatedProfile(authUser, options);
+  window.resolveAuthenticatedProfile = (authUser) => App.resolveAuthenticatedProfile(authUser);
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { Application, App, resolveAuthenticatedProfile: (authUser, options) => App.resolveAuthenticatedProfile(authUser, options) };
+  module.exports = { Application, App, resolveAuthenticatedProfile: (authUser) => App.resolveAuthenticatedProfile(authUser) };
 }
 
