@@ -132,12 +132,51 @@ BEGIN
 END;
 $$;
 
+-- Dedicated RPC for username resolution
+CREATE OR REPLACE FUNCTION public.resolve_login_email_by_username(p_username text)
+RETURNS TABLE (email text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_normalized_username TEXT := lower(trim(p_username));
+  v_count INT;
+  v_email TEXT;
+BEGIN
+  -- 1. Find matches
+  SELECT count(*), min(u.email)
+  INTO v_count, v_email
+  FROM public.users u
+  WHERE lower(trim(u.username)) = v_normalized_username
+    AND u.active = true
+    AND u.email IS NOT NULL
+    AND u.email != '';
+
+  -- 2. Reject if no match or ambiguous
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'No active user found with username %', p_username USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_count > 1 THEN
+    RAISE EXCEPTION 'Ambiguous user match for username %', p_username USING ERRCODE = 'P0003';
+  END IF;
+
+  -- 3. Return email only
+  RETURN QUERY SELECT v_email;
+END;
+$$;
+
 -- Restrict RPC execution
 REVOKE ALL ON FUNCTION public.claim_authenticated_user_profile() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.claim_authenticated_user_profile() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.claim_authenticated_user_profile() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.claim_authenticated_user_profile() FROM anon;
 GRANT EXECUTE ON FUNCTION public.claim_authenticated_user_profile() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.resolve_login_email_by_username(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.resolve_login_email_by_username(text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_login_email_by_username(text) TO anon;
 
 -- 2. Revoke anonymous access to ensure secure boundary
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;

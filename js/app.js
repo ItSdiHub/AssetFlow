@@ -4943,45 +4943,22 @@ class Application {
     // 1. Resolve username to authoritative email
     let emailToAuth = loginInput;
     const cleanInput = loginInput.trim().toLowerCase();
-    let dbUserRec = null;
+    
     if (!emailToAuth.includes("@")) {
       try {
-        const { data: userRec } = await db.supabase
-          .from("users")
-          .select("id, username, employee_id")
-          .ilike("username", cleanInput)
-          .maybeSingle();
-
-        if (userRec) {
-          if (userRec.id) {
-            const { data: uRec } = await db.supabase
-              .from("users")
-              .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
-              .eq("id", userRec.id)
-              .maybeSingle();
-            if (uRec) {
-              dbUserRec = uRec;
-              if (uRec.email) emailToAuth = uRec.email.trim().toLowerCase();
-            }
-          }
-          if (userRec.employee_id && (!dbUserRec || !dbUserRec.email)) {
-            const { data: empRec } = await db.supabase
-              .from("employees")
-              .select("email")
-              .eq("id", userRec.employee_id)
-              .maybeSingle();
-            if (empRec && empRec.email) {
-              emailToAuth = empRec.email.trim().toLowerCase();
-            }
-          }
+        const { data: resData, error: rpcError } = await db.supabase
+          .rpc("resolve_login_email_by_username", { p_username: cleanInput });
+        
+        if (rpcError) {
+          console.warn("Username resolution RPC error:", rpcError);
+        } else if (resData && resData.length > 0) {
+          emailToAuth = resData[0].email.trim().toLowerCase();
         }
       } catch (e) {
-        console.warn("Username to email resolution warning:", e);
-      }
-      if (!emailToAuth.includes("@")) {
-        emailToAuth = cleanInput + "@sdi.ae";
+        console.warn("Username resolution RPC exception:", e);
       }
     } else {
+      // Direct email handling
       try {
         const { data: uRec } = await db.supabase
           .from("users")
