@@ -4959,18 +4959,6 @@ class Application {
       }
     } else {
       // Direct email handling
-      try {
-        const { data: uRec } = await db.supabase
-          .from("users")
-          .select("id, username, password, email, role, full_name, full_name_ar, full_name_en, employee_id, active, auth_user_id")
-          .eq("email", cleanInput)
-          .maybeSingle();
-        if (uRec) {
-          dbUserRec = uRec;
-        }
-      } catch (e) {
-        console.warn("Email to user record lookup warning:", e);
-      }
     }
 
     // 2. Execute Supabase GoTrue Authentication to acquire valid JWT session for RLS
