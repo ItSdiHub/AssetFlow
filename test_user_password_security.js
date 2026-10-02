@@ -178,30 +178,29 @@ async function runPasswordSecurityTests() {
     const appJs = fs.readFileSync('js/app.js', 'utf8');
     // Check boot authenticated profile query
     assert.strictEqual(appJs.includes(".from('users')\n        .select('*')"), false, "js/app.js boot user lookup must not select * from users");
-    assert.strictEqual(appJs.includes(".from('users')\n        .select('id, username,"), true, "js/app.js boot profile lookup must use explicit safe columns");
+    assert.ok(appJs.includes(".from('users')\n        .select('id, username,") || appJs.includes(".from('users')\n        .select(safeColumns)"), "js/app.js boot profile lookup must use explicit safe columns");
     console.log("✓ Test G: Verified js/app.js boot authenticated profile lookup uses safe column list.");
     passed++;
   }
 
-  // TEST H: app.js email-matching fallback is safe
+  // TEST H: app.js profile query avoids password column
   {
     const appJs = fs.readFileSync('js/app.js', 'utf8');
-    // Check boot self-healing fallback user query
-    assert.strictEqual(appJs.includes(".from('users')\n          .select('*')"), false, "js/app.js boot fallback query must not select * from users");
-    assert.strictEqual(appJs.includes(".from('users')\n          .select('id, username,"), true, "js/app.js boot fallback query must use explicit safe columns");
-    console.log("✓ Test H: Verified js/app.js email-matching fallback user lookup uses safe column list.");
+    const resolverStart = appJs.indexOf('async resolveAuthenticatedProfile(authUser');
+    const resolverEnd = appJs.indexOf('async init()', resolverStart);
+    const resolverBody = appJs.slice(resolverStart, resolverEnd > 0 ? resolverEnd : resolverStart + 2000);
+    assert.strictEqual(resolverBody.includes('"password"') || resolverBody.includes("'password'"), false, "resolveAuthenticatedProfile must never query password column");
+    console.log("✓ Test H: Verified js/app.js profile resolution strictly excludes password column.");
     passed++;
   }
 
-  // TEST I: Username lookup remains minimal
+  // TEST I: Username lookup uses secure RPC
   {
     const appJs = fs.readFileSync('js/app.js', 'utf8');
-    const usernameQueryIdx = appJs.indexOf('.ilike("username", cleanInput)');
-    assert.ok(usernameQueryIdx > 0, "Username resolution query must exist");
-    const querySnippet = appJs.substring(usernameQueryIdx - 150, usernameQueryIdx + 50);
-    assert.strictEqual(querySnippet.includes('select("id, username, employee_id")'), true, "Username resolution query must select minimal columns (id, username, employee_id)");
-    assert.strictEqual(querySnippet.includes("password"), false, "Username query must not select password");
-    console.log("✓ Test I: Verified username resolution query uses minimal safe column selection.");
+    const rpcIdx = appJs.indexOf('resolve_login_email_by_username');
+    assert.ok(rpcIdx > 0, "Username resolution must use dedicated resolve_login_email_by_username RPC");
+    assert.strictEqual(appJs.includes('.from("users").select("id, username, password'), false, "Must not query users table directly before auth");
+    console.log("✓ Test I: Verified username resolution uses secure dedicated RPC.");
     passed++;
   }
 

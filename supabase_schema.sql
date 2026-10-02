@@ -859,3 +859,39 @@ BEGIN
     END LOOP;
 END
 $$;
+
+-- Dedicated RPC for username resolution
+CREATE OR REPLACE FUNCTION public.resolve_login_email_by_username(p_username text)
+RETURNS TABLE (email text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_normalized_username TEXT := lower(trim(p_username));
+  v_count INT;
+  v_email TEXT;
+BEGIN
+  SELECT count(*), min(u.email)
+  INTO v_count, v_email
+  FROM public.users u
+  WHERE lower(trim(u.username)) = v_normalized_username
+    AND u.active = true
+    AND u.email IS NOT NULL
+    AND u.email != '';
+
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'No active user found with username %', p_username USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_count > 1 THEN
+    RAISE EXCEPTION 'Ambiguous user match for username %', p_username USING ERRCODE = 'P0003';
+  END IF;
+
+  RETURN QUERY SELECT v_email;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.resolve_login_email_by_username(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.resolve_login_email_by_username(text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_login_email_by_username(text) TO anon;

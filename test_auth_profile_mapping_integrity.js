@@ -18,6 +18,17 @@ console.log('===================================================================
 const appJsPath = path.join(__dirname, 'js/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
+const mockElements = {
+  loginEmail: { value: 'testuser', focus: () => {} },
+  loginPassword: { value: 'ValidPass123!', focus: () => {} },
+  loginModal: {
+    classList: { add: () => {}, remove: () => {} },
+    style: { setProperty: () => {}, removeProperty: () => {} },
+    setAttribute: () => {},
+    removeAttribute: () => {}
+  }
+};
+
 // Setup mock DOM environment
 const mockWindow = {
   addEventListener: () => {},
@@ -37,17 +48,7 @@ const mockWindow = {
       removeChild: () => {},
       style: {}
     },
-    getElementById: (id) => {
-      if (id === 'loginEmail') return { value: 'testuser', focus: () => {} };
-      if (id === 'loginPassword') return { value: 'ValidPass123!' };
-      if (id === 'loginModal') return {
-        classList: { add: () => {}, remove: () => {} },
-        style: { setProperty: () => {}, removeProperty: () => {} },
-        setAttribute: () => {},
-        removeAttribute: () => {}
-      };
-      return null;
-    },
+    getElementById: (id) => mockElements[id] || null,
     querySelectorAll: () => [],
     querySelector: () => null
   },

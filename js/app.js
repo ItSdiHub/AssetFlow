@@ -94,7 +94,7 @@ class Application {
    * Resolves Supabase Auth identity strictly to authoritative public.users profile.
    *
    * @param {Object} authUser - Supabase Auth User object
-   * @returns {Promise<{status: string, profile: Object|null, error: Error|null, resolutionMethod?: string}>}
+   * @returns {Promise<{status: string, profile: Object|null, error: Error|null, resolutionMethod?: string, matchesCount?: number}>}
    */
   async resolveAuthenticatedProfile(authUser) {
     if (!authUser || !authUser.id) {
@@ -115,30 +115,36 @@ class Application {
 
     const safeColumns = "id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active";
 
+    // Single-attempt token refresh helper for clock skew (PGRST303)
+    const refreshSessionOnce = async () => {
+      if (typeof db.supabase?.auth?.refreshSession === 'function') {
+        try {
+          await db.supabase.auth.refreshSession();
+        } catch (e) {
+          console.warn("[PGRST303] Session refresh during clock skew retry encountered:", e);
+        }
+      }
+    };
+
     // STEP 1 — EXACT AUTH UID LOOKUP
     try {
       let { data: directUser, error: queryError } = await db.supabase
         .from('users')
-        .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
+        .select(safeColumns)
         .eq('auth_user_id', authUser.id)
         .maybeSingle();
 
-      // Handle clock skew / "JWT issued at future" (PGRST303) gracefully with retries
+      // Handle clock skew / "JWT issued at future" (PGRST303) gracefully with a single session refresh retry
       if (queryError && (queryError.code === 'PGRST303' || String(queryError.message || '').includes('issued at future'))) {
-        console.warn("[PGRST303] JWT issued at future detected. Retrying direct auth_user_id query after clock catch-up...");
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          await new Promise(r => setTimeout(r, 800 * attempt));
-          const retryRes = await db.supabase
-            .from('users')
-            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-            .eq('auth_user_id', authUser.id)
-            .maybeSingle();
-          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
-            directUser = retryRes.data;
-            queryError = retryRes.error;
-            break;
-          }
-        }
+        console.warn("[PGRST303] JWT issued at future detected on exact lookup. Refreshing session and retrying once...");
+        await refreshSessionOnce();
+        const retryRes = await db.supabase
+          .from('users')
+          .select(safeColumns)
+          .eq('auth_user_id', authUser.id)
+          .maybeSingle();
+        directUser = retryRes.data;
+        queryError = retryRes.error;
       }
 
       if (queryError) {
@@ -189,6 +195,15 @@ class Application {
       const res = await db.supabase.rpc('claim_authenticated_user_profile');
       rpcData = res.data;
       rpcError = res.error;
+
+      // Handle PGRST303 once with token refresh
+      if (rpcError && (rpcError.code === 'PGRST303' || String(rpcError.message || '').includes('issued at future'))) {
+        console.warn("[PGRST303] JWT issued at future detected on RPC. Refreshing session and retrying once...");
+        await refreshSessionOnce();
+        const retryRpc = await db.supabase.rpc('claim_authenticated_user_profile');
+        rpcData = retryRpc.data;
+        rpcError = retryRpc.error;
+      }
     } catch (rpcEx) {
       rpcError = rpcEx;
       console.warn("Exception calling claim_authenticated_user_profile RPC:", rpcEx);
@@ -199,6 +214,7 @@ class Application {
       const errMsg = String(rpcError.message || "");
       const errCode = String(rpcError.code || "");
 
+      // P0002: no eligible profile found
       if (errCode === 'P0002' || errMsg.includes('No unlinked active profile found') || errMsg.includes('no verified email')) {
         return {
           status: "AUTH_SUCCESS_PROFILE_NOT_FOUND",
@@ -207,6 +223,7 @@ class Application {
         };
       }
 
+      // P0003: ambiguous profile or multiple unlinked profiles
       if (errCode === 'P0003' || errMsg.includes('Ambiguous profile match') || errMsg.includes('multiple unlinked profiles')) {
         return {
           status: "PROFILE_AMBIGUOUS",
@@ -216,7 +233,8 @@ class Application {
         };
       }
 
-      if (errCode === 'P0005' || errMsg.includes('already linked to another authentication identity') || errMsg.includes('already has an associated auth_user_id')) {
+      // P0005: already linked to another Auth account OR inactive
+      if (errCode === 'P0005' || errMsg.includes('already linked') || errMsg.includes('associated auth_user_id')) {
         return {
           status: "AUTH_SUCCESS_MAPPING_CONFLICT",
           profile: null,
@@ -224,7 +242,7 @@ class Application {
         };
       }
 
-      if (errMsg.includes('deactivated') || errMsg.includes('account is deactivated')) {
+      if (errMsg.toLowerCase().includes('deactivated') || errMsg.toLowerCase().includes('inactive')) {
         return {
           status: "ACCOUNT_DEACTIVATED",
           profile: null,
@@ -232,6 +250,7 @@ class Application {
         };
       }
 
+      // 42501 / PGRST301: permission or policy violation
       const isRls = errCode === "42501" ||
                     errCode === "PGRST301" ||
                     errMsg.toLowerCase().includes("permission") ||
@@ -251,13 +270,34 @@ class Application {
       };
     }
 
-    // STEP 3 — RPC SUCCESS VERIFICATION
-    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    if (!row || row.auth_user_id !== authUser.id) {
+    // STEP 3 — RPC SUCCESS VERIFICATION & PAYLOAD EXTRACTION
+    let claimedRow = null;
+    let returnedMethod = null;
+
+    if (rpcData) {
+      if (rpcData.profile && typeof rpcData.profile === 'object') {
+        claimedRow = rpcData.profile;
+        returnedMethod = rpcData.resolutionMethod;
+      } else if (Array.isArray(rpcData) && rpcData.length > 0) {
+        claimedRow = rpcData[0];
+      } else if (typeof rpcData === 'object' && rpcData.id) {
+        claimedRow = rpcData;
+      }
+    }
+
+    if (!claimedRow || claimedRow.auth_user_id !== authUser.id) {
       return {
         status: "PROFILE_LINK_ERROR",
         profile: null,
         error: new Error("RPC returned invalid or unlinked profile data")
+      };
+    }
+
+    if (claimedRow.active === false) {
+      return {
+        status: "ACCOUNT_DEACTIVATED",
+        profile: claimedRow,
+        error: new Error("User account is deactivated")
       };
     }
 
@@ -267,25 +307,21 @@ class Application {
 
     try {
       let { data, error } = await db.supabase
-          .from('users')
-          .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-          .eq("auth_user_id", authUser.id)
-          .maybeSingle();
+        .from('users')
+        .select(safeColumns)
+        .eq("auth_user_id", authUser.id)
+        .maybeSingle();
 
       if (error && (error.code === 'PGRST303' || String(error.message || '').includes('issued at future'))) {
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          await new Promise(r => setTimeout(r, 800 * attempt));
-          const retryRes = await db.supabase
-            .from("users")
-            .select('id, username, full_name, full_name_ar, full_name_en, role, employee_id, auth_user_id, active')
-            .eq("auth_user_id", authUser.id)
-            .maybeSingle();
-          if (!retryRes.error || (retryRes.error.code !== 'PGRST303' && !String(retryRes.error.message || '').includes('issued at future'))) {
-            data = retryRes.data;
-            error = retryRes.error;
-            break;
-          }
-        }
+        console.warn("[PGRST303] JWT issued at future detected on fresh read. Refreshing session and retrying once...");
+        await refreshSessionOnce();
+        const retryRes = await db.supabase
+          .from("users")
+          .select(safeColumns)
+          .eq("auth_user_id", authUser.id)
+          .maybeSingle();
+        data = retryRes.data;
+        error = retryRes.error;
       }
 
       freshProfile = data;
@@ -320,10 +356,13 @@ class Application {
       };
     }
 
+    const finalMethod = returnedMethod ||
+      (String(freshProfile.role || '').trim() === 'Administrator' ? 'ADMIN_SELF_HEALED' : 'AUTO_LINKED');
+
     return {
       status: "SUCCESS",
       profile: freshProfile,
-      resolutionMethod: String(freshProfile.role || '').trim() === 'Administrator' ? 'ADMIN_SELF_HEALED' : 'AUTO_LINKED'
+      resolutionMethod: finalMethod
     };
   }
 
