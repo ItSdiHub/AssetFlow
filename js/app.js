@@ -5179,22 +5179,16 @@ class Application {
     }
 
     if (!email.includes("@")) {
-      const cleanUsername = email.toLowerCase();
+      const cleanUsername = email.trim().toLowerCase();
       try {
-        const { data: userRec } = await db.supabase
-          .from("users")
-          .select("id, employee_id")
-          .ilike("username", cleanUsername)
-          .maybeSingle();
-        if (userRec && userRec.employee_id) {
-          const { data: empRec } = await db.supabase
-            .from("employees")
-            .select("email")
-            .eq("id", userRec.employee_id)
-            .maybeSingle();
-          if (empRec && empRec.email) email = empRec.email;
+        const { data: resData, error: rpcError } = await db.supabase
+          .rpc("resolve_login_email_by_username", { p_username: cleanUsername });
+        if (!rpcError && resData && resData.length > 0 && resData[0].email) {
+          email = resData[0].email.trim().toLowerCase();
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Forgot password username resolution note:", e);
+      }
     }
 
     if (!email.includes("@")) {

@@ -507,7 +507,16 @@ async function runAllTests() {
   {
     const queryIdx = appJs.indexOf('.rpc("resolve_login_email_by_username"');
     assert.ok(queryIdx > 0, 'Username resolution RPC call must exist in app.js');
-    console.log('✓ Test O: Username resolution uses secure RPC.');
+
+    // Verify forgot password also uses RPC
+    const forgotFnIdx = appJs.indexOf('async handleForgotPassword(event)');
+    assert.ok(forgotFnIdx > 0, 'handleForgotPassword method must exist in app.js');
+    const forgotSnippet = appJs.substring(forgotFnIdx, forgotFnIdx + 1500);
+    assert.ok(forgotSnippet.includes('.rpc("resolve_login_email_by_username"'), 'handleForgotPassword must use resolve_login_email_by_username RPC');
+    assert.strictEqual(forgotSnippet.includes('.from("users")'), false, 'handleForgotPassword must not query users table directly');
+    assert.strictEqual(forgotSnippet.includes('.from("employees")'), false, 'handleForgotPassword must not query employees table directly');
+
+    console.log('✓ Test O: Username resolution uses secure RPC for login and password recovery.');
   }
 
   // --------------------------------------------------------------------------
